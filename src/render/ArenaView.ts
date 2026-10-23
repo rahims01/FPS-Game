@@ -79,7 +79,9 @@ export class ArenaView {
   readonly group = new THREE.Group();
   private zoneMesh: THREE.Mesh | null = null;
   private hill: THREE.Group | null = null;
-  private flagViews: { ring: THREE.Mesh; cloth: THREE.Mesh; label: THREE.Sprite }[] = [];
+  /** Team colours (team 0, team 1) for objective markers. */
+  teamColors: [number, number] = [0x4ccf6a, 0xe0453a];
+  private flagViews: { group: THREE.Group; ring: THREE.Mesh; cloth: THREE.Mesh; label: THREE.Sprite }[] = [];
   private medkitMeshes: THREE.Mesh[] = [];
   private medkitGeo = new THREE.BoxGeometry(0.5, 0.32, 0.5);
   private medkitMat: THREE.MeshStandardMaterial;
@@ -229,7 +231,7 @@ export class ArenaView {
         const c = document.createElement('canvas');
         c.width = c.height = 128;
         const ctx = c.getContext('2d')!;
-        ctx.font = 'bold 96px sans-serif';
+        ctx.font = `bold ${o.label.length > 1 ? 40 : 96}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = 10;
@@ -243,14 +245,18 @@ export class ArenaView {
         label.renderOrder = 9;
         g.add(pole, cloth, ring, label);
         this.group.add(g);
-        fv = { ring, cloth, label };
+        fv = { group: g, ring, cloth, label };
         this.flagViews.push(fv);
       }
-      const color = o.owner === 0 ? 0x4ccf6a : o.owner === 1 ? 0xe0453a : 0xf2f2f2;
+      const color = o.owner === 0 || o.owner === 1 ? this.teamColors[o.owner] : 0xf2f2f2;
       (fv.cloth.material as THREE.MeshStandardMaterial).color.setHex(color);
       (fv.ring.material as THREE.MeshBasicMaterial).color.setHex(color);
       (fv.label.material as THREE.SpriteMaterial).color.setHex(color);
       fv.cloth.rotation.y = Math.sin(time * 2 + i) * 0.25;
+      // Capture-the-flag flags move: carried ones ride on the carrier, smaller and without a ring.
+      fv.group.position.set(o.x, 0, o.z);
+      fv.group.scale.setScalar(o.carried ? 0.55 : 1);
+      fv.ring.visible = !o.carried;
     });
     // Medkits.
     while (this.medkitMeshes.length < sim.pickups.length) {

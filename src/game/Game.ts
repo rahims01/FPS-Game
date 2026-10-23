@@ -111,6 +111,7 @@ export interface HudState {
   callouts: { id: number; text: string; at: number }[];
   xp: number;
   killedBy: { name: string; color: string; weapon: string; distance: number; hp: number; headshot: boolean } | null;
+  ctf: { ours: 'home' | 'taken' | 'dropped'; theirs: 'home' | 'taken' | 'dropped'; carrying: boolean } | null;
 }
 
 /** Shown to the player as they approach each killstreak. */
@@ -235,6 +236,7 @@ export class Game {
     const p = this.match.player;
     this.yaw = p.yaw;
     this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor);
+    if (this.ids.teamColors) this.arenaView.teamColors = this.ids.teamColors;
 
     this.onResize();
     window.addEventListener('resize', this.onResize);
@@ -562,6 +564,10 @@ export class Game {
     }
   }
 
+  private teamCss(team: number): string {
+    return this.ids.teamColors ? cssColor(this.ids.teamColors[team === 0 ? 0 : 1]) : team === this.match.player.team ? '#5aff8a' : '#ff5a4a';
+  }
+
   private distTo(x: number, z: number): number {
     return Math.hypot(x - this.camera.position.x, z - this.camera.position.z);
   }
@@ -633,6 +639,24 @@ export class Game {
         this.medal(MEDALS.promoted);
         this.callout(`Upgraded to ${WEAPONS[n.weapon].name}`);
       } else if (n.kind === 'demote') this.callout(`Knifed! Back to ${WEAPONS[n.weapon].name}`);
+      else if (n.kind === 'ctf') {
+        const ours = n.team === m.player.team;
+        if (n.event === 'taken') {
+          if (n.byPlayer) {
+            this.medal(MEDALS.flagTaken);
+            this.callout('You have the flag! Bring it back to your base.');
+          } else this.callout(ours ? 'Your flag has been taken!' : 'Your team has the enemy flag');
+        } else if (n.event === 'captured') {
+          if (n.byPlayer) this.medal(MEDALS.flagCaptured);
+          this.audio.fanfare();
+        } else if (n.event === 'returned') {
+          if (n.byPlayer) this.medal(MEDALS.flagReturned);
+          this.callout(ours ? 'Your flag was returned' : 'Enemy flag returned');
+        } else if (n.event === 'dropped') {
+          if (n.byPlayer) this.medal(MEDALS.carrierKill);
+          this.callout(ours ? 'Your flag was dropped. Go return it!' : 'Enemy flag dropped');
+        }
+      }
     }
     if (m.phase === 'over' && !this.xpBanked) {
       this.xpBanked = true;
@@ -888,7 +912,15 @@ export class Game {
       medals: this.medals.filter((x) => sim.time - x.at < 3),
       callouts: this.callouts.filter((x) => sim.time - x.at < 3.5),
       xp: this.xp,
-      killedBy: p.alive ? null : this.killedBy
+      killedBy: p.alive ? null : this.killedBy,
+      ctf: m.ctf.length
+        ? (() => {
+            const state = (f: (typeof m.ctf)[number]) => (f.home ? 'home' : f.carrier >= 0 ? 'taken' : 'dropped') as 'home' | 'taken' | 'dropped';
+            const own = m.ctf[p.team];
+            const enemy = m.ctf[1 - p.team];
+            return { ours: state(own), theirs: state(enemy), carrying: enemy.carrier === p.id };
+          })()
+        : null
     };
   }
 
@@ -908,8 +940,21 @@ export class Game {
     for (const b of sim.arena.boxes) {
       ctx.fillRect(X(b.maxX), Z(b.maxZ), (b.maxX - b.minX) * s, (b.maxZ - b.minZ) * s);
     }
+    for (const f of this.match.ctf) {
+      ctx.strokeStyle = this.teamCss(f.team);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(X(f.homeX) - 5, Z(f.homeZ) - 5, 10, 10);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.moveTo(X(f.x), Z(f.z) - 8);
+      ctx.lineTo(X(f.x) + 7, Z(f.z) - 5);
+      ctx.lineTo(X(f.x), Z(f.z) - 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(X(f.x) - 1, Z(f.z) - 8, 2, 10);
+    }
     for (const f of this.match.flags) {
-      ctx.fillStyle = f.owner === -1 ? 'rgba(255,255,255,0.8)' : f.owner === p.team ? '#5aff8a' : '#ff5a4a';
+      ctx.fillStyle = f.owner === -1 ? 'rgba(255,255,255,0.8)' : this.teamCss(f.owner);
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';

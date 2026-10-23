@@ -109,6 +109,8 @@ export interface Rally {
   x: number;
   z: number;
   r: number;
+  /** Followed even while fighting (a flag carrier running home). */
+  urgent?: boolean;
 }
 
 export interface SimOptions {
@@ -156,7 +158,7 @@ export class FpsSim {
   /** Objective point bots move to when they are not fighting (king of the hill). */
   rally: Rally | null = null;
   /** Capture points shown in the world (domination). */
-  objectives: { label: string; x: number; z: number; r: number; owner: number; progress: number }[] = [];
+  objectives: { label: string; x: number; z: number; r: number; owner: number; progress: number; carried?: boolean }[] = [];
   /** Per-agent objective (domination), takes precedence over `rally`. */
   rallyFor: ((a: Agent) => Rally | null) | null = null;
   /** Mode hooks. */
@@ -894,8 +896,10 @@ export class FpsSim {
     const tag = !zoneGoal && !a.seesTarget && this.botsWantTags ? this.nearestPickup(a, 'tag', 20) : null;
     const medkit = !zoneGoal && !tag && !a.seesTarget && a.hp < 70 ? this.nearestPickup(a, 'medkit', 22) : null;
     const r = this.rallyFor ? this.rallyFor(a) : this.rally;
-    const rallyGoal = !zoneGoal && !tag && !medkit && !a.seesTarget && r && Math.hypot(a.x - r.x, a.z - r.z) > r.r * 0.6 ? r : null;
-    const override = knife && t && (a.seesTarget || this.knowsTarget(a)) ? { x: tx, z: tz } : (zoneGoal ?? tag ?? medkit ?? rallyGoal);
+    const farFromRally = !!r && Math.hypot(a.x - r.x, a.z - r.z) > r.r * 0.6;
+    const urgent = r && r.urgent && farFromRally ? r : null;
+    const rallyGoal = !zoneGoal && !tag && !medkit && !a.seesTarget && farFromRally ? r : null;
+    const override = urgent ?? (knife && t && (a.seesTarget || this.knowsTarget(a)) ? { x: tx, z: tz } : (zoneGoal ?? tag ?? medkit ?? rallyGoal));
     switch (override ? 'override' : name) {
       case 'override': {
         const m = this.followPath(a, override!.x, override!.z);

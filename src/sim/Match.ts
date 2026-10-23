@@ -13,6 +13,7 @@ export type ModeId =
   | 'tdm'
   | 'kc'
   | 'dom'
+  | 'ctf'
   | 'koth'
   | 'infected'
   | 'ffa'
@@ -42,6 +43,7 @@ export const MODES: ModeDef[] = [
   { id: '2v2', name: '2v2 Gunfight', blurb: 'Two a side, no respawns. First to 5 rounds.', players: 4, teams: true, group: 'Team' },
   { id: '3v3', name: '3v3 Gunfight', blurb: 'Three a side, no respawns. First to 5 rounds.', players: 6, teams: true, group: 'Team' },
   { id: 'dom', name: 'Domination', blurb: '6v6. Capture and hold flags A, B and C to score. First to 150.', players: 12, teams: true, group: 'Objective' },
+  { id: 'ctf', name: 'Capture the Flag', blurb: "5v5. Steal the enemy flag and bring it home while yours is safe. First to 3 captures.", players: 10, teams: true, group: 'Objective' },
   { id: 'koth', name: 'Hardpoint', blurb: '4v4. Hold the hill alone to score; it moves every 45 s. First to 60.', players: 8, teams: true, group: 'Objective' },
   { id: 'infected', name: 'Infected', blurb: 'One player starts infected with a knife. Anyone they kill joins them. Survivors must last 3 minutes.', players: 10, teams: true, group: 'Objective' },
   { id: 'ffa', name: 'Free-for-all', blurb: '8 players, everyone for themselves. First to 20 kills.', players: 8, teams: false, group: 'Free-for-all' },
@@ -82,7 +84,21 @@ export type MatchNotice =
   | { kind: 'tag'; confirmed: boolean; byPlayer: boolean }
   | { kind: 'promote'; weapon: WeaponId }
   | { kind: 'demote'; weapon: WeaponId }
-  | { kind: 'infected'; byPlayer: boolean; player: boolean };
+  | { kind: 'infected'; byPlayer: boolean; player: boolean }
+  | { kind: 'ctf'; event: 'taken' | 'captured' | 'returned' | 'dropped'; team: number; byPlayer: boolean };
+
+/** Capture the flag: one flag per team. */
+export interface CtfFlag {
+  team: number;
+  homeX: number;
+  homeZ: number;
+  x: number;
+  z: number;
+  /** Agent carrying it, or -1. */
+  carrier: number;
+  home: boolean;
+  droppedAt: number;
+}
 
 export interface Flag {
   label: string;
@@ -111,6 +127,7 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   tdm: 40,
   kc: 30,
   dom: 150,
+  ctf: 3,
   koth: 60,
   ffa: 20,
   headshot: 15,
@@ -118,7 +135,8 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   snipers: 15
 };
 const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame'];
-const RESPAWN_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'tdm', 'kc', 'dom', 'koth', 'infected'];
+const RESPAWN_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'tdm', 'kc', 'dom', 'ctf', 'koth', 'infected'];
+const FLAG_RETURN = 20;
 const HILLS: Point[] = [
   { x: 0, z: -12 },
   { x: 12, z: 0 },
@@ -169,6 +187,7 @@ export class Match {
   /** Hardpoint: which team holds it right now (-1 none, -2 contested). */
   hillHolder = -1;
   flags: Flag[] = [];
+  ctf: CtfFlag[] = [];
   /** The enemy shows on the minimap until this time (UAV killstreak). */
   uavUntil = -1;
   readonly notices: MatchNotice[] = [];
@@ -194,7 +213,7 @@ export class Match {
     const layout: ArenaLayout =
       mode === 'br'
         ? randomLayout(seed, BR_HALF)
-        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'infected'
+        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'ctf' || mode === 'infected'
           ? randomLayout(seed, 42)
           : FFA_MODES.includes(mode)
             ? randomLayout(seed, 36)
@@ -275,6 +294,10 @@ export class Match {
         this.setupFlags();
         this.announce('Capture the flags');
         break;
+      case 'ctf':
+        this.setupCtf();
+        this.announce('Capture the enemy flag');
+        break;
       case 'infected': {
         const bots = sim.agents.filter((a) => a !== this.player);
         this.infect(bots[sim.rng.int(bots.length)]);
@@ -331,6 +354,9 @@ export class Match {
       case 'dom':
         this.rulesDom();
         break;
+      case 'ctf':
+        this.rulesCtf();
+        break;
       case 'koth':
         this.rulesKoth();
         break;
@@ -353,6 +379,15 @@ export class Match {
   private onKill(victim: Agent, killer: Agent | null, cause: DeathCause): void {
     const sim = this.sim;
     if (this.mode === 'kc') sim.spawnPickup('tag', victim.x, victim.z, victim.team, 30);
+    // A carrier who dies drops the flag where they fell.
+    for (const f of this.ctf) {
+      if (f.carrier !== victim.id) continue;
+      f.carrier = -1;
+      f.x = victim.x;
+      f.z = victim.z;
+      f.droppedAt = sim.time;
+      this.notices.push({ kind: 'ctf', event: 'dropped', team: f.team, byPlayer: killer === this.player });
+    }
     if (this.mode === 'infected' && victim.team === 0) {
       this.notices.push({ kind: 'infected', byPlayer: killer === this.player, player: victim === this.player });
       this.infect(victim);
@@ -552,6 +587,90 @@ export class Match {
       for (const f of this.flags) if (f.owner >= 0) this.scores[f.owner as 0 | 1]++;
     }
     const target = TARGETS.dom!;
+    if (this.scores[0] >= target || this.scores[1] >= target) {
+      this.finish(this.scores[0] >= target);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  // ---------------------------------------------------------------- capture the flag
+
+  private setupCtf(): void {
+    const sim = this.sim;
+    const H = sim.arena.half;
+    for (const team of [0, 1]) {
+      const bx = (team === 0 ? -1 : 1) * (H - 9);
+      const p = sim.arena.randomFreePoint(() => sim.rng.next(), bx, 0, 4) ?? { x: bx, z: 0 };
+      this.ctf.push({ team, homeX: p.x, homeZ: p.z, x: p.x, z: p.z, carrier: -1, home: true, droppedAt: 0 });
+    }
+    this.syncCtfObjectives();
+    // Roles: carriers run home, a third chase their own stolen flag, some defend, the rest attack or escort.
+    sim.rallyFor = (a) => {
+      const own = this.ctf[a.team];
+      const enemy = this.ctf[1 - a.team];
+      if (enemy.carrier === a.id) return { x: own.homeX, z: own.homeZ, r: 1.5, urgent: true };
+      const toOwn = Math.hypot(own.x - a.x, own.z - a.z);
+      if (!own.home && (a.id % 3 === 0 || toOwn < 25)) return { x: own.x, z: own.z, r: 1 };
+      if (a.id % 5 === 1) return { x: own.homeX, z: own.homeZ, r: 6 };
+      if (enemy.carrier >= 0) {
+        const c = sim.agents[enemy.carrier];
+        return { x: c.x, z: c.z, r: 5 };
+      }
+      return { x: enemy.x, z: enemy.z, r: 1 };
+    };
+  }
+
+  private syncCtfObjectives(): void {
+    this.sim.objectives = this.ctf.map((f) => ({ label: 'FLAG', x: f.x, z: f.z, r: 1.6, owner: f.team, progress: 0, carried: f.carrier >= 0 }));
+  }
+
+  private returnFlag(f: CtfFlag): void {
+    f.carrier = -1;
+    f.home = true;
+    f.x = f.homeX;
+    f.z = f.homeZ;
+  }
+
+  private rulesCtf(): void {
+    const sim = this.sim;
+    for (const f of this.ctf) {
+      if (f.carrier >= 0) {
+        const c = sim.agents[f.carrier];
+        f.x = c.x;
+        f.z = c.z;
+        // Capture: carrier reaches their own base while their own flag is home.
+        const own = this.ctf[c.team];
+        if (own.home && Math.hypot(c.x - own.homeX, c.z - own.homeZ) < 2.5) {
+          this.scores[c.team as 0 | 1]++;
+          this.returnFlag(f);
+          this.notices.push({ kind: 'ctf', event: 'captured', team: c.team, byPlayer: c === this.player });
+          this.announce(c.team === this.player.team ? 'Flag captured!' : 'Enemy captured our flag', 2);
+        }
+        continue;
+      }
+      for (const a of sim.agents) {
+        if (!a.alive || Math.hypot(a.x - f.x, a.z - f.z) > 1.5) continue;
+        if (a.team !== f.team) {
+          f.carrier = a.id;
+          f.home = false;
+          this.notices.push({ kind: 'ctf', event: 'taken', team: f.team, byPlayer: a === this.player });
+          this.announce(f.team === this.player.team ? 'Our flag has been taken!' : 'Enemy flag taken', 1.8);
+          break;
+        }
+        if (!f.home) {
+          this.returnFlag(f);
+          this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, byPlayer: a === this.player });
+          break;
+        }
+      }
+      if (!f.home && f.carrier < 0 && sim.time - f.droppedAt > FLAG_RETURN) {
+        this.returnFlag(f);
+        this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, byPlayer: false });
+      }
+    }
+    this.syncCtfObjectives();
+    const target = TARGETS.ctf!;
     if (this.scores[0] >= target || this.scores[1] >= target) {
       this.finish(this.scores[0] >= target);
       return;

@@ -996,3 +996,35 @@ input[type='range'] {
   font-size: 20px;
   margin: 0 0 6px;
 }
+
+/* ---------- capture the flag ---------- */
+.ctf {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ctf-flag {
+  background: var(--panel);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+.ctf-flag.us {
+  border-color: #4ccf6a;
+}
+.ctf-flag.them {
+  border-color: #e0453a;
+}
+.ctf-flag.taken,
+.ctf-flag.dropped {
+  color: var(--accent);
+}
+.carrying {
+  background: var(--accent);
+  color: #1a1a10;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 6px;
+  animation: fadein 0.3s;
+}

@@ -41,8 +41,8 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
       )}
       {hud.alive && hud.aiming && !hud.scoped && <div className="dot" />}
       {markerAge < 0.25 && <div key={hud.hitMarkerAt} className={`hitmarker ${hud.hitMarkerKind}`} />}
-      {hud.damage.map((d) => (
-        <div key={d.at} className="dmg" style={{ transform: `translate(-50%, -50%) rotate(${-d.angle}rad)`, opacity: 1 - (hud.time - d.at) / 1.2 }}>
+      {hud.damage.map((d, i) => (
+        <div key={`${d.at}-${i}`} className="dmg" style={{ transform: `translate(-50%, -50%) rotate(${-d.angle}rad)`, opacity: 1 - (hud.time - d.at) / 1.2 }}>
           <i />
         </div>
       ))}
@@ -68,13 +68,24 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
         {hud.flags.length > 0 && (
           <div className="flags">
             {hud.flags.map((f) => (
-              <div key={f.label} className={`flag ${f.owner} ${f.onIt ? 'on' : ''}`}>
+              <div
+                key={f.label}
+                className={`flag ${f.owner} ${f.onIt ? 'on' : ''}`}
+                style={f.owner === 'none' ? undefined : { background: `${f.owner === 'us' ? mine : theirs}99`, borderColor: f.owner === 'us' ? mine : theirs }}
+              >
                 <span>{f.label}</span>
                 {f.onIt && f.owner !== 'us' && <i style={{ width: `${Math.max(0, f.progress) * 100}%` }} />}
               </div>
             ))}
           </div>
         )}
+        {hud.ctf && (
+          <div className="ctf">
+            <span className={`ctf-flag us ${hud.ctf.ours}`} style={{ borderColor: mine }}>Your flag: {hud.ctf.ours === 'home' ? 'safe' : hud.ctf.ours}</span>
+            <span className={`ctf-flag them ${hud.ctf.theirs}`} style={{ borderColor: theirs }}>Enemy flag: {hud.ctf.theirs === 'home' ? 'at base' : hud.ctf.theirs}</span>
+          </div>
+        )}
+        {hud.ctf?.carrying && <div className="carrying">You have the flag — return to base!</div>}
         {hud.gunTier && (
           <div className="gun-tier">
             {Array.from({ length: hud.gunTier.total }, (_, i) => (

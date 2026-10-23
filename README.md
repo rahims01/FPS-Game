@@ -24,6 +24,7 @@ npm run build      # type-check + production build
 | Team | Team Deathmatch | 5v5 with respawns on a random map. First team to 40 kills. |
 | Team | Kill Confirmed | 5v5. A kill only counts when someone grabs the dropped dog tag. Grabbing your own team's tag denies it. First to 30. |
 | Team | 1v1 Duel / 2v2 / 3v3 Gunfight | No respawns within a round. First to 5 rounds. Sides swap every round. |
+| Objective | Capture the Flag | 5v5. Grab the enemy flag and bring it to your base while your own flag is home. Dropped flags can be returned by touching them, or auto-return after 20 s. First to 3 captures. |
 | Objective | Domination | 6v6. Capture flags A, B and C. Each held flag scores 1 point per second. First to 150. |
 | Objective | Hardpoint | 4v4. Only a team holding the hill alone scores. The hill moves every 45 s. First to 60. |
 | Objective | Infected | One random player starts infected, with a knife and extra speed. Anyone they kill joins them. Survivors win if anyone lasts 3 minutes. |

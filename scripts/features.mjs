@@ -13,7 +13,7 @@ try {
 const mode = process.argv[2] ?? 'dom';
 const out = process.argv[3] ?? 'screenshots';
 fs.mkdirSync(out, { recursive: true });
-const names = { tdm: 'Team Deathmatch', kc: 'Kill Confirmed', dom: 'Domination', infected: 'Infected', gungame: 'Gun Game', snipers: 'Snipers Only', ffa: 'Free-for-all' };
+const names = { tdm: 'Team Deathmatch', kc: 'Kill Confirmed', dom: 'Domination', ctf: 'Capture the Flag', infected: 'Infected', gungame: 'Gun Game', snipers: 'Snipers Only', ffa: 'Free-for-all' };
 const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9334', defaultViewport: null });
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 760 });
