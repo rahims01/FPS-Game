@@ -99,8 +99,8 @@ const SPAWN_PROTECTION = 1.5;
 const SLIDE_TIME = 0.7;
 const SLIDE_SPEED = 9.5;
 
-/** normal: per-region damage. headshot: only head hits count. instagib: any hit kills. */
-export type DamageRule = 'normal' | 'headshot' | 'instagib';
+/** normal: per-region damage. headshot: only head hits count. instagib: any hit kills. none: weapons do no damage (hot potato). */
+export type DamageRule = 'normal' | 'headshot' | 'instagib' | 'none';
 
 /** Chooses an action index for a bot. Called at 10 Hz. */
 export type Brain = (agent: Agent, sim: FpsSim) => number;
@@ -166,6 +166,15 @@ export class FpsSim {
   onPickup: ((a: Agent, p: Pickup) => void) | null = null;
   /** Whether bots go for dog tags. */
   botsWantTags = false;
+  /** Party-mode physics and rules. */
+  gravity: number = SIM.gravity;
+  jumpMul = 1;
+  /** Head hitbox scale (Big Heads). */
+  headScale = 1;
+  /** One in the Chamber: no reloading; ammo only comes from kills. */
+  noReload = false;
+  /** Called when a knife connects; return true to cancel the damage (hot potato passes the bomb instead). */
+  onMeleeHit: ((attacker: Agent, target: Agent) => boolean) | null = null;
   /** Online host: latest inputs of remote (human) players, by agent id. */
   readonly remoteInputs = new Map<number, PlayerInput>();
   /**
@@ -340,6 +349,10 @@ export class FpsSim {
   // ---------------------------------------------------------------- player
 
   private drivePlayer(a: Agent, input: PlayerInput, dt: number): void {
+    if (this.time < a.frozenUntil) {
+      // Frozen (a blindfolded seeker): look around, but no moving or shooting.
+      input = { ...NO_INPUT, yaw: input.yaw, pitch: input.pitch };
+    }
     a.yaw = input.yaw;
     a.pitch = clamp(input.pitch, -1.45, 1.45);
     const w = weaponOf(a);
@@ -375,7 +388,7 @@ export class FpsSim {
       this.accelerate(a, mx * speed, mz * speed, dt);
     }
     if (input.jump && a.onGround && a.slideT <= 0) {
-      a.vy = SOLDIER.jumpSpeed;
+      a.vy = SOLDIER.jumpSpeed * this.jumpMul;
       a.onGround = false;
       a.crouching = false;
     }
@@ -420,7 +433,7 @@ export class FpsSim {
     a.z = p.z;
     const ground = this.arena.groundHeight(a.x, a.z, SOLDIER.radius, a.y);
     if (!a.onGround || a.y > ground + 0.01) {
-      a.vy -= SIM.gravity * dt;
+      a.vy -= this.gravity * dt;
       a.y += a.vy * dt;
       if (a.y <= ground) {
         a.y = ground;
@@ -478,12 +491,12 @@ export class FpsSim {
         a.ammo = w.magazine;
       }
     }
-    if (a.ammo === 0 && a.reloadT <= 0 && w.magazine > 0) this.startReload(a);
+    if (a.ammo === 0 && a.reloadT <= 0 && w.magazine > 0 && !this.noReload) this.startReload(a);
   }
 
   startReload(a: Agent): void {
     const w = weaponOf(a);
-    if (a.reloadT > 0 || a.ammo >= w.magazine || a.switchT > 0) return;
+    if (this.noReload || a.reloadT > 0 || a.ammo >= w.magazine || a.switchT > 0) return;
     a.reloadT = w.reload;
     a.aiming = false;
     this.emit({ type: 'reload', agent: a.id });
@@ -537,7 +550,7 @@ export class FpsSim {
       let region: HitRegion = 'torso';
       for (const b of this.agents) {
         if (!b.alive || b === a || b.team === a.team) continue;
-        const hit = rayHitAgent(ox, oy, oz, dx, dy, dz, b);
+        const hit = rayHitAgent(ox, oy, oz, dx, dy, dz, b, this.headScale);
         if (hit && hit.t < bestT) {
           bestT = hit.t;
           victim = b;
@@ -565,7 +578,15 @@ export class FpsSim {
       if (victim) {
         hitAny = true;
         const raw =
-          this.damageRule === 'instagib' ? 999 : this.damageRule === 'headshot' ? (region === 'head' ? 100 : 0) : w.damage[region] * falloff(w, bestT);
+          this.damageRule === 'none'
+            ? 0
+            : this.damageRule === 'instagib'
+              ? 999
+              : this.damageRule === 'headshot'
+                ? region === 'head'
+                  ? 100
+                  : 0
+                : w.damage[region] * falloff(w, bestT);
         if (raw > 0) this.damage(victim, a, raw, region, dx, dy, dz, w.id);
       }
     }
@@ -608,8 +629,9 @@ export class FpsSim {
     }
     this.emit({ type: 'melee', agent: a.id, hit: best ? best.id : -1 });
     if (best) {
-      const raw = this.damageRule === 'headshot' ? 100 : MELEE_DAMAGE;
-      this.damage(best, a, raw, 'torso', fx, 0.1, fz, 'knife');
+      if (this.onMeleeHit?.(a, best)) return;
+      const raw = this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' ? 100 : MELEE_DAMAGE;
+      if (raw > 0) this.damage(best, a, raw, 'torso', fx, 0.1, fz, 'knife');
     }
   }
 
@@ -639,7 +661,7 @@ export class FpsSim {
       const sub = 2;
       const h = dt / sub;
       for (let s = 0; s < sub; s++) {
-        g.vy -= SIM.gravity * h;
+        g.vy -= this.gravity * h;
         const px = g.x;
         const py = g.y;
         const pz = g.z;
@@ -706,7 +728,7 @@ export class FpsSim {
     }
   }
 
-  private explode(x: number, y: number, z: number, ownerId: number, kind: 'grenade' | 'airstrike'): void {
+  explode(x: number, y: number, z: number, ownerId: number, kind: 'grenade' | 'airstrike'): void {
     const owner = this.agents[ownerId] ?? null;
     const R = kind === 'grenade' ? GRENADE_RADIUS : AIRSTRIKE_RADIUS;
     const max = kind === 'grenade' ? GRENADE_DAMAGE : AIRSTRIKE_DAMAGE;
@@ -938,7 +960,7 @@ export class FpsSim {
     let faceMove = false;
     // Overrides that sit outside the learned action space: knife rushes, getting
     // back inside the zone, objectives, medkits and dog tags.
-    const knife = w.slot === 'melee';
+    const knife = w.slot === 'melee' || (this.noReload && a.ammo === 0);
     const zoneGoal = !a.seesTarget && this.zone && this.outsideZone(a, 3) ? this.zone : null;
     const tag = !zoneGoal && !a.seesTarget && this.botsWantTags ? this.nearestPickup(a, 'tag', 20) : null;
     const medkit = !zoneGoal && !tag && !a.seesTarget && a.hp < 70 ? this.nearestPickup(a, 'medkit', 22) : null;
@@ -1031,7 +1053,7 @@ export class FpsSim {
     a.sprinting = !crouch && speed >= SOLDIER.sprintSpeed * 0.85 && (mx !== 0 || mz !== 0);
     // Rushers hop while strafing in a fight.
     if (style === 'rusher' && a.seesTarget && a.onGround && (name === 'strafe_left' || name === 'strafe_right') && this.rng.next() < 0.012) {
-      a.vy = SOLDIER.jumpSpeed;
+      a.vy = SOLDIER.jumpSpeed * this.jumpMul;
       a.onGround = false;
     }
     this.accelerate(a, mx * speed, mz * speed, dt);
@@ -1052,7 +1074,7 @@ export class FpsSim {
       if (d > 8 && d < 26) {
         // Flat-ground ballistic speed for a 35 degree throw.
         const th = 0.61;
-        const v = Math.sqrt((d * SIM.gravity) / Math.sin(2 * th));
+        const v = Math.sqrt((d * this.gravity) / Math.sin(2 * th));
         this.throwGrenade(a, toYaw, th, Math.min(22, v * 0.92));
       }
     }
@@ -1113,7 +1135,8 @@ export const rayHitAgent = (
   dx: number,
   dy: number,
   dz: number,
-  b: Agent
+  b: Agent,
+  headScale = 1
 ): { t: number; region: HitRegion } | null => {
   const k = crouchScale(b);
   let best = Infinity;
@@ -1121,12 +1144,12 @@ export const rayHitAgent = (
   // Head sphere.
   {
     const cx = b.x - ox;
-    const cy = b.y + HITBOX.headY * k - oy;
+    const cy = b.y + (HITBOX.headY + HITBOX.headR * (headScale - 1) * 0.6) * k - oy;
     const cz = b.z - oz;
     const tc = cx * dx + cy * dy + cz * dz;
     if (tc > 0) {
       const d2 = cx * cx + cy * cy + cz * cz - tc * tc;
-      const r2 = HITBOX.headR * HITBOX.headR;
+      const r2 = (HITBOX.headR * headScale) ** 2;
       if (d2 < r2) {
         const t = tc - Math.sqrt(r2 - d2);
         if (t < best) {

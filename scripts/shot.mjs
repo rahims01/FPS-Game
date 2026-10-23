@@ -29,7 +29,7 @@ await page.waitForFunction(() => [...document.querySelectorAll('button.play')].s
 await page.screenshot({ path: `${out}/${mode}-0-menu.png` });
 
 const names = { '1v1': '1v1 Duel', '2v2': '2v2', '3v3': '3v3', tdm: 'Team Deathmatch', koth: 'King of the Hill', ffa: 'Free-for-all', headshot: 'Headhunters', instagib: 'One Shot', survival: 'Survival', br: 'Battle Royale' };
-await page.evaluate((name) => [...document.querySelectorAll('button.mode')].find((b) => b.querySelector('strong').textContent === name).click(), names[mode]);
+await page.evaluate((name) => [...document.querySelectorAll('button.mode')].find((b) => b.querySelector('strong').textContent.startsWith(name)).click(), names[mode]);
 await page.evaluate(() => document.querySelector('button.play').click());
 await new Promise((r) => setTimeout(r, 600));
 await page.screenshot({ path: `${out}/${mode}-0b-finding.png` });

@@ -31,6 +31,13 @@ npm run build      # type-check + production build
 | FFA | Free-for-all | 8 players on a random map, with a live kill leaderboard. First to 20. |
 | FFA | Gun Game | Two kills per gun up the ladder: pistol, SMG, shotgun, rifle, LMG, sniper, knife. A knife kill wins. Getting knifed drops you a tier. |
 | FFA | Snipers Only / Headhunters / One Shot | Bolt-action only (first to 15) / only headshots count (first to 15) / any hit kills (first to 25). |
+| Party | Juggernaut | One armoured Juggernaut with an LMG against everyone; whoever kills it becomes the Juggernaut. One point per second as the Juggernaut, first to 100. |
+| Party | One in the Chamber | A pistol with one bullet and a knife. Every hit kills, every kill earns a bullet, no reloads. Three lives, last one standing wins. |
+| Party | Sharpshooter | Everyone gets the same random gun, which changes every 30 s. First to 20. |
+| Party | Knife Fight / Low Gravity / Big Heads | Knives only / moon jumps / giant heads with giant headshot hitboxes. |
+| Online only | Friends Free-for-all / Friends Team Deathmatch | Humans only, no computer players. |
+| Online only | Hide & Seek | Seekers are blindfolded for 20 s while the hiders (knife only) hide. Found hiders become seekers. Hiders win if anyone lasts 3 minutes. Needs 3 players. |
+| Online only | Hot Potato | One player holds a ticking bomb and passes it with a knife hit. Whoever holds it when it blows is out. Needs 3 players. |
 | Special | Battle Royale | 24 players on a random 250 × 250 m map. One life, medkits, and a zone that shrinks in 6 phases. |
 | Special | Survival | Endless waves. Later waves bring better guns. One life. |
 
@@ -64,7 +71,14 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 
 - **Per-gun recoil patterns:** sustained fire climbs and drifts in a fixed, learnable pattern for each weapon (the rifle drifts right then left, the SMG zig-zags, the LMG starts slow then climbs hard). Pull against it. The pattern resets when you stop firing.
 - **Ragdoll push:** bodies are carried along the shot and twisted at the hit point. Shotguns and snipers push harder, and explosions launch bodies, all within a speed cap.
-- **Killcam (1v1 only):** after you die, a replay of the last few seconds from your killer's eyes, with their gun, their shots and your body falling. Press Space or click to skip.
+- **Killcam (every mode):** after you die to another player, a replay of the last few seconds from your killer's eyes, with their gun, their shots, everyone near them and your body falling. Press Space or click to skip.
+
+## Settings
+
+- **Graphics:** quality presets (Low, Medium, High, Ultra), with the first visit picking one to suit the device. Individual options: render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing. Low and Medium make a big difference on older laptops and integrated graphics.
+- **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
+- **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
+- **HUD:** optional FPS counter and online ping.
 
 ## How the bots work
 

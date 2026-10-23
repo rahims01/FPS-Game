@@ -4,7 +4,9 @@ import { SIM } from './config';
 import { FpsSim, type DamageRule, type PlayerInput } from './FpsSim';
 import { classicLayout, randomLayout } from './layouts';
 import { yawTo } from './math';
-import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, type WeaponId } from './weapons';
+import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, WEAPONS, type WeaponId } from './weapons';
+
+const WEAPONS_NAME = (w: WeaponId) => WEAPONS[w].name;
 
 export type ModeId =
   | '1v1'
@@ -22,7 +24,17 @@ export type ModeId =
   | 'instagib'
   | 'snipers'
   | 'survival'
-  | 'br';
+  | 'br'
+  | 'jugg'
+  | 'oitc'
+  | 'sharp'
+  | 'knife'
+  | 'lowgrav'
+  | 'bighead'
+  | 'friends_ffa'
+  | 'friends_tdm'
+  | 'hideseek'
+  | 'potato';
 
 export interface ModeDef {
   id: ModeId;
@@ -33,7 +45,11 @@ export interface ModeDef {
   /** Two fixed teams (everyone wears their team's colour). */
   teams: boolean;
   /** Menu grouping. */
-  group: 'Team' | 'Objective' | 'Free-for-all' | 'Special';
+  group: 'Team' | 'Objective' | 'Free-for-all' | 'Party' | 'Special' | 'Online only';
+  /** Humans only: no computer players, so it needs friends online. */
+  humansOnly?: boolean;
+  /** Fewest humans needed to start (online-only modes). */
+  minPlayers?: number;
 }
 
 export const MODES: ModeDef[] = [
@@ -51,6 +67,16 @@ export const MODES: ModeDef[] = [
   { id: 'snipers', name: 'Snipers Only', blurb: 'Free-for-all with bolt-action snipers. First to 15.', players: 8, teams: false, group: 'Free-for-all' },
   { id: 'headshot', name: 'Headhunters', blurb: 'Free-for-all where only headshots do damage. First to 15.', players: 8, teams: false, group: 'Free-for-all' },
   { id: 'instagib', name: 'One Shot', blurb: 'Free-for-all where any hit kills. First to 25.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'jugg', name: 'Juggernaut', blurb: 'One armoured Juggernaut with an LMG against everyone. Kill them to become them. Score a point per second as the Juggernaut; first to 100.', players: 8, teams: false, group: 'Party' },
+  { id: 'oitc', name: 'One in the Chamber', blurb: 'A pistol with one bullet and a knife. Every hit kills, every kill earns a bullet. Three lives; last one standing wins.', players: 8, teams: false, group: 'Party' },
+  { id: 'sharp', name: 'Sharpshooter', blurb: 'Everyone gets the same random gun, and it changes every 30 seconds. First to 20.', players: 8, teams: false, group: 'Party' },
+  { id: 'knife', name: 'Knife Fight', blurb: 'Knives only. First to 15.', players: 8, teams: false, group: 'Party' },
+  { id: 'lowgrav', name: 'Low Gravity', blurb: 'Free-for-all with moon jumps. First to 20.', players: 8, teams: false, group: 'Party' },
+  { id: 'bighead', name: 'Big Heads', blurb: 'Huge heads, huge headshot hitboxes. First to 20.', players: 8, teams: false, group: 'Party' },
+  { id: 'friends_ffa', name: 'Friends Free-for-all', blurb: 'Just you and your friends, no computer players. First to 25.', players: 2, teams: false, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'friends_tdm', name: 'Friends Team Deathmatch', blurb: 'Friends split into two teams, no computer players. First team to 30.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'hideseek', name: 'Hide & Seek', blurb: 'Seekers are blindfolded for 20 s while everyone hides. Found hiders join the seekers. Hiders win if anyone lasts 3 minutes.', players: 3, teams: true, group: 'Online only', humansOnly: true, minPlayers: 3 },
+  { id: 'potato', name: 'Hot Potato', blurb: 'One player holds a ticking bomb and passes it on with a knife hit. Holding it when it blows = out. Last one standing wins.', players: 3, teams: false, group: 'Online only', humansOnly: true, minPlayers: 3 },
   { id: 'br', name: 'Battle Royale', blurb: 'Huge random 250 m map, 24 players, one life. Grab medkits and stay inside the shrinking zone.', players: 24, teams: false, group: 'Special' },
   { id: 'survival', name: 'Survival', blurb: 'Hold out against endless waves. One life, health refills between waves.', players: 1, teams: true, group: 'Special' }
 ];
@@ -72,6 +98,8 @@ export interface MatchOptions {
   botControl: Control;
   /** The player's primary weapon. */
   primary?: WeaponId;
+  /** Humans in an online lobby (host included); humans-only modes spawn exactly this many players. */
+  humans?: number;
   seed?: number;
 }
 
@@ -85,6 +113,9 @@ export type MatchNotice =
   | { kind: 'promote'; weapon: WeaponId; agent: number }
   | { kind: 'demote'; weapon: WeaponId; agent: number }
   | { kind: 'infected'; by: number; victim: number }
+  | { kind: 'jugg'; agent: number }
+  | { kind: 'sharp'; weapon: WeaponId }
+  | { kind: 'potato'; holder: number; from: number }
   | { kind: 'ctf'; event: 'taken' | 'captured' | 'returned' | 'dropped'; team: number; by: number };
 
 /** Capture the flag: one flag per team. */
@@ -133,10 +164,42 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   ffa: 20,
   headshot: 15,
   instagib: 25,
-  snipers: 15
+  snipers: 15,
+  sharp: 20,
+  knife: 15,
+  lowgrav: 20,
+  bighead: 20,
+  friends_ffa: 25,
+  friends_tdm: 30,
+  jugg: 100
 };
-const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame'];
-const RESPAWN_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'tdm', 'kc', 'dom', 'ctf', 'koth', 'infected'];
+const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'jugg', 'oitc', 'sharp', 'knife', 'lowgrav', 'bighead', 'friends_ffa', 'potato'];
+const RESPAWN_MODES: ModeId[] = [
+  'ffa',
+  'headshot',
+  'instagib',
+  'snipers',
+  'gungame',
+  'tdm',
+  'kc',
+  'dom',
+  'ctf',
+  'koth',
+  'infected',
+  'jugg',
+  'oitc',
+  'sharp',
+  'knife',
+  'lowgrav',
+  'bighead',
+  'friends_ffa',
+  'friends_tdm',
+  'hideseek'
+];
+const SHARP_POOL: WeaponId[] = ['rifle', 'smg', 'shotgun', 'sniper', 'lmg', 'pistol'];
+const OITC_LIVES = 3;
+const HIDE_TIME = 20;
+const SEEK_TIME = 180;
 const FLAG_RETURN = 20;
 const HILLS: Point[] = [
   { x: 0, z: -12 },
@@ -198,6 +261,19 @@ export class Match {
   hillHolder = -1;
   flags: Flag[] = [];
   ctf: CtfFlag[] = [];
+  /** Party modes. */
+  party = {
+    juggId: -1,
+    /** Juggernaut seconds, by agent id. */
+    points: {} as Record<number, number>,
+    sharpWeapon: 'rifle' as WeaponId,
+    sharpNext: 0,
+    holder: -1,
+    explodeAt: 0,
+    passCd: 0,
+    nextBomb: 3,
+    hideRelease: -1
+  };
   /** UAV killstreak: enemies show on that player's minimap until this time, by agent id. */
   uavUntil: Record<number, number> = {};
   /** Team that won (or the winner's team in free-for-all), -1 if none. */
@@ -228,13 +304,13 @@ export class Match {
     const layout: ArenaLayout =
       mode === 'br'
         ? randomLayout(seed, BR_HALF)
-        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'ctf' || mode === 'infected'
+        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'ctf' || mode === 'infected' || mode === 'hideseek' || mode === 'friends_tdm'
           ? randomLayout(seed, 42)
           : FFA_MODES.includes(mode)
             ? randomLayout(seed, 36)
             : classicLayout();
     const diff = DIFFICULTY[opts.difficulty];
-    const damageRule: DamageRule = mode === 'headshot' ? 'headshot' : mode === 'instagib' ? 'instagib' : 'normal';
+    const damageRule: DamageRule = mode === 'headshot' ? 'headshot' : mode === 'instagib' || mode === 'oitc' ? 'instagib' : mode === 'potato' ? 'none' : 'normal';
     this.sim = new FpsSim({
       seed,
       layout,
@@ -253,18 +329,20 @@ export class Match {
       return a;
     };
 
-    if (mode === 'infected') {
-      // Everyone starts as a survivor, spread out; one player is infected below.
+    const lobby = this.def.humansOnly ? Math.max(1, opts.humans ?? 1) : this.def.players;
+    if (mode === 'infected' || mode === 'hideseek') {
+      // Everyone starts on the same side, spread out; the first infected / seekers are picked later.
       const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
-      for (let i = 1; i < this.def.players; i++) other(0, spawns[i % spawns.length]);
+      for (let i = 1; i < lobby; i++) other(0, spawns[i % spawns.length]);
     } else if (this.def.teams && mode !== 'survival') {
-      const n = this.def.players / 2;
+      const n0 = this.def.humansOnly ? Math.ceil(lobby / 2) : this.def.players / 2;
+      const n1 = this.def.humansOnly ? Math.floor(lobby / 2) : this.def.players / 2;
       const [s0, s1] = sim.arena.teamSpawns;
       const at = (s: Point[], i: number) => (i < s.length ? s[i] : { x: s[i % s.length].x + 1.2 * Math.floor(i / s.length), z: s[i % s.length].z });
       this.player = sim.spawn(0, 'player', s0[0].x, s0[0].z, yawTo(s0[0].x, s0[0].z, 0, 0));
-      for (let i = 1; i < n; i++) other(0, at(s0, i));
-      for (let i = 0; i < n; i++) other(1, at(s1, i));
+      for (let i = 1; i < n0; i++) other(0, at(s0, i));
+      for (let i = 0; i < n1; i++) other(1, at(s1, i));
     } else if (mode === 'survival') {
       const p = sim.arena.teamSpawns[0][0];
       this.player = sim.spawn(0, 'player', 0, -7, yawTo(p.x, p.z, 0, 0));
@@ -272,7 +350,7 @@ export class Match {
       // Free-for-all styles and battle royale: everyone on their own team.
       const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
-      const count = mode === 'br' ? BR_PLAYERS : this.def.players;
+      const count = mode === 'br' ? BR_PLAYERS : lobby;
       for (let i = 1; i < count; i++) {
         const p = spawns[i % spawns.length];
         other(i, { x: p.x + (i >= spawns.length ? 2 : 0), z: p.z });
@@ -283,6 +361,14 @@ export class Match {
     for (const a of sim.agents) {
       if (mode === 'gungame') setLoadout(a, [GUN_GAME_LADDER[0]]);
       else if (mode === 'snipers') setLoadout(a, ['sniper', 'pistol']);
+      else if (mode === 'knife' || mode === 'potato' || mode === 'hideseek') {
+        setLoadout(a, ['knife']);
+        a.grenades = 0;
+      } else if (mode === 'oitc') {
+        setLoadout(a, ['pistol']);
+        a.ammo = 1;
+        a.grenades = 0;
+      }
       else if (a === this.player) setLoadout(a, [opts.primary ?? 'rifle', 'pistol']);
       else {
         const kit = STYLE_KIT[a.style];
@@ -337,6 +423,46 @@ export class Match {
       }
       case 'gungame':
         this.announce('Climb the gun ladder');
+        break;
+      case 'jugg': {
+        const others = sim.agents.filter((a) => a !== this.player);
+        this.makeJugg(others.length ? others[sim.rng.int(others.length)] : this.player);
+        this.announce('Kill the Juggernaut to become the Juggernaut');
+        break;
+      }
+      case 'oitc':
+        sim.noReload = true;
+        this.announce('One bullet. Make it count.');
+        break;
+      case 'sharp':
+        this.announce('Sharpshooter');
+        break;
+      case 'knife':
+        this.announce('Knives out');
+        break;
+      case 'lowgrav':
+        sim.gravity = 6.5;
+        sim.jumpMul = 1.45;
+        this.announce('Low gravity');
+        break;
+      case 'bighead':
+        sim.headScale = 2.3;
+        this.announce('Big heads!');
+        break;
+      case 'hideseek':
+        this.announce(`Hide! Seekers are picked in a moment`);
+        break;
+      case 'potato':
+        sim.onMeleeHit = (a, b) => {
+          if (a.id === this.party.holder && sim.time > this.party.passCd) {
+            this.party.holder = b.id;
+            this.party.passCd = sim.time + 1;
+            this.notices.push({ kind: 'potato', holder: b.id, from: a.id });
+          }
+          // Knives never hurt in hot potato; they only pass the bomb.
+          return true;
+        };
+        this.announce('Hot potato! Don\'t be holding the bomb');
         break;
       default:
         if (FFA_MODES.includes(mode)) this.announce(`First to ${TARGETS[mode]} kills`);
@@ -401,9 +527,191 @@ export class Match {
       case 'br':
         this.rulesBr();
         break;
+      case 'jugg':
+        this.rulesJugg();
+        break;
+      case 'oitc':
+        this.rulesOitc();
+        break;
+      case 'sharp':
+        this.rulesSharp();
+        break;
+      case 'friends_tdm':
+        this.rulesTdm();
+        break;
+      case 'hideseek':
+        this.rulesHideSeek();
+        break;
+      case 'potato':
+        this.rulesPotato();
+        break;
       default:
         this.rulesFfa();
     }
+  }
+
+  // ---------------------------------------------------------------- party modes
+
+  private makeJugg(a: Agent): void {
+    const prev = this.sim.agents[this.party.juggId];
+    if (prev && prev !== a) prev.armor = 1;
+    this.party.juggId = a.id;
+    a.armor = 0.4;
+    a.hp = 100;
+    setLoadout(a, ['lmg', 'pistol']);
+    this.notices.push({ kind: 'jugg', agent: a.id });
+  }
+
+  private rulesJugg(): void {
+    const sim = this.sim;
+    const j = sim.agents[this.party.juggId];
+    if (j && j.alive) {
+      // Everyone knows where the Juggernaut is and goes after it.
+      for (const a of sim.agents) {
+        if (a === j || !a.alive || isHuman(a) || a.seesTarget) continue;
+        a.targetId = j.id;
+        a.lastSeenX = j.x;
+        a.lastSeenZ = j.z;
+        a.lastSeenT = sim.time;
+      }
+      const pts = (this.party.points[j.id] = (this.party.points[j.id] ?? 0) + SIM.dt * 6);
+      if (pts >= TARGETS.jugg!) {
+        this.finish(j === this.player, 0, j.team);
+        return;
+      }
+    } else if (!j || (!j.alive && sim.time - j.deathT > 0.5)) {
+      // The Juggernaut died to something other than a player: hand the armour to someone at random.
+      const alive = sim.agents.filter((a) => a.alive);
+      if (alive.length) this.makeJugg(alive[sim.rng.int(alive.length)]);
+    }
+    this.autoRespawn();
+  }
+
+  /** One in the Chamber: out of lives = out of the match. */
+  private eliminated(a: Agent): boolean {
+    return (this.mode === 'oitc' && a.deaths >= OITC_LIVES) || this.mode === 'potato';
+  }
+
+  private rulesOitc(): void {
+    const sim = this.sim;
+    const left = sim.agents.filter((a) => a.deaths < OITC_LIVES);
+    if (left.length <= 1) {
+      const w = left[0];
+      this.finish(w === this.player, 0, w ? w.team : -1);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  private rulesSharp(): void {
+    const sim = this.sim;
+    if (sim.time >= this.party.sharpNext) {
+      this.party.sharpNext = sim.time + 30;
+      const choices = SHARP_POOL.filter((w) => w !== this.party.sharpWeapon);
+      const w = choices[sim.rng.int(choices.length)];
+      this.party.sharpWeapon = w;
+      for (const a of sim.agents) setLoadout(a, [w]);
+      this.notices.push({ kind: 'sharp', weapon: w });
+    }
+    this.rulesFfa();
+  }
+
+  private rulesHideSeek(): void {
+    const sim = this.sim;
+    const p = this.party;
+    if (p.hideRelease < 0) {
+      if (sim.time < 1) return;
+      // Pick the seekers: about one in four players.
+      const pool = shuffle(sim.agents.slice(), () => sim.rng.next());
+      const n = Math.max(1, Math.round(pool.length / 4));
+      p.hideRelease = sim.time + HIDE_TIME;
+      for (const a of pool.slice(0, n)) {
+        this.makeSeeker(a);
+        a.frozenUntil = p.hideRelease;
+      }
+      this.announce(`Seekers are blindfolded for ${HIDE_TIME} s. Hide!`, 3);
+      return;
+    }
+    const hiders = sim.agents.filter((a) => a.team === 0);
+    this.scores = [hiders.length, sim.agents.length - hiders.length];
+    if (hiders.length === 0) {
+      this.finish(this.player.team === 1, 0, 1);
+      return;
+    }
+    if (sim.time >= p.hideRelease + SEEK_TIME) {
+      this.finish(this.player.team === 0, 0, 0);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  private makeSeeker(a: Agent): void {
+    a.team = 1;
+    setLoadout(a, ['smg', 'pistol']);
+    a.grenades = 0;
+  }
+
+  private rulesPotato(): void {
+    const sim = this.sim;
+    const p = this.party;
+    const alive = sim.agents.filter((a) => a.alive);
+    if (alive.length <= 1) {
+      const w = alive[0];
+      this.finish(w === this.player, 0, w ? w.team : -1);
+      return;
+    }
+    const holder = sim.agents[p.holder];
+    if (p.holder < 0 || !holder || !holder.alive) {
+      p.holder = -1;
+      if (sim.time >= p.nextBomb) {
+        const h = alive[sim.rng.int(alive.length)];
+        p.holder = h.id;
+        p.explodeAt = sim.time + 15 + sim.rng.next() * 10;
+        p.passCd = sim.time + 1;
+        this.notices.push({ kind: 'potato', holder: h.id, from: -1 });
+      }
+      return;
+    }
+    if (sim.time >= p.explodeAt) {
+      sim.damage(holder, null, 999, 'torso', 0, 1, 0, 'grenade');
+      sim.explode(holder.x, holder.y + 0.5, holder.z, holder.id, 'grenade');
+      p.holder = -1;
+      p.nextBomb = sim.time + 2.5;
+    }
+  }
+
+  /** One line describing the mode's state for `me` (the HUD shows it under the score). */
+  statusFor(me: Agent, nameOf: (id: number) => string): string | null {
+    const sim = this.sim;
+    const p = this.party;
+    const sec = (t: number) => `${Math.max(0, Math.ceil(t))}s`;
+    switch (this.mode) {
+      case 'jugg': {
+        const j = sim.agents[p.juggId];
+        const mine = Math.floor(p.points[me.id] ?? 0);
+        const leader = Object.entries(p.points).sort((a, b) => b[1] - a[1])[0];
+        const lead = leader ? `${nameOf(+leader[0])} ${Math.floor(leader[1])}` : '-';
+        return `${j && j.id === me.id ? 'YOU ARE THE JUGGERNAUT' : `Juggernaut: ${j ? nameOf(j.id) : '-'}`} · you ${mine} · leader ${lead} · first to ${TARGETS.jugg}`;
+      }
+      case 'oitc': {
+        const lives = Math.max(0, OITC_LIVES - me.deaths);
+        const left = sim.agents.filter((a) => a.deaths < OITC_LIVES).length;
+        return lives > 0 ? `Lives ${lives} · ${left} players left` : `Out of lives · ${left} players left`;
+      }
+      case 'sharp':
+        return `${WEAPONS_NAME(p.sharpWeapon)} · next gun in ${sec(p.sharpNext - sim.time)}`;
+      case 'hideseek':
+        if (p.hideRelease < 0) return 'Picking seekers…';
+        if (sim.time < p.hideRelease) return `${me.team === 1 ? 'You are seeking' : 'Hide!'} · seekers released in ${sec(p.hideRelease - sim.time)}`;
+        return `${me.team === 1 ? 'Find the hiders' : 'Stay hidden'} · ${this.scores[0]} hiders left · ${sec(p.hideRelease + SEEK_TIME - sim.time)}`;
+      case 'potato': {
+        const h = sim.agents[p.holder];
+        if (!h || p.holder < 0) return 'Next bomb incoming…';
+        if (h.id === me.id) return `YOU HAVE THE BOMB · knife someone! ${sec(p.explodeAt - sim.time)}`;
+        return `${nameOf(h.id)} has the bomb · ${sec(p.explodeAt - sim.time)}`;
+      }
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------- kills, streaks, gun game
@@ -419,6 +727,16 @@ export class Match {
       f.z = victim.z;
       f.droppedAt = sim.time;
       this.notices.push({ kind: 'ctf', event: 'dropped', team: f.team, by: killer ? killer.id : -1 });
+    }
+    if (this.mode === 'jugg' && victim.id === this.party.juggId && killer && killer.alive) this.makeJugg(killer);
+    if (this.mode === 'oitc' && killer && killer.alive) {
+      // Every kill earns a bullet (no reloading in this mode).
+      killer.ammo++;
+      if (killer.weapons[killer.slot] !== 'pistol') killer.stash[0]++;
+    }
+    if (this.mode === 'hideseek' && victim.team === 0) {
+      this.notices.push({ kind: 'infected', by: killer ? killer.id : -1, victim: victim.id });
+      this.makeSeeker(victim);
     }
     if (this.mode === 'infected' && victim.team === 0) {
       this.notices.push({ kind: 'infected', by: killer ? killer.id : -1, victim: victim.id });
@@ -485,7 +803,7 @@ export class Match {
     }
     this.phase = 'roundOver';
     // A lost 1v1 round gets a longer break so the killcam can play.
-    const pause = this.mode === '1v1' && !this.player.alive ? KILLCAM_BREAK : ROUND_BREAK;
+    const pause = !this.player.alive ? KILLCAM_BREAK : ROUND_BREAK;
     this.breakUntil = sim.time + pause;
     this.announceTeam(winner, 'Round won', 'Round lost', Math.min(pause, 2.5));
   }
@@ -512,9 +830,9 @@ export class Match {
   private autoRespawn(): void {
     const sim = this.sim;
     for (const a of sim.agents) {
-      if (a.alive || a === this.player) continue;
+      if (a.alive || a === this.player || this.eliminated(a)) continue;
       const at = this.respawnAt.get(a.id);
-      if (at === undefined) this.respawnAt.set(a.id, sim.time + 3);
+      if (at === undefined) this.respawnAt.set(a.id, sim.time + (isHuman(a) ? 6 : 3));
       else if (sim.time >= at) {
         this.respawnAt.delete(a.id);
         this.respawnSafely(a);
@@ -539,7 +857,7 @@ export class Match {
     const s: [number, number] = [0, 0];
     for (const a of this.sim.agents) s[a.team as 0 | 1] += a.kills;
     this.scores = s;
-    const target = TARGETS.tdm!;
+    const target = TARGETS[this.mode] ?? TARGETS.tdm!;
     if (s[0] >= target || s[1] >= target) {
       this.finish(s[0] >= target, 0, s[0] >= target ? 0 : 1);
       return;
@@ -776,7 +1094,7 @@ export class Match {
 
   /** The player chooses when to respawn (after a short delay) in respawn modes. */
   canPlayerRespawn(): boolean {
-    return RESPAWN_MODES.includes(this.mode) && this.phase === 'live' && !this.player.alive && this.sim.time - this.player.deathT > 2;
+    return RESPAWN_MODES.includes(this.mode) && this.phase === 'live' && !this.player.alive && !this.eliminated(this.player) && this.sim.time - this.player.deathT > 2;
   }
 
   respawnPlayer(): void {
@@ -800,6 +1118,11 @@ export class Match {
       }
     }
     sim.respawn(a, best.x, best.z, yawTo(best.x, best.z, 0, 0));
+    if (this.mode === 'oitc') {
+      a.ammo = 1;
+      a.grenades = 0;
+    }
+    if (this.mode === 'knife' || this.mode === 'hideseek') a.grenades = 0;
   }
 
   // ---------------------------------------------------------------- survival

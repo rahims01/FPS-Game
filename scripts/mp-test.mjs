@@ -31,7 +31,7 @@ const clickText = (page, sel, text) => page.evaluate((sel, text) => [...document
 
 const host = await open('host');
 const guest = await open('guest');
-await host.evaluate((name) => [...document.querySelectorAll('button.mode')].find((b) => b.querySelector('strong').textContent === name).click(), modeName);
+await host.evaluate((name) => [...document.querySelectorAll('button.mode')].find((b) => b.querySelector('strong').textContent.startsWith(name)).click(), modeName);
 await clickText(host, 'button.chip', 'Host game');
 await host.waitForSelector('.room-code', { timeout: 30000 });
 const code = await host.$eval('.room-code', (e) => e.textContent);

@@ -80,6 +80,8 @@ export interface Agent {
   armor: number;
   /** Kills since last death. */
   streak: number;
+  /** Hide & Seek: seekers can't move or shoot until this time. */
+  frozenUntil: number;
   /** Gun Game ladder position. */
   tier: number;
   tierKills: number;
@@ -183,6 +185,7 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   protectedUntil: 0,
   armor: 1,
   streak: 0,
+  frozenUntil: 0,
   tier: 0,
   tierKills: 0,
   ammo: WEAPONS.rifle.magazine,

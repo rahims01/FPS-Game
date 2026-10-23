@@ -11,6 +11,8 @@ import { MODES, modeDef, type Difficulty, type ModeId } from './sim/Match';
 import { PRIMARIES, WEAPONS } from './sim/weapons';
 import { levelOf, loadProfile, rankOf, type Profile } from './game/progression';
 import { Hud } from './ui/Hud';
+import { SettingsPanel } from './ui/SettingsPanel';
+import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' };
 
@@ -21,22 +23,23 @@ interface LobbyView {
   max: number;
 }
 
-const SETTINGS_KEY = 'fps-settings-v2';
 const defaultName = () => `Player${Math.floor(1000 + Math.random() * 9000)}`;
-const loadSettings = (): GameSettings => {
-  const base: GameSettings = {
-    sensitivity: 1,
-    fov: 80,
-    volume: 0.6,
-    playerName: defaultName(),
-    playerColor: COLORS[Math.floor(Math.random() * COLORS.length)].hex,
-    primary: 'rifle'
-  };
+
+/** Saved settings, or (first visit) defaults with a quality preset suited to this device. */
+const initialSettings = (): GameSettings => {
+  let fresh = true;
   try {
-    return { ...base, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
+    fresh = !localStorage.getItem('fps-settings-v3') && !localStorage.getItem('fps-settings-v2');
   } catch {
-    return base;
+    /* no storage */
   }
+  const s = loadSettings(defaultName(), COLORS[Math.floor(Math.random() * COLORS.length)].hex);
+  if (fresh) {
+    const q = suggestQuality();
+    s.quality = q;
+    s.graphics = { ...QUALITY_PRESETS[q] };
+  }
+  return s;
 };
 
 /** Developer switch: ?ai=heuristic runs the hand-written opponents instead of the trained policy. */
@@ -50,6 +53,8 @@ const LOBBY: { id: Difficulty; label: string }[] = [
 
 const audio = new GameAudio();
 
+const MODE_GROUPS = ['Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
+
 export const App = () => {
   const [assets, setAssets] = useState<LoadedAssets | null>(null);
   const [loadMsg, setLoadMsg] = useState('Loading…');
@@ -58,7 +63,8 @@ export const App = () => {
   const [screen, setScreen] = useState<Screen>({ kind: 'menu' });
   const [mode, setMode] = useState<ModeId>('1v1');
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
-  const [settings, setSettings] = useState<GameSettings>(loadSettings);
+  const [settings, setSettings] = useState<GameSettings>(initialSettings);
+  const [showSettings, setShowSettings] = useState(false);
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
   // Online play.
@@ -84,11 +90,7 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    } catch {
-      /* storage unavailable: settings just won't persist */
-    }
+    saveSettings(settings);
     game.current?.applySettings(settings);
   }, [settings]);
 
@@ -117,7 +119,13 @@ export const App = () => {
     const g = new Game(
       mount.current,
       assets,
-      { mode, difficulty, botControl: brain && !forceHeuristic ? 'learned' : 'heuristic', primary: settings.primary },
+      {
+        mode,
+        difficulty,
+        botControl: brain && !forceHeuristic ? 'learned' : 'heuristic',
+        primary: settings.primary,
+        humans: netRef.current?.role === 'host' ? netRef.current.session.players.length : 1
+      },
       brain,
       { ...settings, playerName: name },
       audio,
@@ -286,14 +294,22 @@ export const App = () => {
                 </div>
               </div>
             </div>
-            <div className="modes">
-              {MODES.map((m) => (
-                <button key={m.id} className={`mode ${mode === m.id ? 'on' : ''}`} onClick={() => setMode(m.id)}>
-                  <strong>{m.name}</strong>
-                  <span>{m.blurb}</span>
-                </button>
-              ))}
-            </div>
+            {MODE_GROUPS.map((group) => (
+              <div key={group}>
+                <div className="mode-group">{group}</div>
+                <div className="modes">
+                  {MODES.filter((m) => m.group === group).map((m) => (
+                    <button key={m.id} className={`mode ${mode === m.id ? 'on' : ''}`} onClick={() => setMode(m.id)}>
+                      <strong>
+                        {m.name}
+                        {m.humansOnly && <em className="tag-online">ONLINE</em>}
+                      </strong>
+                      <span>{m.blurb}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
             <div className="row">
               <label>Primary</label>
               {PRIMARIES.map((w) => (
@@ -311,7 +327,13 @@ export const App = () => {
                 </button>
               ))}
             </div>
-            <Settings settings={settings} onChange={setSettings} />
+            <div className="row">
+              <label>Options</label>
+              <button className="chip" onClick={() => setShowSettings(true)}>
+                ⚙ Settings
+              </button>
+              <span className="policy-note">Graphics quality, controls &amp; key bindings, crosshair, sensitivity and more.</span>
+            </div>
             <div className="online">
               <div className="online-head">
                 <b>Play online with friends</b>
@@ -335,22 +357,27 @@ export const App = () => {
               </div>
               {netError && <div className="net-error">{netError}</div>}
             </div>
-            <button className="play" disabled={!assets} onClick={findMatch}>
-              {assets ? 'FIND MATCH' : loadMsg}
+            <button className="play" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
+              {!assets ? loadMsg : modeDef(mode).humansOnly ? 'ONLINE ONLY — HOST A GAME ABOVE' : 'FIND MATCH'}
             </button>
             <div className="controls">
-              <span>WASD move</span>
-              <span>Mouse aim</span>
-              <span>LMB fire</span>
-              <span>RMB aim down sights</span>
-              <span>Shift sprint</span>
-              <span>Space jump</span>
-              <span>R reload</span>
-              <span>C / Ctrl crouch (slide while sprinting)</span>
-              <span>1 / 2 / Q / wheel switch</span>
-              <span>V knife</span>
-              <span>G grenade</span>
-              <span>Tab scores</span>
+              <span>
+                {keyLabel(settings.keys.forward)}
+                {keyLabel(settings.keys.left)}
+                {keyLabel(settings.keys.back)}
+                {keyLabel(settings.keys.right)} move
+              </span>
+              <span>LMB fire · RMB aim</span>
+              <span>{keyLabel(settings.keys.sprint)} sprint</span>
+              <span>{keyLabel(settings.keys.jump)} jump</span>
+              <span>{keyLabel(settings.keys.crouch)} crouch/slide</span>
+              <span>{keyLabel(settings.keys.reload)} reload</span>
+              <span>{keyLabel(settings.keys.melee)} knife</span>
+              <span>{keyLabel(settings.keys.grenade)} grenade</span>
+              <span>
+                {keyLabel(settings.keys.weapon1)}/{keyLabel(settings.keys.weapon2)}/{keyLabel(settings.keys.swap)}/wheel switch
+              </span>
+              <span>{keyLabel(settings.keys.scores)} scores</span>
               <span>Esc pause</span>
             </div>
           </div>
@@ -391,14 +418,25 @@ export const App = () => {
             </div>
             <div className="row">
               {screen.kind === 'host-lobby' && (
-                <button className="play" onClick={startOnline}>
-                  START
+                <button className="play" disabled={lobby.players.length < (modeDef(lobby.mode).minPlayers ?? 1)} onClick={startOnline}>
+                  {lobby.players.length < (modeDef(lobby.mode).minPlayers ?? 1) ? `NEEDS ${modeDef(lobby.mode).minPlayers} PLAYERS` : 'START'}
                 </button>
               )}
               <button className="chip" onClick={toMenu}>
                 Leave
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showSettings && screen.kind !== 'playing' && (
+        <div className="overlay">
+          <div className="menu-card settings-card">
+            <h2>Settings</h2>
+            <SettingsPanel settings={settings} onChange={setSettings} />
+            <button className="play" onClick={() => setShowSettings(false)}>
+              DONE
+            </button>
           </div>
         </div>
       )}
@@ -428,7 +466,7 @@ export const App = () => {
       )}
       {screen.kind === 'playing' && hud && (
         <>
-          <Hud hud={hud} minimap={minimap} />
+          <Hud hud={hud} minimap={minimap} settings={settings} />
           {hud.paused && hud.phase !== 'over' && (
             <div className="overlay">
               <div className="menu-card small">
@@ -436,7 +474,7 @@ export const App = () => {
                 <button className="play" onClick={resume}>
                   RESUME
                 </button>
-                <Settings settings={settings} onChange={setSettings} />
+                <SettingsPanel settings={settings} onChange={setSettings} />
                 <div className="row">
                   <button className="chip" onClick={toMenu}>
                     Leave match
@@ -456,7 +494,7 @@ export const App = () => {
               </div>
             </div>
           )}
-          {hud.phase === 'over' && !hud.netMessage && (
+          {hud.phase === 'over' && !hud.netMessage && !hud.killcam && !hud.killcamPending && (
             <div className="overlay end">
               <div className="menu-card small">
                 <h2 className={hud.result === 'win' ? 'win' : 'lose'}>{hud.banner || (hud.result === 'win' ? 'Victory' : 'Defeat')}</h2>
@@ -496,23 +534,6 @@ export const App = () => {
     </>
   );
 };
-
-const Settings = ({ settings, onChange }: { settings: GameSettings; onChange: (s: GameSettings) => void }) => (
-  <div className="settings">
-    <label>
-      Sensitivity <b>{settings.sensitivity.toFixed(2)}</b>
-      <input type="range" min={0.2} max={3} step={0.05} value={settings.sensitivity} onChange={(e) => onChange({ ...settings, sensitivity: +e.target.value })} />
-    </label>
-    <label>
-      Field of view <b>{settings.fov}°</b>
-      <input type="range" min={60} max={110} step={1} value={settings.fov} onChange={(e) => onChange({ ...settings, fov: +e.target.value })} />
-    </label>
-    <label>
-      Volume <b>{Math.round(settings.volume * 100)}%</b>
-      <input type="range" min={0} max={1} step={0.05} value={settings.volume} onChange={(e) => onChange({ ...settings, volume: +e.target.value })} />
-    </label>
-  </div>
-);
 
 const ProfileBar = ({ profile }: { profile: Profile }) => {
   const { level, into, need } = levelOf(profile.xp);

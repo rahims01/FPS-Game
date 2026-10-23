@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import type { HudState, ScoreRow } from '../game/Game';
+import type { GameSettings } from '../game/settings';
 import { isDark } from '../game/identity';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -13,8 +14,9 @@ const Name = ({ row }: { row: Pick<ScoreRow, 'name' | 'color' | 'isPlayer'> }) =
   </span>
 );
 
-export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCanvasElement | null> }) => {
-  const gap = 6 + hud.spread * 900;
+export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObject<HTMLCanvasElement | null>; settings: GameSettings }) => {
+  const ch = settings.crosshair;
+  const gap = ch.gap + (ch.dynamic ? hud.spread * 900 : 0);
   const markerAge = hud.time - hud.hitMarkerAt;
   const hpLow = hud.hp < 35;
   const [mine, theirs] = hud.teamColors ?? ['var(--blue)', 'var(--red)'];
@@ -32,11 +34,12 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
         </div>
       )}
       {hud.alive && !hud.aiming && !hud.scoped && (
-        <div className="crosshair" style={{ ['--gap' as string]: `${gap}px` }}>
+        <div className="crosshair" style={{ ['--gap' as string]: `${gap}px`, ['--len' as string]: `${ch.size}px`, ['--thick' as string]: `${ch.thickness}px`, ['--col' as string]: ch.color }}>
           <i className="t" />
           <i className="b" />
           <i className="l" />
           <i className="r" />
+          {ch.dot && <i className="d" />}
         </div>
       )}
       {hud.alive && hud.aiming && !hud.scoped && <div className="dot" />}
@@ -79,6 +82,7 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
             ))}
           </div>
         )}
+        {hud.modeStatus && <div className="mode-status">{hud.modeStatus}</div>}
         {hud.ctf && (
           <div className="ctf">
             <span className={`ctf-flag us ${hud.ctf.ours}`} style={{ borderColor: mine }}>Your flag: {hud.ctf.ours === 'home' ? 'safe' : hud.ctf.ours}</span>
@@ -151,6 +155,12 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
       </div>
       {hud.protected && hud.alive && <div className="protected">Spawn protection</div>}
       {hud.outsideZone && <div className="warning">Outside the zone — get back in!</div>}
+      {hud.blind !== null && (
+        <div className="blindfold">
+          <b>You are seeking</b>
+          <span>Hiders get a head start. Released in {hud.blind}s</span>
+        </div>
+      )}
       {hud.killcam && (
         <div className="killcam">
           <div className="kc-bar kc-top" />
@@ -230,6 +240,12 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
       {hud.showScoreboard && <Scoreboard hud={hud} />}
 
       <canvas ref={minimap} className="minimap" width={180} height={180} />
+      {(settings.showFps || (settings.showPing && hud.ping !== null)) && (
+        <div className="perf">
+          {settings.showFps && <span>{hud.fps} FPS</span>}
+          {settings.showPing && hud.ping !== null && <span className={hud.ping > 150 ? 'bad' : ''}>{hud.ping === 0 ? 'host' : `${Math.round(hud.ping)} ms`}</span>}
+        </div>
+      )}
 
       <div className="vitals">
         <div className="streak">

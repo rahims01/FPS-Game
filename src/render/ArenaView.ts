@@ -162,6 +162,17 @@ export class ArenaView {
     return m;
   }
 
+  /** Graphics setting: shadows off, or a smaller / larger shadow map. */
+  setShadows(mode: 'off' | 'low' | 'high'): void {
+    this.sun.castShadow = mode !== 'off';
+    const size = mode === 'low' ? 1024 : 2048;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+  }
+
   update(time: number, focus: THREE.Vector3): void {
     const sim = this.sim;
     if (sim.arena.half + 4 > 48) {

@@ -159,6 +159,8 @@ export class SoldierView {
   private flinchSide = 1;
   ragdoll: RagdollHandle | null = null;
   diedAt = 0;
+  /** Big Heads party mode. */
+  static headScale = 1;
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
 
@@ -357,6 +359,7 @@ export class SoldierView {
     }
     if (agent.reloadT > 0 && this.bones.Spine1) rotateBoneWorld(this.bones.Spine1, pitchAxis, -0.12);
     this.aimArms(agent, u, kick, time);
+    if (this.bones.Head) this.bones.Head.scale.setScalar(SoldierView.headScale);
     this.placeRifle(agent, u > 0.5);
   }
 

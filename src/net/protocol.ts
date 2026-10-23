@@ -1,6 +1,6 @@
 import type { Agent } from '../sim/Agent';
 import type { SimEvent } from '../sim/FpsSim';
-import type { Difficulty, MatchNotice, ModeId } from '../sim/Match';
+import type { Difficulty, Match, MatchNotice, ModeId } from '../sim/Match';
 import type { WeaponId } from '../sim/weapons';
 
 /**
@@ -10,7 +10,7 @@ import type { WeaponId } from '../sim/weapons';
  * instant), send their position and button state, and draw everything else
  * from the host's snapshots.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const PEER_PREFIX = 'fpsgame-v1-';
 export const SNAPSHOT_HZ = 20;
 
@@ -51,7 +51,8 @@ export type ClientMsg =
       slide: number;
       b: NetButtons;
     }
-  | { t: 'bye' };
+  | { t: 'bye' }
+  | { t: 'ping'; at: number };
 
 export interface StartMsg {
   t: 'start';
@@ -72,7 +73,8 @@ export type HostMsg =
   | { t: 'reject'; reason: string }
   | StartMsg
   | { t: 'snap'; snap: Snapshot }
-  | { t: 'end'; reason: string };
+  | { t: 'end'; reason: string }
+  | { t: 'pong'; at: number };
 
 /** Compact agent record (array to keep packets small). See AGENT_FIELDS for the layout. */
 export type AgentNet = (number | string)[];
@@ -113,6 +115,10 @@ export interface MatchNet {
   uavUntil: Record<number, number>;
   flags: { label: string; x: number; z: number; r: number; owner: number; progress: number }[];
   ctf: { team: number; homeX: number; homeZ: number; x: number; z: number; carrier: number; home: boolean; droppedAt: number }[];
+  party: Match['party'];
+  gravity: number;
+  jumpMul: number;
+  headScale: number;
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -155,5 +161,6 @@ export const packAgent = (a: Agent): AgentNet => [
   a.killedBy,
   a.tier,
   a.tierKills,
-  r3(a.switchT)
+  r3(a.switchT),
+  r3(a.frozenUntil)
 ];

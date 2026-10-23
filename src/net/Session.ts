@@ -114,7 +114,7 @@ export class HostSession {
 
   get maxPlayers(): number {
     const def = modeDef(this.lobby.mode);
-    return Math.max(2, Math.min(8, def.id === 'survival' ? 4 : def.players));
+    return def.humansOnly ? 8 : Math.max(2, Math.min(8, def.id === 'survival' ? 4 : def.players));
   }
 
   setLobby(mode: ModeId, difficulty: Difficulty): void {
@@ -178,6 +178,8 @@ export class HostSession {
       inp.grenade ||= b.grenade;
       if (b.switchSlot >= 0) inp.switchSlot = b.switchSlot;
       client.state = { life: msg.life, s: msg.s, f: msg.f, slide: msg.slide };
+    } else if (msg.t === 'ping') {
+      client.conn.send({ t: 'pong', at: msg.at } satisfies HostMsg);
     } else if (msg.t === 'bye') {
       client.conn.close();
       this.drop(client);
@@ -203,7 +205,7 @@ export class HostSession {
     for (const c of this.clients) {
       if (!c.profile) continue;
       k++;
-      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'infected' ? 0 : k % 2 === 1 ? 1 : 0;
+      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : k % 2 === 1 ? 1 : 0;
       const free = (team: number | null) =>
         sim.agents.find((a) => !taken.has(a.id) && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
       let a: Agent | undefined = free(wantTeam) ?? free(null);
@@ -305,6 +307,9 @@ export class ClientSession {
   onSnap: ((snap: Snapshot) => void) | null = null;
   onEnd: ((reason: string) => void) | null = null;
   private ended = false;
+  /** Smoothed round-trip time to the host, in milliseconds. */
+  ping = 0;
+  private pinger: number;
   private buttons: NetButtons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, switchSlot: -1 };
 
   private constructor(
@@ -314,6 +319,9 @@ export class ClientSession {
     conn.on('data', (raw) => this.receive(raw as HostMsg));
     conn.on('close', () => this.end('Lost connection to the host.'));
     conn.on('error', () => this.end('Lost connection to the host.'));
+    this.pinger = window.setInterval(() => {
+      if (this.conn.open) this.conn.send({ t: 'ping', at: performance.now() } satisfies ClientMsg);
+    }, 2000);
   }
 
   static async connect(code: string, profile: PlayerProfile): Promise<ClientSession> {
@@ -342,12 +350,16 @@ export class ClientSession {
     if (msg.t === 'lobby') this.onLobby?.(msg);
     else if (msg.t === 'start') this.onStart?.(msg);
     else if (msg.t === 'snap') this.onSnap?.(msg.snap);
-    else if (msg.t === 'reject' || msg.t === 'end') this.end(msg.reason);
+    else if (msg.t === 'pong') {
+      const rtt = performance.now() - msg.at;
+      this.ping = this.ping ? this.ping * 0.7 + rtt * 0.3 : rtt;
+    } else if (msg.t === 'reject' || msg.t === 'end') this.end(msg.reason);
   }
 
   private end(reason: string): void {
     if (this.ended) return;
     this.ended = true;
+    window.clearInterval(this.pinger);
     this.onEnd?.(reason);
     setTimeout(() => this.peer.destroy(), 300);
   }
@@ -382,6 +394,7 @@ export class ClientSession {
   leave(): void {
     if (!this.ended && this.conn.open) this.conn.send({ t: 'bye' } satisfies ClientMsg);
     this.ended = true;
+    window.clearInterval(this.pinger);
     setTimeout(() => this.peer.destroy(), 300);
   }
 }

@@ -31,7 +31,11 @@ export const buildSnapshot = (m: Match, ev: SimEvent[], no: MatchNotice[]): Snap
       zoneTo: m.zoneTo,
       uavUntil: m.uavUntil,
       flags: m.flags,
-      ctf: m.ctf
+      ctf: m.ctf,
+      party: m.party,
+      gravity: sim.gravity,
+      jumpMul: sim.jumpMul,
+      headScale: sim.headScale
     },
     zone: sim.zone,
     rally: sim.rally,
@@ -88,6 +92,10 @@ export const applySnapshot = (m: Match, snap: Snapshot, meId: number, targets: M
   m.uavUntil = n.uavUntil;
   m.flags = n.flags;
   m.ctf = n.ctf;
+  m.party = n.party;
+  sim.gravity = n.gravity;
+  sim.jumpMul = n.jumpMul;
+  sim.headScale = n.headScale;
   sim.zone = snap.zone;
   sim.rally = snap.rally;
   sim.objectives = snap.obj;
@@ -131,6 +139,7 @@ const applyAgent = (a: Agent, r: AgentNet, me: boolean, targets: Map<number, Net
   a.killedBy = num(r[31]);
   a.tier = num(r[32]);
   a.tierKills = num(r[33]);
+  a.frozenUntil = num(r[35] ?? 0);
   const pos = { x: num(r[1]), y: num(r[2]), z: num(r[3]), yaw: num(r[7]), pitch: num(r[8]) };
   if (me) {
     // Our own movement is simulated locally; only take the host's position on respawn.

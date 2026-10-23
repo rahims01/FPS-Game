@@ -120,7 +120,11 @@ export class Effects {
     }
   }
 
+  /** Fraction of particles actually spawned (graphics setting). */
+  density = 1;
+
   private emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, r: number, g: number, b: number, life: number, grav: number): void {
+    if (this.density < 1 && Math.random() > this.density) return;
     const i = this.pNext;
     this.pNext = (this.pNext + 1) % MAX_PARTICLES;
     this.pPos.set([x, y, z], i * 3);
