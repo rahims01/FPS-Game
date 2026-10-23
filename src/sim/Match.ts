@@ -1,0 +1,810 @@
+import { setLoadout, type Agent, type Control, type DeathCause } from './Agent';
+import type { ArenaLayout, Point } from './Arena';
+import { SIM } from './config';
+import { FpsSim, type DamageRule, type PlayerInput } from './FpsSim';
+import { classicLayout, randomLayout } from './layouts';
+import { yawTo } from './math';
+import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, type WeaponId } from './weapons';
+
+export type ModeId =
+  | '1v1'
+  | '2v2'
+  | '3v3'
+  | 'tdm'
+  | 'kc'
+  | 'dom'
+  | 'koth'
+  | 'infected'
+  | 'ffa'
+  | 'gungame'
+  | 'headshot'
+  | 'instagib'
+  | 'snipers'
+  | 'survival'
+  | 'br';
+
+export interface ModeDef {
+  id: ModeId;
+  name: string;
+  blurb: string;
+  /** Players in the lobby, you included. */
+  players: number;
+  /** Two fixed teams (everyone wears their team's colour). */
+  teams: boolean;
+  /** Menu grouping. */
+  group: 'Team' | 'Objective' | 'Free-for-all' | 'Special';
+}
+
+export const MODES: ModeDef[] = [
+  { id: 'tdm', name: 'Team Deathmatch', blurb: '5v5 with respawns. First team to 40 kills.', players: 10, teams: true, group: 'Team' },
+  { id: 'kc', name: 'Kill Confirmed', blurb: "5v5. A kill only counts when someone grabs the dog tags. Grab your team's tags to deny. First to 30.", players: 10, teams: true, group: 'Team' },
+  { id: '1v1', name: '1v1 Duel', blurb: 'Just you and one opponent. Rounds, first to 5.', players: 2, teams: true, group: 'Team' },
+  { id: '2v2', name: '2v2 Gunfight', blurb: 'Two a side, no respawns. First to 5 rounds.', players: 4, teams: true, group: 'Team' },
+  { id: '3v3', name: '3v3 Gunfight', blurb: 'Three a side, no respawns. First to 5 rounds.', players: 6, teams: true, group: 'Team' },
+  { id: 'dom', name: 'Domination', blurb: '6v6. Capture and hold flags A, B and C to score. First to 150.', players: 12, teams: true, group: 'Objective' },
+  { id: 'koth', name: 'Hardpoint', blurb: '4v4. Hold the hill alone to score; it moves every 45 s. First to 60.', players: 8, teams: true, group: 'Objective' },
+  { id: 'infected', name: 'Infected', blurb: 'One player starts infected with a knife. Anyone they kill joins them. Survivors must last 3 minutes.', players: 10, teams: true, group: 'Objective' },
+  { id: 'ffa', name: 'Free-for-all', blurb: '8 players, everyone for themselves. First to 20 kills.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'gungame', name: 'Gun Game', blurb: 'Every 2 kills upgrades your gun: pistol, SMG, shotgun, rifle, LMG, sniper, knife. A knife kill wins. Get knifed and you drop a gun.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'snipers', name: 'Snipers Only', blurb: 'Free-for-all with bolt-action snipers. First to 15.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'headshot', name: 'Headhunters', blurb: 'Free-for-all where only headshots do damage. First to 15.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'instagib', name: 'One Shot', blurb: 'Free-for-all where any hit kills. First to 25.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'br', name: 'Battle Royale', blurb: 'Huge random 250 m map, 24 players, one life. Grab medkits and stay inside the shrinking zone.', players: 24, teams: false, group: 'Special' },
+  { id: 'survival', name: 'Survival', blurb: 'Hold out against endless waves. One life, health refills between waves.', players: 1, teams: true, group: 'Special' }
+];
+
+export const modeDef = (id: ModeId): ModeDef => MODES.find((m) => m.id === id)!;
+
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
+const DIFFICULTY: Record<Difficulty, { skill: number; damageToPlayer: number }> = {
+  easy: { skill: 1.7, damageToPlayer: 0.45 },
+  normal: { skill: 1.1, damageToPlayer: 0.7 },
+  hard: { skill: 0.7, damageToPlayer: 1 }
+};
+
+export interface MatchOptions {
+  mode: ModeId;
+  difficulty: Difficulty;
+  /** How the other players choose actions: the trained policy, or the hand-written baseline. */
+  botControl: Control;
+  /** The player's primary weapon. */
+  primary?: WeaponId;
+  seed?: number;
+}
+
+export type MatchPhase = 'live' | 'roundOver' | 'over';
+
+/** Things the HUD announces: killstreaks, captures, confirms. */
+export type MatchNotice =
+  | { kind: 'streak'; name: 'UAV' | 'Airstrike' | 'Juggernaut'; kills: number }
+  | { kind: 'capture'; flag: string; team: number; byPlayer: boolean }
+  | { kind: 'tag'; confirmed: boolean; byPlayer: boolean }
+  | { kind: 'promote'; weapon: WeaponId }
+  | { kind: 'demote'; weapon: WeaponId }
+  | { kind: 'infected'; byPlayer: boolean; player: boolean };
+
+export interface Flag {
+  label: string;
+  x: number;
+  z: number;
+  r: number;
+  /** -1 neutral, else team. */
+  owner: number;
+  /** -1 (team 1 owns) .. +1 (team 0 owns). */
+  progress: number;
+}
+
+const ROUND_TARGET = 5;
+const BR_HALF = 125;
+const BR_PLAYERS = 24;
+const ROUND_BREAK = 3.5;
+const WAVE_BREAK = 5;
+const HILL_R = 4.5;
+const HILL_MOVE = 45;
+const INFECTED_TIME = 180;
+/** Score to win for each mode that has one. */
+export const TARGETS: Partial<Record<ModeId, number>> = {
+  '1v1': ROUND_TARGET,
+  '2v2': ROUND_TARGET,
+  '3v3': ROUND_TARGET,
+  tdm: 40,
+  kc: 30,
+  dom: 150,
+  koth: 60,
+  ffa: 20,
+  headshot: 15,
+  instagib: 25,
+  snipers: 15
+};
+const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame'];
+const RESPAWN_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'tdm', 'kc', 'dom', 'koth', 'infected'];
+const HILLS: Point[] = [
+  { x: 0, z: -12 },
+  { x: 12, z: 0 },
+  { x: 0, z: 12 },
+  { x: -12, z: 0 }
+];
+/** Weighted primaries for the other players. */
+const PRIMARY_POOL: WeaponId[] = ['rifle', 'rifle', 'rifle', 'smg', 'smg', 'shotgun', 'lmg', 'sniper'];
+/** Killstreak rewards (player only). */
+const STREAKS: { kills: number; name: 'UAV' | 'Airstrike' | 'Juggernaut' }[] = [
+  { kills: 3, name: 'UAV' },
+  { kills: 5, name: 'Airstrike' },
+  { kills: 8, name: 'Juggernaut' }
+];
+
+/** One battle-royale zone phase: hold, then shrink to `r` over `shrink` seconds. */
+const BR_PHASES = [
+  { hold: 60, shrink: 45, scale: 0.6, dps: 2 },
+  { hold: 45, shrink: 40, scale: 0.55, dps: 4 },
+  { hold: 35, shrink: 30, scale: 0.5, dps: 7 },
+  { hold: 25, shrink: 25, scale: 0.45, dps: 10 },
+  { hold: 20, shrink: 20, scale: 0.4, dps: 13 },
+  { hold: 15, shrink: 18, scale: 0.0, dps: 18 }
+];
+
+/**
+ * Game rules on top of the simulation: spawns, loadouts, scores, rounds,
+ * waves, objectives, killstreaks, the battle-royale zone and pickups. Pure
+ * TypeScript, so a match can run headless exactly as it runs in the browser.
+ */
+export class Match {
+  readonly sim: FpsSim;
+  readonly mode: ModeId;
+  readonly def: ModeDef;
+  readonly player: Agent;
+  phase: MatchPhase = 'live';
+  /** Rounds won, team kills, confirms, flag points or hill points, by team. */
+  scores: [number, number] = [0, 0];
+  round = 1;
+  wave = 0;
+  /** Time at which the current break (round over, wave break) ends. */
+  breakUntil = 0;
+  banner = '';
+  bannerUntil = 0;
+  result: 'win' | 'lose' | null = null;
+  /** Battle-royale placement of the player (1 = winner). */
+  placement = 0;
+  /** Hardpoint: which team holds it right now (-1 none, -2 contested). */
+  hillHolder = -1;
+  flags: Flag[] = [];
+  /** The enemy shows on the minimap until this time (UAV killstreak). */
+  uavUntil = -1;
+  readonly notices: MatchNotice[] = [];
+  readonly startTime: number;
+  private hillIndex = 0;
+  private hillMovedAt = 0;
+  private waveQueue = 0;
+  private respawnAt = new Map<number, number>();
+  private brPhase = -1;
+  private brPhaseStart = 0;
+  private zoneFrom = { x: 0, z: 0, r: 0 };
+  private zoneTo = { x: 0, z: 0, r: 0 };
+  private nextMedkitT = 0;
+  private lastScoreTick = 0;
+  readonly opts: MatchOptions;
+
+  constructor(opts: MatchOptions) {
+    this.opts = opts;
+    this.mode = opts.mode;
+    this.def = modeDef(opts.mode);
+    const mode = opts.mode;
+    const seed = opts.seed ?? (Math.random() * 1e9) | 0;
+    const layout: ArenaLayout =
+      mode === 'br'
+        ? randomLayout(seed, BR_HALF)
+        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'infected'
+          ? randomLayout(seed, 42)
+          : FFA_MODES.includes(mode)
+            ? randomLayout(seed, 36)
+            : classicLayout();
+    const diff = DIFFICULTY[opts.difficulty];
+    const damageRule: DamageRule = mode === 'headshot' ? 'headshot' : mode === 'instagib' ? 'instagib' : 'normal';
+    this.sim = new FpsSim({
+      seed,
+      layout,
+      damageToPlayerScale: diff.damageToPlayer,
+      regen: mode !== 'br',
+      hunt: mode !== 'br',
+      damageRule,
+      ...(mode === 'br' ? { viewRange: 40, hearingRange: 30 } : {})
+    });
+    const sim = this.sim;
+    this.startTime = 0;
+    const other = (team: number, p: Point) => {
+      const a = sim.spawn(team, opts.botControl, p.x, p.z, yawTo(p.x, p.z, 0, 0));
+      a.skill = diff.skill * (0.85 + sim.rng.next() * 0.3);
+      return a;
+    };
+
+    if (mode === 'infected') {
+      // Everyone starts as a survivor, spread out; one player is infected below.
+      const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
+      this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
+      for (let i = 1; i < this.def.players; i++) other(0, spawns[i % spawns.length]);
+    } else if (this.def.teams && mode !== 'survival') {
+      const n = this.def.players / 2;
+      const [s0, s1] = sim.arena.teamSpawns;
+      const at = (s: Point[], i: number) => (i < s.length ? s[i] : { x: s[i % s.length].x + 1.2 * Math.floor(i / s.length), z: s[i % s.length].z });
+      this.player = sim.spawn(0, 'player', s0[0].x, s0[0].z, yawTo(s0[0].x, s0[0].z, 0, 0));
+      for (let i = 1; i < n; i++) other(0, at(s0, i));
+      for (let i = 0; i < n; i++) other(1, at(s1, i));
+    } else if (mode === 'survival') {
+      const p = sim.arena.teamSpawns[0][0];
+      this.player = sim.spawn(0, 'player', 0, -7, yawTo(p.x, p.z, 0, 0));
+    } else {
+      // Free-for-all styles and battle royale: everyone on their own team.
+      const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
+      this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
+      const count = mode === 'br' ? BR_PLAYERS : this.def.players;
+      for (let i = 1; i < count; i++) {
+        const p = spawns[i % spawns.length];
+        other(i, { x: p.x + (i >= spawns.length ? 2 : 0), z: p.z });
+      }
+    }
+
+    // Loadouts.
+    for (const a of sim.agents) {
+      if (mode === 'gungame') setLoadout(a, [GUN_GAME_LADDER[0]]);
+      else if (mode === 'snipers') setLoadout(a, ['sniper', 'pistol']);
+      else if (a === this.player) setLoadout(a, [opts.primary ?? 'rifle', 'pistol']);
+      else setLoadout(a, [PRIMARY_POOL[sim.rng.int(PRIMARY_POOL.length)], 'pistol']);
+    }
+    sim.onKill = (v, k, cause) => this.onKill(v, k, cause);
+
+    switch (mode) {
+      case 'koth':
+        this.placeHill(0);
+        this.announce('Capture the hardpoint');
+        break;
+      case 'tdm':
+        this.announce(`First team to ${TARGETS.tdm} kills`);
+        break;
+      case 'kc':
+        sim.botsWantTags = true;
+        sim.onPickup = (a, p) => {
+          if (p.kind !== 'tag') return;
+          const confirmed = a.team !== p.team;
+          if (confirmed) this.scores[a.team as 0 | 1]++;
+          this.notices.push({ kind: 'tag', confirmed, byPlayer: a === this.player });
+        };
+        this.announce('Collect the dog tags');
+        break;
+      case 'dom':
+        this.setupFlags();
+        this.announce('Capture the flags');
+        break;
+      case 'infected': {
+        const bots = sim.agents.filter((a) => a !== this.player);
+        this.infect(bots[sim.rng.int(bots.length)]);
+        this.announce('Survive!');
+        break;
+      }
+      case 'survival':
+        this.startWave();
+        break;
+      case 'br': {
+        const H = sim.arena.half;
+        sim.zone = { x: 0, z: 0, r: H * 1.45, dps: 1 };
+        this.zoneTo = { x: 0, z: 0, r: H * 1.45 };
+        for (let i = 0; i < 36; i++) this.dropMedkit();
+        this.nextMedkitT = 8;
+        this.announce('Last one standing wins');
+        break;
+      }
+      case 'gungame':
+        this.announce('Climb the gun ladder');
+        break;
+      default:
+        if (FFA_MODES.includes(mode)) this.announce(`First to ${TARGETS[mode]} kills`);
+        else this.announce('Round 1');
+    }
+  }
+
+  private announce(text: string, seconds = 2.5): void {
+    this.banner = text;
+    this.bannerUntil = this.sim.time + seconds;
+  }
+
+  /** Advances the simulation by one tick and applies the mode's rules. */
+  step(input: PlayerInput): void {
+    if (this.phase === 'over') {
+      // Keep the world animating (ragdolls, remaining players) but stop the rules.
+      this.sim.step({ ...input, fire: false, forward: 0, right: 0, jump: false, grenade: false, melee: false });
+      return;
+    }
+    this.sim.step(input);
+    if (this.sim.tick % 6 !== 0) return;
+    switch (this.mode) {
+      case '1v1':
+      case '2v2':
+      case '3v3':
+        this.rulesRounds();
+        break;
+      case 'tdm':
+        this.rulesTdm();
+        break;
+      case 'kc':
+        this.rulesKc();
+        break;
+      case 'dom':
+        this.rulesDom();
+        break;
+      case 'koth':
+        this.rulesKoth();
+        break;
+      case 'infected':
+        this.rulesInfected();
+        break;
+      case 'survival':
+        this.rulesSurvival();
+        break;
+      case 'br':
+        this.rulesBr();
+        break;
+      default:
+        this.rulesFfa();
+    }
+  }
+
+  // ---------------------------------------------------------------- kills, streaks, gun game
+
+  private onKill(victim: Agent, killer: Agent | null, cause: DeathCause): void {
+    const sim = this.sim;
+    if (this.mode === 'kc') sim.spawnPickup('tag', victim.x, victim.z, victim.team, 30);
+    if (this.mode === 'infected' && victim.team === 0) {
+      this.notices.push({ kind: 'infected', byPlayer: killer === this.player, player: victim === this.player });
+      this.infect(victim);
+    }
+    if (this.mode === 'gungame') {
+      if (cause === 'knife' && victim.tier > 0) {
+        victim.tier--;
+        victim.tierKills = 0;
+        setLoadout(victim, [GUN_GAME_LADDER[victim.tier]]);
+        if (victim === this.player) this.notices.push({ kind: 'demote', weapon: GUN_GAME_LADDER[victim.tier] });
+      }
+      if (killer) {
+        const last = GUN_GAME_LADDER.length - 1;
+        if (killer.tier === last) {
+          this.finish(killer === this.player);
+          return;
+        }
+        killer.tierKills++;
+        if (killer.tierKills >= GUN_GAME_KILLS_PER_TIER) {
+          killer.tier++;
+          killer.tierKills = 0;
+          const keep = killer.ammo;
+          setLoadout(killer, [GUN_GAME_LADDER[killer.tier]]);
+          killer.switchT = keep >= 0 ? 0.45 : 0;
+          if (killer === this.player) this.notices.push({ kind: 'promote', weapon: GUN_GAME_LADDER[killer.tier] });
+        }
+      }
+    }
+    // Killstreaks for the player.
+    if (killer === this.player && this.phase === 'live') {
+      for (const s of STREAKS) {
+        if (killer.streak !== s.kills) continue;
+        if (s.name === 'UAV') this.uavUntil = sim.time + 30;
+        if (s.name === 'Airstrike') sim.callAirstrike(killer);
+        if (s.name === 'Juggernaut') killer.armor = 0.45;
+        this.notices.push({ kind: 'streak', name: s.name, kills: s.kills });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- team rounds
+
+  private rulesRounds(): void {
+    const sim = this.sim;
+    if (this.phase === 'roundOver') {
+      if (sim.time >= this.breakUntil) this.resetRound();
+      return;
+    }
+    const alive = [0, 0];
+    for (const a of sim.agents) if (a.alive) alive[a.team]++;
+    if (alive[0] > 0 && alive[1] > 0) return;
+    if (alive[0] === 0 && alive[1] === 0) {
+      this.phase = 'roundOver';
+      this.breakUntil = sim.time + ROUND_BREAK;
+      this.announce('Draw', ROUND_BREAK);
+      return;
+    }
+    const winner = alive[0] > 0 ? 0 : 1;
+    this.scores[winner]++;
+    if (this.scores[winner] >= ROUND_TARGET) {
+      this.finish(winner === 0);
+      return;
+    }
+    this.phase = 'roundOver';
+    this.breakUntil = sim.time + ROUND_BREAK;
+    this.announce(winner === 0 ? 'Round won' : 'Round lost', ROUND_BREAK);
+  }
+
+  private resetRound(): void {
+    const sim = this.sim;
+    this.round++;
+    const used = [0, 0];
+    for (const a of sim.agents) {
+      // Alternate sides every round so neither team keeps the same spawn.
+      const side = (a.team + this.round + 1) % 2;
+      const p = sim.arena.teamSpawns[side][used[a.team]++];
+      sim.respawn(a, p.x, p.z, yawTo(p.x, p.z, 0, 0));
+      a.protectedUntil = 0;
+      a.grenades = 2;
+    }
+    this.phase = 'live';
+    this.announce(`Round ${this.round}`);
+  }
+
+  // ---------------------------------------------------------------- respawning modes
+
+  /** Respawns everyone except the player after a short delay. */
+  private autoRespawn(): void {
+    const sim = this.sim;
+    for (const a of sim.agents) {
+      if (a.alive || a === this.player) continue;
+      const at = this.respawnAt.get(a.id);
+      if (at === undefined) this.respawnAt.set(a.id, sim.time + 3);
+      else if (sim.time >= at) {
+        this.respawnAt.delete(a.id);
+        this.respawnSafely(a);
+      }
+    }
+  }
+
+  private rulesFfa(): void {
+    const target = TARGETS[this.mode];
+    if (target !== undefined) {
+      for (const a of this.sim.agents) {
+        if (a.kills >= target) {
+          this.finish(a === this.player);
+          return;
+        }
+      }
+    }
+    this.autoRespawn();
+  }
+
+  private rulesTdm(): void {
+    const s: [number, number] = [0, 0];
+    for (const a of this.sim.agents) s[a.team as 0 | 1] += a.kills;
+    this.scores = s;
+    const target = TARGETS.tdm!;
+    if (s[0] >= target || s[1] >= target) {
+      this.finish(s[0] >= target);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  private rulesKc(): void {
+    const target = TARGETS.kc!;
+    if (this.scores[0] >= target || this.scores[1] >= target) {
+      this.finish(this.scores[0] >= target);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  // ---------------------------------------------------------------- domination
+
+  private setupFlags(): void {
+    const sim = this.sim;
+    const H = sim.arena.half;
+    const spots: [string, number][] = [
+      ['A', -H * 0.6],
+      ['B', 0],
+      ['C', H * 0.6]
+    ];
+    for (const [label, x] of spots) {
+      const p = sim.arena.randomFreePoint(() => sim.rng.next(), x, 0, 6) ?? { x, z: 0 };
+      this.flags.push({ label, x: p.x, z: p.z, r: 4, owner: -1, progress: 0 });
+    }
+    sim.objectives = this.flags;
+    // Each bot goes for the nearest flag its team doesn't own; with all three held, it defends one.
+    sim.rallyFor = (a) => {
+      let best: Flag | null = null;
+      let bestD = Infinity;
+      for (const f of this.flags) {
+        if (f.owner === a.team) continue;
+        const d = Math.hypot(f.x - a.x, f.z - a.z) + (a.id % 3) * 4;
+        if (d < bestD) {
+          bestD = d;
+          best = f;
+        }
+      }
+      return best ?? this.flags[a.id % this.flags.length];
+    };
+  }
+
+  private rulesDom(): void {
+    const sim = this.sim;
+    for (const f of this.flags) {
+      const on = [0, 0];
+      let playerOn = false;
+      for (const a of sim.agents) {
+        if (!a.alive || Math.hypot(a.x - f.x, a.z - f.z) > f.r) continue;
+        on[a.team]++;
+        if (a === this.player) playerOn = true;
+      }
+      if (on[0] && on[1]) continue;
+      const team = on[0] ? 0 : on[1] ? 1 : -1;
+      if (team < 0) continue;
+      const dir = team === 0 ? 1 : -1;
+      if (f.owner === team) {
+        f.progress = dir;
+        continue;
+      }
+      const rate = 0.045 * (1 + 0.5 * (Math.max(on[0], on[1]) - 1));
+      f.progress = Math.max(-1, Math.min(1, f.progress + dir * rate));
+      // Crossing neutral strips the old owner.
+      if (f.owner >= 0 && Math.sign(f.progress) !== (f.owner === 0 ? 1 : -1)) f.owner = -1;
+      if (Math.abs(f.progress) >= 1) {
+        f.owner = team;
+        this.notices.push({ kind: 'capture', flag: f.label, team, byPlayer: playerOn });
+        this.announce(team === this.player.team ? `${f.label} captured` : `${f.label} lost`, 1.6);
+      }
+    }
+    // One point per held flag per second.
+    if (sim.time - this.lastScoreTick >= 1) {
+      this.lastScoreTick = sim.time;
+      for (const f of this.flags) if (f.owner >= 0) this.scores[f.owner as 0 | 1]++;
+    }
+    const target = TARGETS.dom!;
+    if (this.scores[0] >= target || this.scores[1] >= target) {
+      this.finish(this.scores[0] >= target);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  // ---------------------------------------------------------------- hardpoint
+
+  private placeHill(i: number): void {
+    this.hillIndex = i % HILLS.length;
+    const h = HILLS[this.hillIndex];
+    this.sim.rally = { x: h.x, z: h.z, r: HILL_R };
+    this.hillMovedAt = this.sim.time;
+  }
+
+  /** Seconds until the hill moves. */
+  hillSeconds(): number {
+    return Math.max(0, HILL_MOVE - (this.sim.time - this.hillMovedAt));
+  }
+
+  private rulesKoth(): void {
+    const sim = this.sim;
+    const hill = sim.rally!;
+    const on = [0, 0];
+    for (const a of sim.agents) if (a.alive && Math.hypot(a.x - hill.x, a.z - hill.z) < hill.r) on[a.team]++;
+    this.hillHolder = on[0] && on[1] ? -2 : on[0] ? 0 : on[1] ? 1 : -1;
+    if (this.hillHolder >= 0) this.scores[this.hillHolder as 0 | 1] += SIM.dt * 6;
+    const target = TARGETS.koth!;
+    if (this.scores[0] >= target || this.scores[1] >= target) {
+      this.finish(this.scores[0] >= target);
+      return;
+    }
+    if (sim.time - this.hillMovedAt > HILL_MOVE) {
+      this.placeHill(this.hillIndex + 1);
+      this.announce('The hardpoint has moved');
+    }
+    this.autoRespawn();
+  }
+
+  // ---------------------------------------------------------------- infected
+
+  private infect(a: Agent): void {
+    a.team = 1;
+    setLoadout(a, ['knife']);
+    a.grenades = 0;
+  }
+
+  /** Seconds the survivors still have to hold out. */
+  infectedSeconds(): number {
+    return Math.max(0, INFECTED_TIME - this.sim.time);
+  }
+
+  private rulesInfected(): void {
+    const sim = this.sim;
+    const survivors = sim.agents.filter((a) => a.team === 0);
+    this.scores = [survivors.length, sim.agents.length - survivors.length];
+    if (survivors.length === 0) {
+      // Everyone is infected: the infection wins (and so does the player, who is one of them).
+      this.finish(this.player.team === 1);
+      return;
+    }
+    if (sim.time >= INFECTED_TIME) {
+      this.finish(this.player.team === 0);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  /** The player chooses when to respawn (after a short delay) in respawn modes. */
+  canPlayerRespawn(): boolean {
+    return RESPAWN_MODES.includes(this.mode) && this.phase === 'live' && !this.player.alive && this.sim.time - this.player.deathT > 2;
+  }
+
+  respawnPlayer(): void {
+    if (this.canPlayerRespawn()) this.respawnSafely(this.player);
+  }
+
+  /** Respawns at the spawn point farthest from every living enemy (own side in team modes). */
+  private respawnSafely(a: Agent): void {
+    const sim = this.sim;
+    const pool = this.def.teams && this.mode !== 'infected' ? sim.arena.teamSpawns[a.team] : sim.arena.spawns;
+    let best = pool[0];
+    let bestD = -1;
+    for (const p of pool) {
+      let nearest = Infinity;
+      for (const b of sim.agents) if (b.alive && b.team !== a.team) nearest = Math.min(nearest, Math.hypot(b.x - p.x, b.z - p.z));
+      // A little randomness so team spawns don't all pick the same point.
+      const score = nearest + sim.rng.next() * 6;
+      if (score > bestD) {
+        bestD = score;
+        best = p;
+      }
+    }
+    sim.respawn(a, best.x, best.z, yawTo(best.x, best.z, 0, 0));
+  }
+
+  // ---------------------------------------------------------------- survival
+
+  private startWave(): void {
+    this.wave++;
+    this.waveQueue = 2 + this.wave * 2;
+    this.player.hp = 100;
+    this.player.grenades = Math.max(this.player.grenades, 2);
+    this.phase = 'live';
+    this.announce(`Wave ${this.wave}`);
+  }
+
+  private rulesSurvival(): void {
+    const sim = this.sim;
+    if (!this.player.alive) {
+      this.finish(false);
+      return;
+    }
+    if (this.phase === 'roundOver') {
+      if (sim.time >= this.breakUntil) this.startWave();
+      return;
+    }
+    const enemies = sim.agents.filter((a) => a.team === 1);
+    const alive = enemies.filter((a) => a.alive).length;
+    const maxAlive = Math.min(8, 2 + this.wave);
+    if (this.waveQueue > 0 && alive < maxAlive) {
+      const p = sim.arena.spawns
+        .slice()
+        .sort((a, b) => Math.hypot(b.x - this.player.x, b.z - this.player.z) - Math.hypot(a.x - this.player.x, a.z - this.player.z))[sim.rng.int(3)];
+      const reuse = enemies.find((a) => !a.alive && sim.time - a.deathT > 6);
+      let a: Agent;
+      if (reuse) {
+        sim.respawn(reuse, p.x, p.z, yawTo(p.x, p.z, 0, 0));
+        a = reuse;
+      } else {
+        a = sim.spawn(1, this.opts.botControl, p.x, p.z, yawTo(p.x, p.z, 0, 0));
+      }
+      // Later waves bring better guns and sharper aim.
+      setLoadout(a, [PRIMARY_POOL[sim.rng.int(Math.min(PRIMARY_POOL.length, 3 + this.wave))], 'pistol']);
+      a.skill = DIFFICULTY[this.opts.difficulty].skill * Math.max(0.6, 1 - this.wave * 0.04);
+      a.targetId = this.player.id;
+      a.lastSeenX = this.player.x;
+      a.lastSeenZ = this.player.z;
+      a.lastSeenT = sim.time;
+      this.waveQueue--;
+      return;
+    }
+    if (this.waveQueue === 0 && alive === 0) {
+      this.phase = 'roundOver';
+      this.breakUntil = sim.time + WAVE_BREAK;
+      this.announce(`Wave ${this.wave} cleared`, WAVE_BREAK);
+    }
+  }
+
+  enemiesRemaining(): number {
+    if (this.mode === 'survival') return this.waveQueue + this.sim.agents.filter((a) => a.team === 1 && a.alive).length;
+    return this.sim.agents.filter((a) => a.alive && a.team !== this.player.team).length;
+  }
+
+  // ---------------------------------------------------------------- battle royale
+
+  private dropMedkit(): void {
+    const sim = this.sim;
+    const z = sim.zone;
+    const H = sim.arena.half;
+    const p = sim.arena.randomFreePoint(() => sim.rng.next(), z ? z.x : 0, z ? z.z : 0, Math.min(z ? z.r * 0.9 : H, H * 1.3));
+    if (p) sim.spawnPickup('medkit', p.x, p.z);
+  }
+
+  /** Zone state for the HUD: seconds until the next change, and whether it is shrinking. */
+  zoneInfo(): { shrinking: boolean; seconds: number; phase: number } | null {
+    if (this.mode !== 'br' || this.brPhase >= BR_PHASES.length) return null;
+    const idx = Math.max(0, this.brPhase);
+    const ph = BR_PHASES[idx];
+    const t = this.sim.time - this.brPhaseStart;
+    if (this.brPhase < 0 || t < ph.hold) return { shrinking: false, seconds: Math.max(0, ph.hold - t), phase: idx + 1 };
+    return { shrinking: true, seconds: Math.max(0, ph.hold + ph.shrink - t), phase: idx + 1 };
+  }
+
+  /** Where the zone is heading, for the minimap. */
+  zoneTarget(): { x: number; z: number; r: number } {
+    return this.zoneTo;
+  }
+
+  private rulesBr(): void {
+    const sim = this.sim;
+    const zone = sim.zone!;
+    if (this.brPhase < 0 || sim.time - this.brPhaseStart >= BR_PHASES[this.brPhase].hold + BR_PHASES[this.brPhase].shrink) {
+      if (this.brPhase + 1 < BR_PHASES.length) {
+        this.brPhase++;
+        this.brPhaseStart = sim.time;
+        const ph = BR_PHASES[this.brPhase];
+        this.zoneFrom = { x: zone.x, z: zone.z, r: zone.r };
+        // The next circle lies entirely inside the current one.
+        const base = this.brPhase === 0 ? sim.arena.half * 0.95 : zone.r;
+        const r = Math.max(this.brPhase === BR_PHASES.length - 1 ? 0 : 6, base * ph.scale);
+        const slack = Math.max(0, (this.brPhase === 0 ? sim.arena.half * 0.5 : zone.r) - r) * 0.7;
+        const ang = sim.rng.next() * Math.PI * 2;
+        const off = sim.rng.next() * slack;
+        this.zoneTo = { x: zone.x * (this.brPhase === 0 ? 0 : 1) + Math.cos(ang) * off, z: zone.z * (this.brPhase === 0 ? 0 : 1) + Math.sin(ang) * off, r };
+        zone.dps = ph.dps;
+      }
+    }
+    const ph = BR_PHASES[this.brPhase];
+    const t = sim.time - this.brPhaseStart;
+    if (t > ph.hold) {
+      const k = Math.min(1, (t - ph.hold) / ph.shrink);
+      zone.x = this.zoneFrom.x + (this.zoneTo.x - this.zoneFrom.x) * k;
+      zone.z = this.zoneFrom.z + (this.zoneTo.z - this.zoneFrom.z) * k;
+      zone.r = this.zoneFrom.r + (this.zoneTo.r - this.zoneFrom.r) * k;
+    }
+    if (sim.time >= this.nextMedkitT) {
+      this.nextMedkitT = sim.time + 4;
+      if (sim.pickups.filter((m) => m.active && m.kind === 'medkit').length < 40) this.dropMedkit();
+    }
+    const alive = sim.agents.filter((a) => a.alive);
+    if (!this.player.alive) {
+      this.finish(false, alive.length + 1);
+      return;
+    }
+    if (alive.length === 1) this.finish(true, 1);
+  }
+
+  private finish(win: boolean, placement = 0): void {
+    if (this.phase === 'over') return;
+    this.phase = 'over';
+    this.result = win ? 'win' : 'lose';
+    this.placement = placement;
+    const text =
+      this.mode === 'br'
+        ? win
+          ? 'Winner winner!'
+          : `Eliminated — #${placement}`
+        : this.mode === 'survival'
+          ? `Survived ${this.wave - 1} wave${this.wave === 2 ? '' : 's'}`
+          : win
+            ? 'Victory'
+            : 'Defeat';
+    this.announce(text, 9999);
+  }
+
+  /** Living soldiers per side, for the HUD. */
+  teamCounts(): [number, number] {
+    const c: [number, number] = [0, 0];
+    for (const a of this.sim.agents) {
+      if (!a.alive) continue;
+      if (a.team === this.player.team) c[0]++;
+      else c[1]++;
+    }
+    return c;
+  }
+}
+
+const shuffle = <T>(arr: T[], rand: () => number): T[] => {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};

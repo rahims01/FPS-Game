@@ -1,0 +1,5 @@
+node_modules
+dist
+training/checkpoints/*.json
+training/*.log
+screenshots

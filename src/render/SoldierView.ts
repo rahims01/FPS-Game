@@ -1,0 +1,410 @@
+import * as THREE from 'three';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import type { LoadedAssets } from '../assets/AssetRegistry';
+import { STICKMAN_SCALE } from '../assets/scale';
+import { createRagdoll, type RagdollHandle } from '../physics/RagdollSystem';
+import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import type { Agent } from '../sim/Agent';
+import { SOLDIER } from '../sim/config';
+import { wrapAngle } from '../sim/math';
+import type { WeaponId } from '../sim/weapons';
+import { weaponModels } from '../assets/weaponModels';
+
+const DEG = Math.PI / 180;
+
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+const _x = new THREE.Vector3();
+const _m = new THREE.Matrix4();
+/** Orients a prop (barrel +Y, sights +Z) in world space. */
+const orientProp = (obj: THREE.Object3D, pos: THREE.Vector3, yDir: THREE.Vector3, zDir: THREE.Vector3): void => {
+  _y.copy(yDir).normalize();
+  _z.copy(zDir).addScaledVector(_y, -zDir.dot(_y));
+  if (_z.lengthSq() < 1e-6) _z.set(0, 0, 1).addScaledVector(_y, -_y.z);
+  _z.normalize();
+  _x.crossVectors(_y, _z).normalize();
+  _m.makeBasis(_x, _y, _z);
+  obj.quaternion.setFromRotationMatrix(_m);
+  obj.position.copy(pos);
+};
+
+const _q = new THREE.Quaternion();
+const _pq = new THREE.Quaternion();
+const _pqi = new THREE.Quaternion();
+/** Applies a WORLD-space rotation to a bone, after the mixer has posed it. */
+const rotateBoneWorldQ = (bone: THREE.Object3D, q: THREE.Quaternion): void => {
+  if (!bone.parent) return;
+  bone.parent.getWorldQuaternion(_pq);
+  _pqi.copy(_pq).invert();
+  // local' = parent^-1 * R * parent * local
+  bone.quaternion.premultiply(_pqi.multiply(q).multiply(_pq));
+  bone.updateMatrixWorld(true);
+};
+const rotateBoneWorld = (bone: THREE.Object3D, axis: THREE.Vector3, angle: number): void => {
+  if (angle === 0) return;
+  rotateBoneWorldQ(bone, _q.setFromAxisAngle(axis, angle));
+};
+
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _id = new THREE.Quaternion();
+const _r = new THREE.Quaternion();
+const _rw = new THREE.Quaternion();
+/** Turns `bone` so that `child` moves toward `target` (world space), by `weight`. */
+const aimBoneAt = (bone: THREE.Object3D, child: THREE.Object3D, target: THREE.Vector3, weight: number): void => {
+  bone.getWorldPosition(_a);
+  child.getWorldPosition(_b);
+  _b.sub(_a).normalize();
+  _c.copy(target).sub(_a).normalize();
+  _r.setFromUnitVectors(_b, _c);
+  rotateBoneWorldQ(bone, weight < 1 ? _rw.copy(_id).slerp(_r, weight) : _r);
+};
+
+interface ArmChain {
+  upper: THREE.Object3D;
+  lower: THREE.Object3D;
+  hand: THREE.Object3D;
+  a: number;
+  b: number;
+}
+
+/**
+ * Two-bone IK: places the hand at `target`, bending the elbow toward `pole`.
+ * This project has no Mixamo rifle-aim clip (the "rifle anims" folder was
+ * empty and shoot.json keeps both hands at the hips), so the rifle stance is
+ * built procedurally on top of the locomotion clips.
+ */
+const solveArm = (arm: ArmChain, target: THREE.Vector3, pole: THREE.Vector3, weight: number): void => {
+  const S = arm.upper.getWorldPosition(new THREE.Vector3());
+  const toT = target.clone().sub(S);
+  const d = THREE.MathUtils.clamp(toT.length(), Math.abs(arm.a - arm.b) + 1e-3, (arm.a + arm.b) * 0.999);
+  const n = toT.normalize();
+  const cosA = (arm.a * arm.a + d * d - arm.b * arm.b) / (2 * arm.a * d);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const p = pole.clone().addScaledVector(n, -pole.dot(n)).normalize();
+  const elbow = S.clone().addScaledVector(n, arm.a * cosA).addScaledVector(p, arm.a * sinA);
+  aimBoneAt(arm.upper, arm.lower, elbow, weight);
+  aimBoneAt(arm.lower, arm.hand, S.addScaledVector(n, d), weight);
+};
+
+const weaponCache = new Map<WeaponId, THREE.Object3D>();
+const THIRD_PERSON_SCALE = 1.35;
+/**
+ * Other players carry slightly oversized, lifted-brightness copies of their
+ * weapons: real-scale dark guns all but vanish against the walls at range.
+ */
+const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId): THREE.Object3D => {
+  let r = weaponCache.get(id);
+  if (!r) {
+    r = weaponModels(assets.rifle)[id].object.clone(true);
+    r.scale.setScalar(THIRD_PERSON_SCALE);
+    r.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      if (mat.emissive) mat.emissive.setHex(0x303030);
+      m.material = mat;
+    });
+    weaponCache.set(id, r);
+  }
+  return r;
+};
+
+interface Clips {
+  idle: THREE.AnimationAction;
+  walk: THREE.AnimationAction;
+  run: THREE.AnimationAction;
+}
+
+/**
+ * One soldier on screen. Mixamo locomotion clips drive the body; the legs turn
+ * toward the direction of travel while the spine twists back to the aim; arm
+ * IK holds the rifle on the line of sight. On death the same skeleton is
+ * handed to TribeSim's cannon-es ragdoll.
+ */
+export class SoldierView {
+  readonly root = new THREE.Group();
+  readonly model: THREE.Group;
+  /** Holds the weapon in hand (barrel +Y from the grip). */
+  readonly rifle: THREE.Group;
+  private assets: LoadedAssets;
+  private weaponId: WeaponId | null = null;
+  private muzzleLength = 0.62;
+  readonly life: number;
+  private mixer: THREE.AnimationMixer;
+  private a: Clips;
+  private bones: Record<string, THREE.Object3D | undefined> = {};
+  private rightArm: ArmChain | null = null;
+  private leftArm: ArmChain | null = null;
+  private speeds: { walk: number; run: number };
+  private upperWeight = 1;
+  private flinch = 0;
+  private flinchSide = 1;
+  ragdoll: RagdollHandle | null = null;
+  diedAt = 0;
+  private tag: THREE.Sprite | null = null;
+  private materials: THREE.Material[] = [];
+
+  constructor(assets: LoadedAssets, agent: Agent, color: THREE.ColorRepresentation) {
+    this.life = agent.life;
+    this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
+    this.model.scale.setScalar(STICKMAN_SCALE);
+    this.root.add(this.model);
+    const tint = new THREE.Color(color);
+    this.model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      const cloned = mats.map((mat) => {
+        const c = mat.clone() as THREE.MeshPhongMaterial;
+        if (c.color) c.color.copy(tint);
+        this.materials.push(c);
+        return c;
+      });
+      m.material = Array.isArray(m.material) ? cloned : cloned[0];
+    });
+    for (const name of [
+      'Hips',
+      'Spine',
+      'Spine1',
+      'Spine2',
+      'Neck',
+      'Head',
+      'RightShoulder',
+      'RightArm',
+      'RightForeArm',
+      'RightHand',
+      'RightHandMiddle1',
+      'RightHandThumb1',
+      'LeftArm',
+      'LeftForeArm',
+      'LeftHand'
+    ]) {
+      this.bones[name] = this.model.getObjectByName(`mixamorig${name}`) ?? undefined;
+    }
+    this.model.updateMatrixWorld(true);
+    const chain = (side: 'Right' | 'Left'): ArmChain | null => {
+      const upper = this.bones[`${side}Arm`];
+      const lower = this.bones[`${side}ForeArm`];
+      const hand = this.bones[`${side}Hand`];
+      if (!upper || !lower || !hand) return null;
+      const p = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
+      return { upper, lower, hand, a: p(upper).distanceTo(p(lower)), b: p(lower).distanceTo(p(hand)) };
+    };
+    this.rightArm = chain('Right');
+    this.leftArm = chain('Left');
+
+    this.mixer = new THREE.AnimationMixer(this.model);
+    const act = (clip: THREE.AnimationClip) => {
+      const a = this.mixer.clipAction(clip);
+      a.setEffectiveWeight(0);
+      a.play();
+      return a;
+    };
+    const c = assets.clips;
+    this.a = { idle: act(c.idle), walk: act(c.walk), run: act(c.run) };
+    this.speeds = { walk: assets.clipSpeed.walk || 1.4, run: assets.clipSpeed.run || 3.5 };
+
+    this.assets = assets;
+    this.rifle = new THREE.Group();
+    this.root.add(this.rifle);
+    this.setWeapon(agent.weapons[agent.slot] ?? 'rifle');
+  }
+
+  /** Swaps the weapon in hand (gun game upgrades, weapon switches, infection). */
+  setWeapon(id: WeaponId): void {
+    if (id === this.weaponId) return;
+    this.weaponId = id;
+    this.rifle.clear();
+    this.rifle.add(thirdPersonWeapon(this.assets, id).clone(true));
+    this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
+  }
+
+  setVisible(v: boolean): void {
+    this.root.visible = v;
+  }
+
+  /**
+   * Floating name above the head, in the player's colour. Ally tags draw
+   * through walls; enemy tags are depth-tested (and only shown when seen).
+   */
+  setNameTag(name: string, color: string, throughWalls: boolean): void {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 96;
+    const g = c.getContext('2d')!;
+    g.font = 'bold 54px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const n = parseInt(color.slice(1), 16);
+    const dark = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) < 70;
+    g.lineWidth = 10;
+    g.strokeStyle = dark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)';
+    g.strokeText(name, 256, 50);
+    g.fillStyle = color;
+    g.fillText(name, 256, 50);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: !throughWalls, depthWrite: false });
+    this.tag = new THREE.Sprite(mat);
+    this.tag.scale.set(1.6, 0.3, 1);
+    this.tag.position.y = 2.2;
+    this.tag.renderOrder = 10;
+    this.root.add(this.tag);
+  }
+
+  /** `distance` keeps the tag a readable size: small up close, larger far away. */
+  showTag(v: boolean, distance: number): void {
+    if (!this.tag) return;
+    this.tag.visible = v && !this.ragdoll;
+    const k = THREE.MathUtils.clamp(distance * 0.08, 0.35, 2.4);
+    this.tag.scale.set(1.6 * k, 0.3 * k, 1);
+  }
+
+  hit(fromSide: number): void {
+    this.flinch = 1;
+    this.flinchSide = fromSide;
+  }
+
+  /** Poses the soldier for this frame. (x, y, z) is the interpolated position. */
+  update(agent: Agent, x: number, y: number, z: number, dt: number, time: number): void {
+    if (this.ragdoll) {
+      this.ragdoll.update();
+      this.placeRifle(agent, false);
+      return;
+    }
+    this.root.position.set(x, y, z);
+
+    const speed = Math.hypot(agent.vx, agent.vz);
+    // The whole body faces the aim; walking backwards plays the cycle in reverse.
+    const phi = speed > 0.3 ? wrapAngle(Math.atan2(agent.vx, agent.vz) - agent.yaw) : 0;
+    const dir = Math.abs(phi) > 110 * DEG ? -1 : 1;
+    this.root.rotation.y = agent.yaw;
+
+    // Locomotion weights: idle -> walk -> run.
+    const walkW = THREE.MathUtils.clamp((speed - 0.2) / 1.6, 0, 1);
+    const runW = THREE.MathUtils.clamp((speed - SOLDIER.walkSpeed) / (SOLDIER.sprintSpeed - SOLDIER.walkSpeed), 0, 1);
+    const a = this.a;
+    a.idle.setEffectiveWeight(1 - walkW);
+    a.walk.setEffectiveWeight(walkW * (1 - runW));
+    a.run.setEffectiveWeight(walkW * runW);
+    // Drive the cycles from ground speed so feet don't skate.
+    a.walk.timeScale = THREE.MathUtils.clamp((dir * Math.max(speed, 0.5)) / this.speeds.walk, -2.5, 2.5);
+    a.run.timeScale = THREE.MathUtils.clamp((dir * Math.max(speed, 1)) / this.speeds.run, -2, 2);
+    this.mixer.update(dt);
+    this.root.updateMatrixWorld(true);
+
+    // Rifle stance weight: off while sprinting (the run clip swings the arms).
+    this.setWeapon(agent.weapons[agent.slot] ?? 'rifle');
+    const wantUpper = agent.sprinting || agent.weapons[agent.slot] === 'knife' ? 0 : 1;
+    this.upperWeight += (wantUpper - this.upperWeight) * Math.min(1, dt * 8);
+    const u = this.upperWeight;
+
+    // Bend the spine for pitch.
+    const up = new THREE.Vector3(0, 1, 0);
+    const aimRight = new THREE.Vector3(-Math.cos(agent.yaw), 0, Math.sin(agent.yaw));
+    const pitchAxis = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw)).cross(up).normalize();
+    const kick = time - agent.lastShotT < 0.07 ? 0.05 : 0;
+    this.flinch = Math.max(0, this.flinch - dt * 4);
+    for (const name of ['Spine', 'Spine1', 'Spine2']) {
+      const b = this.bones[name];
+      if (!b) continue;
+      rotateBoneWorld(b, pitchAxis, ((agent.pitch * u) / 3) * 0.6);
+      if (this.flinch > 0) rotateBoneWorld(b, aimRight, (this.flinch * 0.25 * this.flinchSide) / 3);
+    }
+    if (agent.reloadT > 0 && this.bones.Spine1) rotateBoneWorld(this.bones.Spine1, pitchAxis, -0.12);
+    this.aimArms(agent, u, kick, time);
+    this.placeRifle(agent, u > 0.5);
+  }
+
+  /** Shouldered-rifle stance: right hand on the grip, left hand on the handguard (or the magazine while reloading). */
+  private aimArms(agent: Agent, u: number, kick: number, time: number): void {
+    const sh = this.bones.RightShoulder;
+    if (!sh || !this.rightArm || !this.leftArm || u < 0.02) return;
+    const cp = Math.cos(agent.pitch);
+    const F = new THREE.Vector3(Math.sin(agent.yaw) * cp, Math.sin(agent.pitch), Math.cos(agent.yaw) * cp);
+    const R = new THREE.Vector3(-Math.cos(agent.yaw), 0, Math.sin(agent.yaw));
+    const U = new THREE.Vector3().crossVectors(R, F).normalize();
+    const grip = sh
+      .getWorldPosition(new THREE.Vector3())
+      .addScaledVector(F, 0.22 - kick)
+      .addScaledVector(U, -0.15)
+      .addScaledVector(R, 0.02);
+    const left =
+      agent.reloadT > 0
+        ? grip
+            .clone()
+            .addScaledVector(F, 0.12)
+            .addScaledVector(U, -0.18 + Math.sin(time * 9) * 0.03)
+            .addScaledVector(R, -0.1)
+        : grip.clone().addScaledVector(F, 0.32).addScaledVector(U, 0.03).addScaledVector(R, -0.07);
+    const down = new THREE.Vector3(0, -1, 0);
+    solveArm(this.rightArm, grip, down.clone().addScaledVector(R, 0.9), u);
+    solveArm(this.leftArm, left, down.clone().addScaledVector(R, -0.9), u);
+  }
+
+  /** The rifle follows the right hand: aimed down the line of sight, or carried while sprinting. */
+  private placeRifle(agent: Agent, aiming: boolean): void {
+    const b = this.bones;
+    if (!b.RightHand || !b.RightHandMiddle1 || !b.RightHandThumb1) return;
+    const hand = b.RightHand.getWorldPosition(new THREE.Vector3());
+    const mid = b.RightHandMiddle1.getWorldPosition(new THREE.Vector3());
+    const thumb = b.RightHandThumb1.getWorldPosition(new THREE.Vector3());
+    const finger = mid.clone().sub(hand).normalize();
+    const palm = hand.clone().addScaledVector(finger, 0.05);
+    this.root.updateMatrixWorld(true);
+    const toLocal = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    const U = new THREE.Vector3(0, 1, 0);
+    if (aiming && !this.ragdoll) {
+      const cp = Math.cos(agent.pitch);
+      const F = new THREE.Vector3(Math.sin(agent.yaw) * cp, Math.sin(agent.pitch), Math.cos(agent.yaw) * cp);
+      // The grip sits a little below the bore, so shift the prop back so the stock meets the shoulder.
+      orientProp(this.rifle, palm.addScaledVector(F, -0.08), F, U);
+    } else {
+      const blade = thumb.sub(hand);
+      blade.addScaledVector(finger, -blade.dot(finger)).normalize();
+      const F = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw));
+      orientProp(this.rifle, palm, blade.addScaledVector(U, 0.6), F);
+    }
+    // orientProp works in world space; the rifle is parented to root.
+    this.rifle.applyMatrix4(toLocal);
+  }
+
+  /** World position of the muzzle (for tracers and flashes). */
+  muzzle(target: THREE.Vector3): THREE.Vector3 {
+    return target.set(0, this.muzzleLength, 0).applyMatrix4(this.rifle.matrixWorld);
+  }
+
+  die(agent: Agent, physics: PhysicsWorld, time: number): void {
+    if (this.ragdoll) return;
+    this.model.updateMatrixWorld(true);
+    this.ragdoll = createRagdoll(this.model, physics.world);
+    const push = agent.deathRegion === 'head' ? 9 : 14;
+    this.ragdoll.activate({
+      impulse: new THREE.Vector3(agent.deathDirX, Math.max(0.15, agent.deathDirY + 0.2), agent.deathDirZ).normalize().multiplyScalar(push),
+      region: agent.deathRegion,
+      velocity: new THREE.Vector3(agent.vx, 0, agent.vz)
+    });
+    this.diedAt = time;
+  }
+
+  /** World position of the hips (the death camera looks at it). */
+  hips(target: THREE.Vector3): THREE.Vector3 {
+    if (this.ragdoll) this.ragdoll.getHipsWorldPosition(target);
+    else target.copy(this.root.position).setY(this.root.position.y + 1);
+    return target;
+  }
+
+  dispose(): void {
+    this.ragdoll?.dispose();
+    this.ragdoll = null;
+    this.mixer.stopAllAction();
+    this.root.removeFromParent();
+    for (const m of this.materials) m.dispose();
+    if (this.tag) {
+      this.tag.material.map?.dispose();
+      this.tag.material.dispose();
+    }
+  }
+}
