@@ -16,6 +16,12 @@ import { Match, TARGETS, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, cssColor, lateJoinerColor, randomUsername, type Identities } from './identity';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
+import type { ClientSession, HostSession } from '../net/Session';
+import type { Snapshot, StartMsg } from '../net/protocol';
+import { applySnapshot, type NetTarget } from '../net/snapshot';
+
+/** Online role of this browser, if any. */
+export type NetRole = { role: 'host'; session: HostSession; seed: number } | { role: 'client'; session: ClientSession; start: StartMsg };
 
 export interface GameSettings {
   sensitivity: number;
@@ -112,7 +118,32 @@ export interface HudState {
   xp: number;
   killedBy: { name: string; color: string; weapon: string; distance: number; hp: number; headshot: boolean } | null;
   ctf: { ours: 'home' | 'taken' | 'dropped'; theirs: 'home' | 'taken' | 'dropped'; carrying: boolean } | null;
+  killcam: { killer: string; color: string; weapon: string } | null;
+  /** Online: why the match ended for us (host left, connection lost), or null. */
+  netMessage: string | null;
+  online: boolean;
 }
+
+/** One recorded agent state for the killcam. */
+interface Snap {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  vx: number;
+  vz: number;
+  crouching: boolean;
+  slideT: number;
+  sprinting: boolean;
+  reloadT: number;
+  weapon: WeaponId;
+  lastShotT: number;
+}
+
+const KILLCAM_BEFORE = 3.5;
+const KILLCAM_AFTER = 0.6;
+const KILLCAM_DELAY = 0.9;
 
 /** Shown to the player as they approach each killstreak. */
 const STREAK_LADDER = [
@@ -190,6 +221,26 @@ export class Game {
   private deathsSinceKill = 0;
   private killedBy: HudState['killedBy'] = null;
   private lastWeapon: WeaponId | null = null;
+  // Online.
+  private netTargets = new Map<number, NetTarget>();
+  private netTick = 0;
+  netMessage: string | null = null;
+  private ticker: Worker | null = null;
+  private lastSnapAt = performance.now();
+  // Killcam (1v1 only): a short history of every agent plus the shots fired.
+  private history: { t: number; s: Snap[] }[] = [];
+  private shotLog: { t: number; shooter: number; ex: number; ey: number; ez: number }[] = [];
+  private pendingKillcam: { at: number; killer: number; victim: number; deathT: number } | null = null;
+  private killcam: {
+    killer: number;
+    victim: number;
+    deathT: number;
+    clock: number;
+    end: number;
+    ghost: SoldierView | null;
+    ghostDead: boolean;
+    weapon: WeaponId;
+  } | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -197,12 +248,35 @@ export class Game {
     opts: MatchOptions,
     learned: Brain | null,
     private settings: GameSettings,
-    audio: GameAudio
+    audio: GameAudio,
+    readonly net: NetRole | null = null
   ) {
     this.audio = audio;
     const control = opts.botControl === 'learned' && learned ? 'learned' : 'heuristic';
-    this.match = new Match({ ...opts, botControl: control });
+    const client = net?.role === 'client' ? net : null;
+    this.match = new Match({
+      ...opts,
+      botControl: control,
+      seed: client ? client.start.seed : net?.role === 'host' ? net.seed : opts.seed,
+      ...(client ? { mode: client.start.mode, difficulty: client.start.difficulty } : {})
+    });
     const sim = this.match.sim;
+    if (client) {
+      // Mirror the host's match: we steer our own soldier, everyone else comes from snapshots.
+      const me = sim.agents[client.start.you];
+      sim.agents[0].control = 'remote';
+      me.control = 'player';
+      this.match.player = me;
+      sim.puppet = true;
+      sim.onKill = null;
+      sim.onPickup = null;
+      client.session.onSnap = (snap) => this.onSnapshot(snap);
+      client.session.onEnd = (reason) => {
+        this.netMessage = reason;
+      };
+    } else if (net?.role === 'host') {
+      net.session.onClientLeft = (name) => this.callout(`${name} left the match`);
+    }
     sim.brains.heuristic = heuristicBrain;
     if (learned) {
       // A learned bot without a target (or a policy that errors) falls back to the baseline.
@@ -235,7 +309,13 @@ export class Game {
 
     const p = this.match.player;
     this.yaw = p.yaw;
-    this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor);
+    if (client) {
+      this.ids = { names: client.start.names.slice(), colors: client.start.colors.slice(), teamColors: client.start.teamColors };
+    } else {
+      this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor);
+      if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors);
+    }
+    this.yaw = this.match.player.yaw;
     if (this.ids.teamColors) this.arenaView.teamColors = this.ids.teamColors;
 
     this.onResize();
@@ -252,6 +332,7 @@ export class Game {
 
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
+    if (net) this.startBackgroundTicker();
   }
 
   // ---------------------------------------------------------------- input
@@ -282,6 +363,10 @@ export class Game {
   private onKeyDown = (e: KeyboardEvent) => {
     if (!this.locked) return;
     this.keys.add(e.code);
+    if (e.code === 'Space' && this.killcam) {
+      this.endKillcam();
+      return;
+    }
     if (e.code === 'Space') {
       this.jumpQueued = true;
       if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
@@ -310,6 +395,10 @@ export class Game {
 
   private onMouseDown = (e: MouseEvent) => {
     if (!this.locked) return;
+    if (e.button === 0 && this.killcam) {
+      this.endKillcam();
+      return;
+    }
     if (e.button === 0) {
       this.mouse.left = true;
       if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
@@ -376,29 +465,68 @@ export class Game {
   private frame = (now: number) => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.frame);
+    this.advance(now, true);
+  };
+
+  /**
+   * Browsers stop animation frames in background tabs. In an online match the
+   * other players would freeze, so a worker keeps ticking the game (without
+   * drawing) while this tab is hidden.
+   */
+  private startBackgroundTicker(): void {
+    const src = 'setInterval(() => postMessage(0), 16);';
+    this.ticker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    this.ticker.onmessage = () => {
+      if (!this.disposed && document.hidden) this.advance(performance.now(), false);
+    };
+  }
+
+  private advance(now: number, render: boolean): void {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     const sim = this.match.sim;
     const player = this.match.player;
 
-    if (!this.paused) {
+    // Online matches never pause: other people are still playing.
+    if (!this.paused || this.net) {
       this.acc += dt;
+      const net = this.net;
       while (this.acc >= SIM.dt) {
         for (const a of sim.agents) this.prev.set(a.id, { x: a.x, y: a.y, z: a.z });
         const ammoBefore = player.ammo;
         const reloadBefore = player.reloadT;
-        this.match.step(this.input());
+        const input = this.input();
+        if (net?.role === 'client') {
+          // Predict our own soldier locally; send inputs to the host at 30 Hz.
+          net.session.press(input);
+          sim.stepLocal(player, input);
+          if (++this.netTick % 2 === 0) net.session.sendInput(player, input);
+        } else {
+          if (net) net.session.applyInputs();
+          this.match.step(input);
+          if (net) net.session.clearOneShots();
+        }
         if (player.ammo < ammoBefore) this.viewmodel.fire();
         if (player.reloadT > 0 && reloadBefore <= 0) this.audio.reload();
+        const events = sim.drainEvents();
+        if (net?.role === 'host') net.session.queueEvents(events);
+        this.handleEvents(events);
         this.drainNotices();
-        this.handleEvents(sim.drainEvents());
+        if (this.match.mode === '1v1') this.record();
         this.acc -= SIM.dt;
+      }
+      if (net?.role === 'host') net.session.tick(now);
+      if (net?.role === 'client') {
+        this.smoothRemotes(dt);
+        // WebRTC can take a long time to notice a vanished host; give up after 6 s of silence.
+        if (!this.netMessage && now - this.lastSnapAt > 6000) this.netMessage = 'Lost connection to the host.';
       }
       this.physics.step(dt);
     }
+    if (!render) return;
     const alpha = this.paused ? 1 : this.acc / SIM.dt;
     this.renderFrame(this.paused ? 0 : dt, alpha);
-  };
+  }
 
   /** Allies' tags always show; an enemy's only while you can see them within 45 m. */
   private tagVisible(a: Agent): boolean {
@@ -461,6 +589,7 @@ export class Game {
     for (const e of events) {
       if (e.type === 'shot') {
         const shooter = sim.agents[e.shooter];
+        if (this.match.mode === '1v1' && e.first) this.shotLog.push({ t: sim.time, shooter: e.shooter, ex: e.ex, ey: e.ey, ez: e.ez });
         const end = this.tmpB.set(e.ex, e.ey, e.ez);
         let from: THREE.Vector3;
         if (shooter === player) {
@@ -518,6 +647,9 @@ export class Game {
         v.setVisible(true);
         v.die(victim, this.physics, sim.time);
         if (e.attacker >= 0) this.effects.bloodPool(victim.x, victim.z);
+        if (victim === player && killer && this.match.mode === '1v1' && this.match.phase !== 'over') {
+          this.pendingKillcam = { at: sim.time + KILLCAM_DELAY, killer: killer.id, victim: victim.id, deathT: sim.time };
+        }
         if (victim === player) {
           this.deathCamT = 0;
           this.deathsSinceKill++;
@@ -562,6 +694,214 @@ export class Game {
         }
       }
     }
+  }
+
+  // ---------------------------------------------------------------- online
+
+  /** Client: a snapshot from the host. */
+  private onSnapshot(snap: Snapshot): void {
+    const me = this.match.player.id;
+    this.lastSnapAt = performance.now();
+    applySnapshot(this.match, snap, me, this.netTargets);
+    // Our own shots, swings and reloads were already shown locally.
+    const events = snap.ev.filter((e) => {
+      if (e.type === 'shot') return e.shooter !== me;
+      if (e.type === 'melee' || e.type === 'reload' || e.type === 'switch' || e.type === 'grenade') return e.agent !== me;
+      return true;
+    });
+    this.handleEvents(events);
+    this.drainNotices();
+  }
+
+  /** Client: other soldiers ease toward their latest snapshot positions. */
+  private smoothRemotes(dt: number): void {
+    const k = 1 - Math.exp(-dt * 14);
+    for (const a of this.match.sim.agents) {
+      if (a === this.match.player) continue;
+      const t = this.netTargets.get(a.id);
+      if (!t) continue;
+      a.x += (t.x - a.x) * k;
+      a.y += (t.y - a.y) * k;
+      a.z += (t.z - a.z) * k;
+      a.yaw += wrapAngle(t.yaw - a.yaw) * k;
+      a.pitch += (t.pitch - a.pitch) * k;
+      this.prev.set(a.id, { x: a.x, y: a.y, z: a.z });
+    }
+  }
+
+  /** Win or lose from this player's point of view (online clients work it out from the winning team). */
+  private myResult(): 'win' | 'lose' | null {
+    const m = this.match;
+    if (this.net?.role !== 'client') return m.result;
+    if (m.phase !== 'over') return null;
+    if (m.mode === 'br') return m.player.alive ? 'win' : 'lose';
+    if (m.mode === 'survival') return 'lose';
+    return m.winTeam === m.player.team ? 'win' : 'lose';
+  }
+
+  private myBanner(): string {
+    const m = this.match;
+    const sim = m.sim;
+    if (m.phase === 'over' && this.net?.role === 'client') {
+      const win = this.myResult() === 'win';
+      if (m.mode === 'br') return win ? 'Winner winner!' : 'Eliminated';
+      if (m.mode === 'survival') return `Survived ${m.wave - 1} waves`;
+      return win ? 'Victory' : 'Defeat';
+    }
+    return sim.time < m.bannerUntil ? m.bannerFor(m.player.team) : '';
+  }
+
+  // ---------------------------------------------------------------- killcam
+
+  private record(): void {
+    const sim = this.match.sim;
+    this.history.push({
+      t: sim.time,
+      s: sim.agents.map((a) => ({
+        x: a.x,
+        y: a.y,
+        z: a.z,
+        yaw: a.yaw,
+        pitch: a.pitch + (a.control === 'player' ? a.recoil : 0),
+        vx: a.vx,
+        vz: a.vz,
+        crouching: a.crouching,
+        slideT: a.slideT,
+        sprinting: a.sprinting,
+        reloadT: a.reloadT,
+        weapon: a.weapons[a.slot] ?? 'rifle',
+        lastShotT: a.lastShotT
+      }))
+    });
+    const keep = sim.time - (KILLCAM_BEFORE + KILLCAM_AFTER + KILLCAM_DELAY + 1);
+    while (this.history.length && this.history[0].t < keep) this.history.shift();
+    while (this.shotLog.length && this.shotLog[0].t < keep) this.shotLog.shift();
+  }
+
+  /** Recorded state of agent `id` at time `t`, interpolated. */
+  private snapAt(id: number, t: number): Snap | null {
+    const h = this.history;
+    if (!h.length) return null;
+    let i = h.findIndex((f) => f.t >= t);
+    if (i < 0) i = h.length - 1;
+    const b = h[i].s[id];
+    const a = i > 0 ? h[i - 1].s[id] : b;
+    if (!a || !b) return b ?? null;
+    const t0 = i > 0 ? h[i - 1].t : h[i].t;
+    const k = h[i].t > t0 ? Math.min(1, Math.max(0, (t - t0) / (h[i].t - t0))) : 1;
+    return {
+      ...b,
+      x: a.x + (b.x - a.x) * k,
+      y: a.y + (b.y - a.y) * k,
+      z: a.z + (b.z - a.z) * k,
+      yaw: a.yaw + wrapAngle(b.yaw - a.yaw) * k,
+      pitch: a.pitch + (b.pitch - a.pitch) * k
+    };
+  }
+
+  /** Starts, advances and renders the killcam. Returns true while it is showing. */
+  private updateKillcam(dt: number): boolean {
+    const sim = this.match.sim;
+    const pk = this.pendingKillcam;
+    if (pk && !this.killcam && sim.time >= pk.at) {
+      this.pendingKillcam = null;
+      const start = pk.deathT - KILLCAM_BEFORE;
+      if (this.history.length) {
+        const killerSnap = this.snapAt(pk.killer, pk.deathT);
+        this.killcam = {
+          killer: pk.killer,
+          victim: pk.victim,
+          deathT: pk.deathT,
+          clock: Math.max(start, this.history[0].t),
+          end: pk.deathT + KILLCAM_AFTER,
+          ghost: null,
+          ghostDead: false,
+          weapon: killerSnap?.weapon ?? 'rifle'
+        };
+      }
+    }
+    const kc = this.killcam;
+    if (!kc) return false;
+    const prev = kc.clock;
+    kc.clock += dt;
+    if (kc.clock >= kc.end || this.match.phase !== 'roundOver') {
+      this.endKillcam();
+      return false;
+    }
+    // Hide the live world's soldiers; the replay has its own ghost of the victim.
+    for (const v of this.views.values()) v.setVisible(false);
+    const killer = this.snapAt(kc.killer, kc.clock);
+    const victim = this.snapAt(kc.victim, kc.clock);
+    const victimAgent = sim.agents[kc.victim];
+    if (!kc.ghost) {
+      kc.ghost = new SoldierView(this.assets, { ...victimAgent, life: -1 }, this.colorOf(kc.victim));
+      this.scene.add(kc.ghost.root);
+    }
+    if (victim && kc.ghost) {
+      const fake = {
+        ...victimAgent,
+        ...victim,
+        weapons: [victim.weapon],
+        slot: 0,
+        alive: true
+      };
+      if (!kc.ghostDead && kc.clock >= kc.deathT) {
+        kc.ghostDead = true;
+        kc.ghost.die({ ...victimAgent, ...victim, vx: victim.vx, vz: victim.vz }, this.physics, sim.time);
+      }
+      kc.ghost.update(fake, victim.x, victim.y, victim.z, dt, kc.clock);
+    }
+    if (killer) {
+      const eye = eyeHeight(killer);
+      this.camera.position.set(killer.x, killer.y + eye, killer.z);
+      this.camera.rotation.set(killer.pitch, killer.yaw + Math.PI, 0);
+      if (this.camera.fov !== this.settings.fov) {
+        this.camera.fov = this.settings.fov;
+        this.camera.updateProjectionMatrix();
+      }
+      if (killer.weapon !== this.lastWeapon) {
+        this.lastWeapon = killer.weapon;
+        this.viewmodel.setWeapon(killer.weapon);
+      }
+      // Replay the shots fired in this slice of time.
+      for (const s of this.shotLog) {
+        if (s.t <= prev || s.t > kc.clock) continue;
+        const end = new THREE.Vector3(s.ex, s.ey, s.ez);
+        if (s.shooter === kc.killer) {
+          this.viewmodel.fire();
+          const from = this.camera.localToWorld(this.viewmodel.muzzleLocal(new THREE.Vector3()));
+          this.effects.tracer(from, end);
+          this.audio.gunshot(0, 0, true, killer.weapon);
+        } else if (kc.ghost) {
+          const from = kc.ghost.muzzle(new THREE.Vector3());
+          this.effects.tracer(from, end);
+          this.effects.muzzleFlash(from, true);
+          this.audio.gunshot(this.distTo(from.x, from.z), 0, false, victim?.weapon ?? 'rifle');
+        }
+      }
+      this.viewmodel.update(dt, {
+        speed: Math.hypot(killer.vx, killer.vz),
+        aiming: false,
+        sprinting: killer.sprinting,
+        reload: 0,
+        switching: 0,
+        onGround: true,
+        lookDX: 0,
+        lookDY: 0,
+        visible: true,
+        scope: false
+      });
+    }
+    return true;
+  }
+
+  private endKillcam(): void {
+    const kc = this.killcam;
+    if (!kc) return;
+    kc.ghost?.dispose();
+    this.killcam = null;
+    // Force the viewmodel back to the player's own weapon.
+    this.lastWeapon = null;
   }
 
   private teamCss(team: number): string {
@@ -625,35 +965,42 @@ export class Game {
   /** Mode notices: killstreaks, captures, dog tags, gun game, infection. Banks XP at the end. */
   private drainNotices(): void {
     const m = this.match;
+    const me = m.player.id;
+    // An online host forwards every notice to its clients before reacting to them itself.
+    if (this.net?.role === 'host' && m.notices.length) this.net.session.queueNotices(m.notices);
     while (m.notices.length) {
       const n = m.notices.shift()!;
       if (n.kind === 'streak') {
+        if (n.agent !== me) continue;
         this.callout(n.name === 'UAV' ? 'UAV online: enemies shown on your minimap' : n.name === 'Airstrike' ? 'Airstrike inbound!' : 'Juggernaut armour equipped');
         this.audio.fanfare();
-      } else if (n.kind === 'capture' && n.byPlayer && n.team === m.player.team) this.medal(MEDALS.captured);
-      else if (n.kind === 'tag' && n.byPlayer) this.medal(n.confirmed ? MEDALS.confirmed : MEDALS.denied);
+      } else if (n.kind === 'capture' && n.on.includes(me) && n.team === m.player.team) this.medal(MEDALS.captured);
+      else if (n.kind === 'tag' && n.by === me) this.medal(n.confirmed ? MEDALS.confirmed : MEDALS.denied);
       else if (n.kind === 'infected') {
-        if (n.byPlayer) this.medal(MEDALS.infect);
-        if (n.player) this.callout('You have been infected! Knife the survivors.');
+        if (n.by === me) this.medal(MEDALS.infect);
+        if (n.victim === me) this.callout('You have been infected! Knife the survivors.');
       } else if (n.kind === 'promote') {
+        if (n.agent !== me) continue;
         this.medal(MEDALS.promoted);
         this.callout(`Upgraded to ${WEAPONS[n.weapon].name}`);
-      } else if (n.kind === 'demote') this.callout(`Knifed! Back to ${WEAPONS[n.weapon].name}`);
-      else if (n.kind === 'ctf') {
+      } else if (n.kind === 'demote') {
+        if (n.agent === me) this.callout(`Knifed! Back to ${WEAPONS[n.weapon].name}`);
+      } else if (n.kind === 'ctf') {
         const ours = n.team === m.player.team;
+        const byMe = n.by === me;
         if (n.event === 'taken') {
-          if (n.byPlayer) {
+          if (byMe) {
             this.medal(MEDALS.flagTaken);
             this.callout('You have the flag! Bring it back to your base.');
           } else this.callout(ours ? 'Your flag has been taken!' : 'Your team has the enemy flag');
         } else if (n.event === 'captured') {
-          if (n.byPlayer) this.medal(MEDALS.flagCaptured);
+          if (byMe) this.medal(MEDALS.flagCaptured);
           this.audio.fanfare();
         } else if (n.event === 'returned') {
-          if (n.byPlayer) this.medal(MEDALS.flagReturned);
+          if (byMe) this.medal(MEDALS.flagReturned);
           this.callout(ours ? 'Your flag was returned' : 'Enemy flag returned');
         } else if (n.event === 'dropped') {
-          if (n.byPlayer) this.medal(MEDALS.carrierKill);
+          if (byMe) this.medal(MEDALS.carrierKill);
           this.callout(ours ? 'Your flag was dropped. Go return it!' : 'Enemy flag dropped');
         }
       }
@@ -661,11 +1008,12 @@ export class Game {
     if (m.phase === 'over' && !this.xpBanked) {
       this.xpBanked = true;
       this.medal(MEDALS.played);
-      if (m.result === 'win') this.medal(MEDALS.win);
+      const won = this.myResult() === 'win';
+      if (won) this.medal(MEDALS.win);
       const prof = loadProfile();
       prof.xp += this.xp;
       prof.matches++;
-      if (m.result === 'win') prof.wins++;
+      if (won) prof.wins++;
       prof.kills += m.player.kills;
       prof.deaths += m.player.deaths;
       saveProfile(prof);
@@ -738,8 +1086,11 @@ export class Game {
       }
     });
 
+    const inKillcam = this.updateKillcam(dt);
     // Camera.
-    if (player.alive) {
+    if (inKillcam) {
+      // The killcam drives the camera and viewmodel.
+    } else if (player.alive) {
       const p = this.prev.get(player.id) ?? player;
       const x = p.x + (player.x - p.x) * alpha;
       const y = p.y + (player.y - p.y) * alpha;
@@ -782,6 +1133,20 @@ export class Game {
       }
     }
 
+    if (!inKillcam) this.updateViewmodel(dt);
+    this.lookDX = 0;
+    this.lookDY = 0;
+    this.arenaView.update(time, this.camera.position);
+    this.effects.update(dt);
+
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.clearDepth();
+    this.renderer.render(this.viewmodel.scene, this.viewmodel.camera);
+  }
+
+  private updateViewmodel(dt: number): void {
+    const player = this.match.player;
     const pw = weaponOf(player);
     if (pw.id !== this.lastWeapon) {
       this.lastWeapon = pw.id;
@@ -799,15 +1164,6 @@ export class Game {
       visible: player.alive,
       scope: pw.scope
     });
-    this.lookDX = 0;
-    this.lookDY = 0;
-    this.arenaView.update(time, this.camera.position);
-    this.effects.update(dt);
-
-    this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
-    this.renderer.clearDepth();
-    this.renderer.render(this.viewmodel.scene, this.viewmodel.camera);
   }
 
   // ---------------------------------------------------------------- HUD
@@ -852,9 +1208,9 @@ export class Game {
       alive: p.alive,
       aiming: p.aiming,
       spread: spread + p.recoil * 0.5,
-      banner: sim.time < m.bannerUntil ? m.banner : '',
+      banner: this.myBanner(),
       phase: m.phase,
-      result: m.result,
+      result: this.myResult(),
       scores: m.scores,
       teamCounts: m.teamCounts(),
       showTeams: teamMode,
@@ -872,7 +1228,7 @@ export class Game {
       outsideZone: !!sim.zone && p.alive && sim.outsideZone(p, 0),
       aliveTotal: sim.agents.filter((a) => a.alive).length,
       placement: m.placement,
-      canRespawn: m.canPlayerRespawn(),
+      canRespawn: this.net?.role === 'client' ? false : m.canPlayerRespawn(),
       feed: this.feed.filter((f) => sim.time - f.at < 7),
       hitMarkerAt: this.hitMarkerAt,
       hitMarkerKind: this.hitMarkerKind,
@@ -889,7 +1245,7 @@ export class Game {
       protected: sim.time < p.protectedUntil,
       streak: p.streak,
       nextStreak: next,
-      uav: sim.time < m.uavUntil,
+      uav: sim.time < (m.uavUntil[p.id] ?? -1),
       juggernaut: p.armor < 1,
       flags: m.flags.map((f) => ({
         label: f.label,
@@ -913,6 +1269,11 @@ export class Game {
       callouts: this.callouts.filter((x) => sim.time - x.at < 3.5),
       xp: this.xp,
       killedBy: p.alive ? null : this.killedBy,
+      netMessage: this.netMessage,
+      online: !!this.net,
+      killcam: this.killcam
+        ? { killer: this.nameOf(this.killcam.killer), color: cssColor(this.colorOf(this.killcam.killer)), weapon: WEAPONS[this.killcam.weapon].name }
+        : null,
       ctf: m.ctf.length
         ? (() => {
             const state = (f: (typeof m.ctf)[number]) => (f.home ? 'home' : f.carrier >= 0 ? 'taken' : 'dropped') as 'home' | 'taken' | 'dropped';
@@ -997,7 +1358,7 @@ export class Game {
       if (!a.alive || a === p) continue;
       const ally = a.team === p.team;
       const firing = sim.time - a.lastShotT < 1;
-      const uav = sim.time < this.match.uavUntil;
+      const uav = sim.time < (this.match.uavUntil[this.match.player.id] ?? -1);
       if (!ally && !firing && !uav) continue;
       ctx.fillStyle = cssColor(this.colorOf(a.id));
       ctx.beginPath();
@@ -1022,6 +1383,9 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.ticker?.terminate();
+    if (this.net?.role === 'host') this.net.session.close();
+    if (this.net?.role === 'client') this.net.session.leave();
     cancelAnimationFrame(this.raf);
     this.releaseLock();
     window.removeEventListener('resize', this.onResize);

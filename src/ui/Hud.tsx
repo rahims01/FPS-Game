@@ -23,7 +23,7 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
   const me = hud.players.find((p) => p.isPlayer);
   const myRank = hud.players.findIndex((p) => p.isPlayer) + 1;
   return (
-    <div className="hud">
+    <div className={`hud ${hud.killcam ? 'in-killcam' : ''}`}>
       {hud.scoped && (
         <div className="scope">
           <div className="scope-ring" />
@@ -54,7 +54,7 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
         <div className="mode-name">{hud.modeName}</div>
         {hud.showTeams && (
           <div className="score">
-            <span style={{ color: mine }}>{Math.floor(hud.scores[0])}</span>
+            <span className={isDark(mine) ? 'dark' : ''} style={{ color: mine }}>{Math.floor(hud.scores[0])}</span>
             <span className="alive">
               {hud.mode === 'infected'
                 ? `${hud.scores[0]} survivors · ${fmt(hud.infectedSeconds ?? 0)}`
@@ -62,7 +62,7 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
                   ? `first to ${hud.targetScore}`
                   : `${hud.teamCounts[0]} v ${hud.teamCounts[1]}`}
             </span>
-            <span style={{ color: theirs }}>{Math.floor(hud.scores[1])}</span>
+            <span className={isDark(theirs) ? 'dark' : ''} style={{ color: theirs }}>{Math.floor(hud.scores[1])}</span>
           </div>
         )}
         {hud.flags.length > 0 && (
@@ -151,7 +151,20 @@ export const Hud = ({ hud, minimap }: { hud: HudState; minimap: RefObject<HTMLCa
       </div>
       {hud.protected && hud.alive && <div className="protected">Spawn protection</div>}
       {hud.outsideZone && <div className="warning">Outside the zone — get back in!</div>}
-      {!hud.alive && hud.phase !== 'over' && (
+      {hud.killcam && (
+        <div className="killcam">
+          <div className="kc-bar kc-top" />
+          <div className="kc-bar kc-bottom" />
+          <div className="kc-label">
+            <b>KILLCAM</b>
+            <span>
+              <i style={{ color: hud.killcam.color }}>{hud.killcam.killer}</i> · {hud.killcam.weapon}
+            </span>
+          </div>
+          <div className="kc-skip">Press Space or click to skip</div>
+        </div>
+      )}
+      {!hud.alive && hud.phase !== 'over' && !hud.killcam && (
         <div className="dead">
           <h2>You died</h2>
           {hud.killedBy && (

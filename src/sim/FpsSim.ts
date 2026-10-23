@@ -1,4 +1,4 @@
-import { A, ACTIONS, createAgent, eyeHeight, setLoadout, weaponOf, type Agent, type Control, type DeathCause } from './Agent';
+import { A, ACTIONS, createAgent, eyeHeight, isHuman, setLoadout, weaponOf, type Agent, type Control, type DeathCause } from './Agent';
 import { Arena, type ArenaLayout, type Point } from './Arena';
 import { BOT_AIM, HITBOX, RIFLE, SIM, SOLDIER, type HitRegion } from './config';
 import { classicLayout } from './layouts';
@@ -166,6 +166,13 @@ export class FpsSim {
   onPickup: ((a: Agent, p: Pickup) => void) | null = null;
   /** Whether bots go for dog tags. */
   botsWantTags = false;
+  /** Online host: latest inputs of remote (human) players, by agent id. */
+  readonly remoteInputs = new Map<number, PlayerInput>();
+  /**
+   * Online client: this simulation only mirrors the host. Damage, grenades and
+   * pickups are the host's call, so they are switched off here.
+   */
+  puppet = false;
   time = 0;
   tick = 0;
   damageToPlayerScale: number;
@@ -204,6 +211,7 @@ export class FpsSim {
     fresh.kills = a.kills;
     fresh.deaths = a.deaths;
     fresh.skill = a.skill;
+    fresh.style = a.style;
     fresh.tier = a.tier;
     fresh.tierKills = a.tierKills;
     fresh.brain.aggression = this.rng.next();
@@ -240,6 +248,8 @@ export class FpsSim {
       if (!a.alive) continue;
       if (a.control === 'player') {
         this.drivePlayer(a, input, dt);
+      } else if (a.control === 'remote') {
+        this.drivePlayer(a, this.remoteInputs.get(a.id) ?? NO_INPUT, dt);
       } else {
         if ((this.tick + a.phase) % SIM.decisionTicks === 0) {
           if (a.control !== 'external') {
@@ -264,6 +274,20 @@ export class FpsSim {
   }
 
   // ---------------------------------------------------------------- pickups
+
+  /**
+   * Online client: advances only the local player's own soldier (movement,
+   * weapon handling, recoil) so it responds instantly; the host decides hits.
+   */
+  stepLocal(a: Agent, input: PlayerInput): void {
+    const dt = SIM.dt;
+    this.tick++;
+    this.time += dt;
+    if (!a.alive) return;
+    this.drivePlayer(a, input, dt);
+    this.integrate(a, dt);
+    this.weaponTick(a, dt);
+  }
 
   spawnPickup(kind: PickupKind, x: number, z: number, team = -1, life = Infinity): Pickup {
     const p: Pickup = { id: this.pickups.length, kind, x, z, active: true, team, expires: this.time + life };
@@ -440,8 +464,12 @@ export class FpsSim {
     a.meleeCd = Math.max(0, a.meleeCd - dt);
     a.grenadeCd = Math.max(0, a.grenadeCd - dt);
     a.switchT = Math.max(0, a.switchT - dt);
-    a.recoil -= a.recoil * Math.min(1, RIFLE.recoilRecover * dt);
-    a.recoilYaw -= a.recoilYaw * Math.min(1, RIFLE.recoilRecover * dt);
+    // Recoil only recovers once the trigger rests, so sustained fire climbs.
+    if (this.time - a.lastShotT > 0.12) {
+      a.recoil -= a.recoil * Math.min(1, RIFLE.recoilRecover * dt);
+      a.recoilYaw -= a.recoilYaw * Math.min(1, RIFLE.recoilRecover * dt);
+    }
+    if (this.time - a.lastShotT > 0.3) a.recoilIdx = 0;
     const w = weaponOf(a);
     if (a.reloadT > 0) {
       a.reloadT -= dt;
@@ -481,9 +509,13 @@ export class FpsSim {
     a.shots++;
     a.lastShotT = this.time;
     a.protectedUntil = 0;
-    if (a.control === 'player') {
-      a.recoil += w.recoil * (a.aiming ? 0.6 : 1);
-      a.recoilYaw += (this.rng.next() - 0.5) * w.recoil * 0.6;
+    if (isHuman(a)) {
+      const [up, side] = w.pattern[Math.min(a.recoilIdx, w.pattern.length - 1)];
+      const k = w.recoil * (a.aiming ? 0.65 : 1) * (a.crouching ? 0.8 : 1);
+      a.recoil = Math.min(0.4, a.recoil + up * k);
+      // Positive yaw turns left; patterns are written with + = right.
+      a.recoilYaw = clamp(a.recoilYaw - side * k + (this.rng.next() - 0.5) * k * 0.15, -0.25, 0.25);
+      a.recoilIdx++;
     }
     const ox = a.x;
     const oy = a.y + eyeHeight(a);
@@ -582,7 +614,7 @@ export class FpsSim {
   }
 
   throwGrenade(a: Agent, yaw: number, pitch: number, speed: number): void {
-    if (a.grenades <= 0 || a.grenadeCd > 0 || a.switchT > 0) return;
+    if (this.puppet || a.grenades <= 0 || a.grenadeCd > 0 || a.switchT > 0) return;
     a.grenades--;
     a.grenadeCd = 1;
     a.protectedUntil = 0;
@@ -696,7 +728,7 @@ export class FpsSim {
 
   /** `attacker` is null for environmental damage (the battle-royale zone). */
   damage(v: Agent, attacker: Agent | null, raw: number, region: HitRegion, dx: number, dy: number, dz: number, cause: DeathCause = 'rifle'): void {
-    if (!v.alive || this.time < v.protectedUntil) return;
+    if (this.puppet || !v.alive || this.time < v.protectedUntil) return;
     let amount = v.control === 'player' ? raw * this.damageToPlayerScale : raw;
     amount *= v.armor;
     const dealt = Math.min(amount, v.hp);
@@ -802,6 +834,21 @@ export class FpsSim {
     } else {
       a.seesTarget = false;
       a.trackT = 0;
+      // Snipers who lose sight of someone hold the angle for a while.
+      if (wasSeeing && a.style === 'sniper') a.holdUntil = this.time + 5 + this.rng.next() * 4;
+      // Footsteps: sprinting is loud, walking is quieter, crouching is silent.
+      for (const b of this.agents) {
+        if (!b.alive || b.team === a.team || b.crouching || b.slideT > 0) continue;
+        const speed = Math.hypot(b.vx, b.vz);
+        const range = b.sprinting ? 16 : speed > 0.8 ? 8 : 0;
+        if (range && Math.hypot(b.x - a.x, b.z - a.z) < range) {
+          a.targetId = b.id;
+          a.lastSeenX = b.x + this.rng.gauss() * 1.2;
+          a.lastSeenZ = b.z + this.rng.gauss() * 1.2;
+          a.lastSeenT = this.time;
+          break;
+        }
+      }
       if (!this.target(a) && fallback) a.targetId = fallback.id;
       const t = this.target(a);
       if (t && !this.knowsTarget(a)) {
@@ -880,7 +927,7 @@ export class FpsSim {
   private driveBot(a: Agent, dt: number): void {
     const t = this.target(a);
     const w = weaponOf(a);
-    const name = ACTIONS[a.action];
+    let name = ACTIONS[a.action];
     const tx = t && a.seesTarget ? t.x : a.lastSeenX;
     const tz = t && a.seesTarget ? t.z : a.lastSeenZ;
     const toYaw = yawTo(a.x, a.z, tx, tz);
@@ -900,6 +947,24 @@ export class FpsSim {
     const urgent = r && r.urgent && farFromRally ? r : null;
     const rallyGoal = !zoneGoal && !tag && !medkit && !a.seesTarget && farFromRally ? r : null;
     const override = urgent ?? (knife && t && (a.seesTarget || this.knowsTarget(a)) ? { x: tx, z: tz } : (zoneGoal ?? tag ?? medkit ?? rallyGoal));
+    const style = a.style;
+    const known = this.knowsTarget(a);
+    const dTarget = Math.hypot(tx - a.x, tz - a.z);
+    let crouch = false;
+    if (!override) {
+      if (style === 'rusher' && name === 'advance' && !a.seesTarget) name = 'sprint';
+      if (style === 'sniper' && !a.seesTarget && known && (name === 'advance' || name === 'sprint') && this.time < a.holdUntil) name = 'hold';
+      if (style === 'tactician' && a.seesTarget && a.hp < 40 && !a.inCover && this.coverFor(a)) name = 'take_cover';
+      if ((style === 'sniper' || style === 'tactician') && name === 'hold') crouch = true;
+    }
+    // Flankers swing wide around a target they can't see instead of walking straight at it.
+    const goal = (gx: number, gz: number): [number, number] => {
+      if (style !== 'flanker' || a.seesTarget || dTarget < 12) return [gx, gz];
+      const px = -(gz - a.z) / dTarget;
+      const pz = (gx - a.x) / dTarget;
+      const off = Math.min(12, dTarget * 0.5) * (a.id % 2 ? 1 : -1);
+      return [gx + px * off, gz + pz * off];
+    };
     switch (override ? 'override' : name) {
       case 'override': {
         const m = this.followPath(a, override!.x, override!.z);
@@ -913,9 +978,12 @@ export class FpsSim {
       case 'hold':
         break;
       case 'advance': {
-        const m = this.followPath(a, tx, tz);
+        const [gx, gz] = goal(tx, tz);
+        const m = this.followPath(a, gx, gz);
         mx = m.x;
         mz = m.z;
+        // Flankers creep (silently) once they are close.
+        if (style === 'flanker' && !a.seesTarget && dTarget < 16) crouch = true;
         break;
       }
       case 'strafe_left':
@@ -931,7 +999,8 @@ export class FpsSim {
         speed = SOLDIER.backSpeed;
         break;
       case 'sprint': {
-        const m = this.followPath(a, tx, tz);
+        const [gx, gz] = goal(tx, tz);
+        const m = this.followPath(a, gx, gz);
         mx = m.x;
         mz = m.z;
         speed = SOLDIER.sprintSpeed;
@@ -957,7 +1026,14 @@ export class FpsSim {
         break;
     }
     speed *= w.move;
-    a.sprinting = speed >= SOLDIER.sprintSpeed * 0.85 && (mx !== 0 || mz !== 0);
+    if (crouch) speed = Math.min(speed, SOLDIER.walkSpeed * 0.55);
+    a.crouching = crouch;
+    a.sprinting = !crouch && speed >= SOLDIER.sprintSpeed * 0.85 && (mx !== 0 || mz !== 0);
+    // Rushers hop while strafing in a fight.
+    if (style === 'rusher' && a.seesTarget && a.onGround && (name === 'strafe_left' || name === 'strafe_right') && this.rng.next() < 0.012) {
+      a.vy = SOLDIER.jumpSpeed;
+      a.onGround = false;
+    }
     this.accelerate(a, mx * speed, mz * speed, dt);
 
     // Knife: swing when in reach.
@@ -970,7 +1046,8 @@ export class FpsSim {
     }
 
     // Grenade at a target that is known but hiding.
-    if (t && a.grenades > 0 && !a.seesTarget && this.knowsTarget(a) && this.rng.next() < 0.004) {
+    const nadeRate = style === 'tactician' ? 0.012 : style === 'rusher' ? 0.006 : style === 'sniper' ? 0.002 : 0.004;
+    if (t && a.grenades > 0 && !a.seesTarget && this.knowsTarget(a) && this.rng.next() < nadeRate) {
       const d = Math.hypot(tx - a.x, tz - a.z);
       if (d > 8 && d < 26) {
         // Flat-ground ballistic speed for a 35 degree throw.
@@ -986,7 +1063,7 @@ export class FpsSim {
     if (faceMove && (mx || mz)) {
       wantYaw = Math.atan2(mx, mz);
     } else if (t) {
-      const aimY = a.seesTarget ? t.y + 1.25 * crouchScale(t) : 1.3;
+      const aimY = a.seesTarget ? t.y + 1.25 * crouchScale(t) : 1.55;
       wantPitch = Math.atan2(aimY - (a.y + eyeHeight(a)), Math.max(0.5, Math.hypot(tx - a.x, tz - a.z)));
     }
     const maxTurn = BOT_AIM.turnRate * dt;

@@ -35,9 +35,16 @@ export interface WeaponDef {
   scope: boolean;
   /** Distance bots like to fight at with it. */
   preferredRange: number;
+  /**
+   * Recoil pattern: [up, sideways] kick per shot, in units of `recoil`. Sustained
+   * fire walks through it (the last entries repeat), so it can be learned and
+   * pulled against. It resets once the trigger rests.
+   */
+  pattern: [number, number][];
 }
 
-const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' | 'range'> & Partial<WeaponDef>): WeaponDef => ({
+const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' | 'range' | 'pattern'> & Partial<WeaponDef>): WeaponDef => ({
+  pattern: [[1, 0]],
   pellets: 1,
   scope: false,
   adsSpread: 0.35,
@@ -65,7 +72,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     recoil: 0.011,
     move: 1,
     adsFov: 18,
-    preferredRange: 18
+    preferredRange: 18,
+    pattern: [[1, 0], [1.1, 0.05], [1.2, 0.15], [1.2, 0.3], [1.1, 0.45], [1, 0.4], [0.9, 0.1], [0.8, -0.3], [0.7, -0.6], [0.7, -0.7], [0.6, -0.4], [0.6, 0.1], [0.6, 0.5], [0.5, 0.6], [0.5, 0.2], [0.5, -0.3]]
   }),
   smg: gun({
     id: 'smg',
@@ -84,6 +92,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     minMul: 0.55,
     recoil: 0.008,
     move: 1.08,
+    pattern: [[0.8, 0], [0.9, 0.4], [0.9, -0.4], [0.9, 0.5], [0.8, -0.5], [0.7, 0.6], [0.7, -0.6], [0.6, 0.5], [0.6, -0.5]],
     adsFov: 12,
     preferredRange: 9
   }),
@@ -107,6 +116,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     range: 60,
     recoil: 0.05,
     move: 1,
+    pattern: [[1, 0.15], [1, -0.15]],
     adsFov: 10,
     preferredRange: 5
   }),
@@ -129,6 +139,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     range: 300,
     recoil: 0.06,
     move: 0.92,
+    pattern: [[1, 0.1]],
     adsFov: 62,
     scope: true,
     preferredRange: 35
@@ -151,6 +162,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     minMul: 0.75,
     recoil: 0.009,
     move: 0.86,
+    pattern: [[0.5, 0], [0.6, 0], [0.8, 0.1], [1, 0.2], [1.3, 0.3], [1.5, 0.5], [1.5, 0.2], [1.4, -0.4], [1.3, -0.8], [1.2, -0.6], [1.2, 0], [1.2, 0.7], [1.2, 0.8], [1.2, 0.2], [1.2, -0.6]],
     adsFov: 15,
     preferredRange: 20
   }),
@@ -172,6 +184,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     minMul: 0.6,
     recoil: 0.02,
     move: 1.1,
+    pattern: [[1, 0.2], [1, 0.25], [1.05, 0.15]],
     adsFov: 10,
     preferredRange: 12
   }),

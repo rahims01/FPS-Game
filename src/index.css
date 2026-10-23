@@ -1028,3 +1028,129 @@ input[type='range'] {
   border-radius: 6px;
   animation: fadein 0.3s;
 }
+
+/* ---------- killcam ---------- */
+.killcam {
+  position: absolute;
+  inset: 0;
+}
+.kc-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  background: #000;
+}
+.kc-bar.kc-top {
+  top: 0;
+}
+.kc-bar.kc-bottom {
+  bottom: 0;
+}
+.kc-label {
+  position: absolute;
+  top: calc(9vh + 14px);
+  left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kc-label b {
+  font-size: 26px;
+  letter-spacing: 6px;
+  color: var(--red);
+}
+.kc-label i {
+  font-style: normal;
+  font-weight: 800;
+}
+.kc-skip {
+  position: absolute;
+  bottom: calc(9vh + 14px);
+  width: 100%;
+  text-align: center;
+  color: var(--dim);
+  font-size: 14px;
+}
+.kc-label {
+  left: 50% !important;
+  transform: translateX(-50%);
+  align-items: center;
+  text-align: center;
+}
+.in-killcam .vitals,
+.in-killcam .ammo,
+.in-killcam .minimap,
+.in-killcam .top,
+.in-killcam .banner,
+.in-killcam .crosshair,
+.in-killcam .leaderboard {
+  display: none;
+}
+
+/* ---------- online ---------- */
+.online {
+  margin: 8px 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(90, 160, 255, 0.07);
+  border: 1px solid rgba(90, 160, 255, 0.25);
+}
+.online-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.online-head span {
+  font-size: 12px;
+  color: var(--dim);
+}
+.code-input {
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 4px;
+  width: 130px;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--fg);
+  outline: none;
+  user-select: text;
+}
+.net-error {
+  color: var(--red);
+  font-size: 13px;
+}
+.room-code {
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: 10px;
+  color: var(--accent);
+  margin: 4px 0;
+  user-select: text;
+}
+.mode-select {
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 12px;
+}
+.mode-select option {
+  background: #1a1d1a;
+}
+.lobby-players {
+  text-align: left;
+  margin: 10px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lobby-players small {
+  color: var(--dim);
+  margin-top: 4px;
+}

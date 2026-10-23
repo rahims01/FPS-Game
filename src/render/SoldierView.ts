@@ -12,6 +12,20 @@ import { weaponModels } from '../assets/weaponModels';
 
 const DEG = Math.PI / 180;
 
+/** Body speed (m/s) a death adds along the shot direction, by cause. */
+const DEATH_PUSH: Record<string, number> = {
+  pistol: 1.6,
+  smg: 1.8,
+  rifle: 2.2,
+  lmg: 2.4,
+  sniper: 3.3,
+  shotgun: 3.6,
+  knife: 1.4,
+  grenade: 4.5,
+  airstrike: 5.5,
+  zone: 0
+};
+
 const _y = new THREE.Vector3();
 const _z = new THREE.Vector3();
 const _x = new THREE.Vector3();
@@ -137,6 +151,8 @@ export class SoldierView {
   private bones: Record<string, THREE.Object3D | undefined> = {};
   private rightArm: ArmChain | null = null;
   private leftArm: ArmChain | null = null;
+  private legs: ArmChain[] = [];
+  private crouchT = 0;
   private speeds: { walk: number; run: number };
   private upperWeight = 1;
   private flinch = 0;
@@ -179,7 +195,13 @@ export class SoldierView {
       'RightHandThumb1',
       'LeftArm',
       'LeftForeArm',
-      'LeftHand'
+      'LeftHand',
+      'LeftUpLeg',
+      'LeftLeg',
+      'LeftFoot',
+      'RightUpLeg',
+      'RightLeg',
+      'RightFoot'
     ]) {
       this.bones[name] = this.model.getObjectByName(`mixamorig${name}`) ?? undefined;
     }
@@ -194,6 +216,15 @@ export class SoldierView {
     };
     this.rightArm = chain('Right');
     this.leftArm = chain('Left');
+    const legChain = (side: 'Right' | 'Left'): ArmChain | null => {
+      const upper = this.bones[`${side}UpLeg`];
+      const lower = this.bones[`${side}Leg`];
+      const foot = this.bones[`${side}Foot`];
+      if (!upper || !lower || !foot) return null;
+      const p = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3());
+      return { upper, lower, hand: foot, a: p(upper).distanceTo(p(lower)), b: p(lower).distanceTo(p(foot)) };
+    };
+    this.legs = [legChain('Left'), legChain('Right')].filter((c): c is ArmChain => !!c);
 
     this.mixer = new THREE.AnimationMixer(this.model);
     const act = (clip: THREE.AnimationClip) => {
@@ -293,7 +324,18 @@ export class SoldierView {
     a.walk.timeScale = THREE.MathUtils.clamp((dir * Math.max(speed, 0.5)) / this.speeds.walk, -2.5, 2.5);
     a.run.timeScale = THREE.MathUtils.clamp((dir * Math.max(speed, 1)) / this.speeds.run, -2, 2);
     this.mixer.update(dt);
+    this.model.position.y = 0;
     this.root.updateMatrixWorld(true);
+    // Crouch: drop the hips and bend the knees so the feet stay planted.
+    const wantCrouch = agent.crouching || agent.slideT > 0 ? 1 : 0;
+    this.crouchT += (wantCrouch - this.crouchT) * Math.min(1, dt * 12);
+    if (this.crouchT > 0.02 && this.legs.length === 2) {
+      const feet = this.legs.map((l) => l.hand.getWorldPosition(new THREE.Vector3()));
+      this.model.position.y = -0.42 * this.crouchT;
+      this.root.updateMatrixWorld(true);
+      const knee = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw));
+      this.legs.forEach((l, i) => solveArm(l, feet[i], knee, 1));
+    }
 
     // Rifle stance weight: off while sprinting (the run clip swings the arms).
     this.setWeapon(agent.weapons[agent.slot] ?? 'rifle');
@@ -380,11 +422,20 @@ export class SoldierView {
     if (this.ragdoll) return;
     this.model.updateMatrixWorld(true);
     this.ragdoll = createRagdoll(this.model, physics.world);
-    const push = agent.deathRegion === 'head' ? 9 : 14;
+    // The whole body is carried along the shot (or away from the blast), plus a
+    // smaller kick at the region that was hit so it twists. Moderate on purpose:
+    // the ragdoll's own speed cap (6 m/s) is the hard limit.
+    const cause = agent.deathCause;
+    const blast = cause === 'grenade' || cause === 'airstrike';
+    const speed = DEATH_PUSH[cause] ?? 2;
+    const dir = new THREE.Vector3(agent.deathDirX, 0, agent.deathDirZ);
+    if (dir.lengthSq() < 1e-6) dir.set(-Math.sin(agent.yaw), 0, -Math.cos(agent.yaw));
+    dir.normalize();
+    const velocity = new THREE.Vector3(agent.vx * 0.6, blast ? 3 : 0.6, agent.vz * 0.6).addScaledVector(dir, speed);
     this.ragdoll.activate({
-      impulse: new THREE.Vector3(agent.deathDirX, Math.max(0.15, agent.deathDirY + 0.2), agent.deathDirZ).normalize().multiplyScalar(push),
+      impulse: dir.clone().setY(0.25).normalize().multiplyScalar(blast ? 0 : agent.deathRegion === 'head' ? 5 : 7),
       region: agent.deathRegion,
-      velocity: new THREE.Vector3(agent.vx, 0, agent.vz)
+      velocity
     });
     this.diedAt = time;
   }

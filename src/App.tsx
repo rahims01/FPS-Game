@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadAssets, type LoadedAssets } from './assets/AssetRegistry';
 import { GameAudio } from './game/Audio';
-import { Game, type GameSettings, type HudState } from './game/Game';
+import { Game, type GameSettings, type HudState, type NetRole } from './game/Game';
+import { ClientSession, HostSession } from './net/Session';
+import type { LobbyPlayer } from './net/protocol';
 import { COLORS, cssColor, isDark } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
@@ -10,7 +12,14 @@ import { PRIMARIES, WEAPONS } from './sim/weapons';
 import { levelOf, loadProfile, rankOf, type Profile } from './game/progression';
 import { Hud } from './ui/Hud';
 
-type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' };
+type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' };
+
+interface LobbyView {
+  mode: ModeId;
+  difficulty: Difficulty;
+  players: LobbyPlayer[];
+  max: number;
+}
 
 const SETTINGS_KEY = 'fps-settings-v2';
 const defaultName = () => `Player${Math.floor(1000 + Math.random() * 9000)}`;
@@ -52,6 +61,15 @@ export const App = () => {
   const [settings, setSettings] = useState<GameSettings>(loadSettings);
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
+  // Online play.
+  const netRef = useRef<NetRole | null>(null);
+  const hostRef = useRef<HostSession | null>(null);
+  const clientRef = useRef<ClientSession | null>(null);
+  const [lobby, setLobby] = useState<LobbyView | null>(null);
+  const [roomCode, setRoomCode] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [netBusy, setNetBusy] = useState(false);
+  const [netError, setNetError] = useState<string | null>(null);
   const [joined, setJoined] = useState(1);
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const mount = useRef<HTMLDivElement>(null);
@@ -102,7 +120,8 @@ export const App = () => {
       { mode, difficulty, botControl: brain && !forceHeuristic ? 'learned' : 'heuristic', primary: settings.primary },
       brain,
       { ...settings, playerName: name },
-      audio
+      audio,
+      netRef.current
     );
     game.current = g;
     // Dev hook for scripts/shot.mjs (headless browsers cannot take pointer lock).
@@ -134,8 +153,90 @@ export const App = () => {
   };
   const toMenu = useCallback(() => {
     setProfile(loadProfile());
+    // Leaving a lobby (a match's sessions are closed when its Game is disposed).
+    if (screen.kind !== 'playing') {
+      hostRef.current?.close('The host closed the lobby.');
+      clientRef.current?.leave();
+    }
+    hostRef.current = null;
+    clientRef.current = null;
+    netRef.current = null;
+    setLobby(null);
     setScreen({ kind: 'menu' });
-  }, []);
+  }, [screen.kind]);
+
+  const profileForNet = () => ({ name: settings.playerName.trim() || defaultName(), color: settings.playerColor, primary: settings.primary });
+
+  const hostGame = async () => {
+    audio.unlock();
+    setNetError(null);
+    setNetBusy(true);
+    try {
+      const p = profileForNet();
+      const session = await HostSession.create(mode, difficulty, p.name, p.color);
+      hostRef.current = session;
+      const refresh = () => setLobby({ mode: session.lobby.mode, difficulty: session.lobby.difficulty, players: session.players, max: session.maxPlayers });
+      session.onChange = refresh;
+      refresh();
+      setRoomCode(session.code);
+      setScreen({ kind: 'host-lobby' });
+    } catch (e) {
+      setNetError((e as Error).message);
+    } finally {
+      setNetBusy(false);
+    }
+  };
+
+  const changeLobbyMode = (m: ModeId) => {
+    setMode(m);
+    const session = hostRef.current;
+    if (!session) return;
+    session.setLobby(m, difficulty);
+    setLobby({ mode: m, difficulty, players: session.players, max: session.maxPlayers });
+  };
+
+  const startOnline = () => {
+    const session = hostRef.current;
+    if (!session) return;
+    audio.unlock();
+    netRef.current = { role: 'host', session, seed: (Math.random() * 1e9) | 0 };
+    setMode(session.lobby.mode);
+    setScreen({ kind: 'playing' });
+    setRound((r) => r + 1);
+  };
+
+  const joinGame = async () => {
+    audio.unlock();
+    setNetError(null);
+    if (joinCode.trim().length < 5) {
+      setNetError('Enter the 5-letter room code from the host.');
+      return;
+    }
+    setNetBusy(true);
+    try {
+      const session = await ClientSession.connect(joinCode, profileForNet());
+      clientRef.current = session;
+      session.onLobby = (msg) => setLobby({ mode: msg.mode, difficulty: msg.difficulty, players: msg.players, max: msg.max });
+      session.onStart = (start) => {
+        netRef.current = { role: 'client', session, start };
+        setMode(start.mode);
+        setScreen({ kind: 'playing' });
+        setRound((r) => r + 1);
+      };
+      session.onEnd = (reason) => {
+        setNetError(reason);
+        clientRef.current = null;
+        setLobby(null);
+        setScreen({ kind: 'menu' });
+      };
+      setRoomCode(joinCode.trim().toUpperCase());
+      setScreen({ kind: 'join-lobby' });
+    } catch (e) {
+      setNetError((e as Error).message);
+    } finally {
+      setNetBusy(false);
+    }
+  };
   const resume = () => game.current?.requestLock();
   const def = modeDef(mode);
   const lobbyFull = joined >= def.players;
@@ -211,6 +312,29 @@ export const App = () => {
               ))}
             </div>
             <Settings settings={settings} onChange={setSettings} />
+            <div className="online">
+              <div className="online-head">
+                <b>Play online with friends</b>
+                <span>Host a room and share the code. Works on any static host (peer-to-peer).</span>
+              </div>
+              <div className="row">
+                <button className="chip" disabled={!assets || netBusy} onClick={hostGame}>
+                  Host game
+                </button>
+                <input
+                  className="code-input"
+                  placeholder="ROOM CODE"
+                  maxLength={5}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                />
+                <button className="chip" disabled={!assets || netBusy} onClick={joinGame}>
+                  Join
+                </button>
+                {netBusy && <span className="policy-note">Connecting…</span>}
+              </div>
+              {netError && <div className="net-error">{netError}</div>}
+            </div>
             <button className="play" disabled={!assets} onClick={findMatch}>
               {assets ? 'FIND MATCH' : loadMsg}
             </button>
@@ -228,6 +352,52 @@ export const App = () => {
               <span>G grenade</span>
               <span>Tab scores</span>
               <span>Esc pause</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {(screen.kind === 'host-lobby' || screen.kind === 'join-lobby') && lobby && (
+        <div className="menu">
+          <div className="menu-card small">
+            <h2>{screen.kind === 'host-lobby' ? 'Your room' : 'Joined room'}</h2>
+            <div className="room-code">{roomCode}</div>
+            <p className="sub">{screen.kind === 'host-lobby' ? 'Send this code to your friends. They enter it under "Play online".' : 'Waiting for the host to start…'}</p>
+            {screen.kind === 'host-lobby' ? (
+              <select className="mode-select" value={lobby.mode} onChange={(e) => changeLobbyMode(e.target.value as ModeId)}>
+                {MODES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p>
+                <b>{modeDef(lobby.mode).name}</b>
+              </p>
+            )}
+            <div className="lobby-players">
+              {lobby.players.map((p, i) => (
+                <div key={i} className="lb-row">
+                  <span className="rank">{i + 1}</span>
+                  <span className={`name ${isDark(cssColor(p.color)) ? 'dark' : ''}`} style={{ color: cssColor(p.color) }}>
+                    {p.name}
+                  </span>
+                  <span className="k">{p.host ? 'host' : ''}</span>
+                </div>
+              ))}
+              <small>
+                {lobby.players.length} / {lobby.max} players · empty slots are filled automatically
+              </small>
+            </div>
+            <div className="row">
+              {screen.kind === 'host-lobby' && (
+                <button className="play" onClick={startOnline}>
+                  START
+                </button>
+              )}
+              <button className="chip" onClick={toMenu}>
+                Leave
+              </button>
             </div>
           </div>
         </div>
@@ -275,7 +445,18 @@ export const App = () => {
               </div>
             </div>
           )}
-          {hud.phase === 'over' && (
+          {hud.netMessage && (
+            <div className="overlay end">
+              <div className="menu-card small">
+                <h2>Match ended</h2>
+                <p>{hud.netMessage}</p>
+                <button className="play" onClick={toMenu}>
+                  MAIN MENU
+                </button>
+              </div>
+            </div>
+          )}
+          {hud.phase === 'over' && !hud.netMessage && (
             <div className="overlay end">
               <div className="menu-card small">
                 <h2 className={hud.result === 'win' ? 'win' : 'lose'}>{hud.banner || (hud.result === 'win' ? 'Victory' : 'Defeat')}</h2>
@@ -298,9 +479,11 @@ export const App = () => {
                   ))}
                 </div>
                 <div className="row">
-                  <button className="play" onClick={findMatch}>
-                    PLAY AGAIN
-                  </button>
+                  {!hud.online && (
+                    <button className="play" onClick={findMatch}>
+                      PLAY AGAIN
+                    </button>
+                  )}
                   <button className="chip" onClick={toMenu}>
                     Main menu
                   </button>

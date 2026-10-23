@@ -1,4 +1,4 @@
-import { setLoadout, type Agent, type Control, type DeathCause } from './Agent';
+import { BOT_STYLES, isHuman, setLoadout, type Agent, type BotStyle, type Control, type DeathCause } from './Agent';
 import type { ArenaLayout, Point } from './Arena';
 import { SIM } from './config';
 import { FpsSim, type DamageRule, type PlayerInput } from './FpsSim';
@@ -79,13 +79,13 @@ export type MatchPhase = 'live' | 'roundOver' | 'over';
 
 /** Things the HUD announces: killstreaks, captures, confirms. */
 export type MatchNotice =
-  | { kind: 'streak'; name: 'UAV' | 'Airstrike' | 'Juggernaut'; kills: number }
-  | { kind: 'capture'; flag: string; team: number; byPlayer: boolean }
-  | { kind: 'tag'; confirmed: boolean; byPlayer: boolean }
-  | { kind: 'promote'; weapon: WeaponId }
-  | { kind: 'demote'; weapon: WeaponId }
-  | { kind: 'infected'; byPlayer: boolean; player: boolean }
-  | { kind: 'ctf'; event: 'taken' | 'captured' | 'returned' | 'dropped'; team: number; byPlayer: boolean };
+  | { kind: 'streak'; name: 'UAV' | 'Airstrike' | 'Juggernaut'; kills: number; agent: number }
+  | { kind: 'capture'; flag: string; team: number; on: number[] }
+  | { kind: 'tag'; confirmed: boolean; by: number }
+  | { kind: 'promote'; weapon: WeaponId; agent: number }
+  | { kind: 'demote'; weapon: WeaponId; agent: number }
+  | { kind: 'infected'; by: number; victim: number }
+  | { kind: 'ctf'; event: 'taken' | 'captured' | 'returned' | 'dropped'; team: number; by: number };
 
 /** Capture the flag: one flag per team. */
 export interface CtfFlag {
@@ -115,6 +115,7 @@ const ROUND_TARGET = 5;
 const BR_HALF = 125;
 const BR_PLAYERS = 24;
 const ROUND_BREAK = 3.5;
+const KILLCAM_BREAK = 6.5;
 const WAVE_BREAK = 5;
 const HILL_R = 4.5;
 const HILL_MOVE = 45;
@@ -145,6 +146,14 @@ const HILLS: Point[] = [
 ];
 /** Weighted primaries for the other players. */
 const PRIMARY_POOL: WeaponId[] = ['rifle', 'rifle', 'rifle', 'smg', 'smg', 'shotgun', 'lmg', 'sniper'];
+/** Each personality's favourite guns and how well it aims (lower = better). */
+const STYLE_KIT: Record<BotStyle, { guns: WeaponId[]; aim: number }> = {
+  soldier: { guns: ['rifle', 'rifle', 'smg', 'lmg'], aim: 1 },
+  rusher: { guns: ['shotgun', 'smg', 'smg'], aim: 1.15 },
+  sniper: { guns: ['sniper', 'sniper', 'rifle', 'lmg'], aim: 0.75 },
+  flanker: { guns: ['smg', 'rifle', 'shotgun'], aim: 1 },
+  tactician: { guns: ['rifle', 'lmg', 'rifle'], aim: 0.9 }
+};
 /** Killstreak rewards (player only). */
 const STREAKS: { kills: number; name: 'UAV' | 'Airstrike' | 'Juggernaut' }[] = [
   { kills: 3, name: 'UAV' },
@@ -171,7 +180,8 @@ export class Match {
   readonly sim: FpsSim;
   readonly mode: ModeId;
   readonly def: ModeDef;
-  readonly player: Agent;
+  /** The local player (on an online client, the agent this browser controls). */
+  player: Agent;
   phase: MatchPhase = 'live';
   /** Rounds won, team kills, confirms, flag points or hill points, by team. */
   scores: [number, number] = [0, 0];
@@ -188,18 +198,23 @@ export class Match {
   hillHolder = -1;
   flags: Flag[] = [];
   ctf: CtfFlag[] = [];
-  /** The enemy shows on the minimap until this time (UAV killstreak). */
-  uavUntil = -1;
+  /** UAV killstreak: enemies show on that player's minimap until this time, by agent id. */
+  uavUntil: Record<number, number> = {};
+  /** Team that won (or the winner's team in free-for-all), -1 if none. */
+  winTeam = -1;
+  /** Team-relative banner: shown as `banner` to `bannerTeam`, as `bannerOther` to everyone else. */
+  bannerTeam = -1;
+  bannerOther = '';
   readonly notices: MatchNotice[] = [];
   readonly startTime: number;
-  private hillIndex = 0;
-  private hillMovedAt = 0;
-  private waveQueue = 0;
+  hillIndex = 0;
+  hillMovedAt = 0;
+  waveQueue = 0;
   private respawnAt = new Map<number, number>();
-  private brPhase = -1;
-  private brPhaseStart = 0;
-  private zoneFrom = { x: 0, z: 0, r: 0 };
-  private zoneTo = { x: 0, z: 0, r: 0 };
+  brPhase = -1;
+  brPhaseStart = 0;
+  zoneFrom = { x: 0, z: 0, r: 0 };
+  zoneTo = { x: 0, z: 0, r: 0 };
   private nextMedkitT = 0;
   private lastScoreTick = 0;
   readonly opts: MatchOptions;
@@ -233,7 +248,8 @@ export class Match {
     this.startTime = 0;
     const other = (team: number, p: Point) => {
       const a = sim.spawn(team, opts.botControl, p.x, p.z, yawTo(p.x, p.z, 0, 0));
-      a.skill = diff.skill * (0.85 + sim.rng.next() * 0.3);
+      a.style = BOT_STYLES[sim.rng.int(BOT_STYLES.length)];
+      a.skill = diff.skill * STYLE_KIT[a.style].aim * (0.85 + sim.rng.next() * 0.3);
       return a;
     };
 
@@ -268,7 +284,10 @@ export class Match {
       if (mode === 'gungame') setLoadout(a, [GUN_GAME_LADDER[0]]);
       else if (mode === 'snipers') setLoadout(a, ['sniper', 'pistol']);
       else if (a === this.player) setLoadout(a, [opts.primary ?? 'rifle', 'pistol']);
-      else setLoadout(a, [PRIMARY_POOL[sim.rng.int(PRIMARY_POOL.length)], 'pistol']);
+      else {
+        const kit = STYLE_KIT[a.style];
+        setLoadout(a, [kit.guns[sim.rng.int(kit.guns.length)], 'pistol']);
+      }
     }
     sim.onKill = (v, k, cause) => this.onKill(v, k, cause);
 
@@ -286,7 +305,7 @@ export class Match {
           if (p.kind !== 'tag') return;
           const confirmed = a.team !== p.team;
           if (confirmed) this.scores[a.team as 0 | 1]++;
-          this.notices.push({ kind: 'tag', confirmed, byPlayer: a === this.player });
+          this.notices.push({ kind: 'tag', confirmed, by: a.id });
         };
         this.announce('Collect the dog tags');
         break;
@@ -327,7 +346,20 @@ export class Match {
 
   private announce(text: string, seconds = 2.5): void {
     this.banner = text;
+    this.bannerTeam = -1;
     this.bannerUntil = this.sim.time + seconds;
+  }
+
+  /** A banner worded for `team`, with different wording for everyone else. */
+  private announceTeam(team: number, forTeam: string, forOthers: string, seconds = 2.5): void {
+    this.announce(forTeam, seconds);
+    this.bannerTeam = team;
+    this.bannerOther = forOthers;
+  }
+
+  /** The banner as `team` should see it. */
+  bannerFor(team: number): string {
+    return this.bannerTeam >= 0 && this.bannerTeam !== team ? this.bannerOther : this.banner;
   }
 
   /** Advances the simulation by one tick and applies the mode's rules. */
@@ -386,10 +418,10 @@ export class Match {
       f.x = victim.x;
       f.z = victim.z;
       f.droppedAt = sim.time;
-      this.notices.push({ kind: 'ctf', event: 'dropped', team: f.team, byPlayer: killer === this.player });
+      this.notices.push({ kind: 'ctf', event: 'dropped', team: f.team, by: killer ? killer.id : -1 });
     }
     if (this.mode === 'infected' && victim.team === 0) {
-      this.notices.push({ kind: 'infected', byPlayer: killer === this.player, player: victim === this.player });
+      this.notices.push({ kind: 'infected', by: killer ? killer.id : -1, victim: victim.id });
       this.infect(victim);
     }
     if (this.mode === 'gungame') {
@@ -397,12 +429,12 @@ export class Match {
         victim.tier--;
         victim.tierKills = 0;
         setLoadout(victim, [GUN_GAME_LADDER[victim.tier]]);
-        if (victim === this.player) this.notices.push({ kind: 'demote', weapon: GUN_GAME_LADDER[victim.tier] });
+        if (isHuman(victim)) this.notices.push({ kind: 'demote', weapon: GUN_GAME_LADDER[victim.tier], agent: victim.id });
       }
       if (killer) {
         const last = GUN_GAME_LADDER.length - 1;
         if (killer.tier === last) {
-          this.finish(killer === this.player);
+          this.finish(killer === this.player, 0, killer.team);
           return;
         }
         killer.tierKills++;
@@ -412,18 +444,18 @@ export class Match {
           const keep = killer.ammo;
           setLoadout(killer, [GUN_GAME_LADDER[killer.tier]]);
           killer.switchT = keep >= 0 ? 0.45 : 0;
-          if (killer === this.player) this.notices.push({ kind: 'promote', weapon: GUN_GAME_LADDER[killer.tier] });
+          if (isHuman(killer)) this.notices.push({ kind: 'promote', weapon: GUN_GAME_LADDER[killer.tier], agent: killer.id });
         }
       }
     }
     // Killstreaks for the player.
-    if (killer === this.player && this.phase === 'live') {
+    if (killer && isHuman(killer) && this.phase === 'live') {
       for (const s of STREAKS) {
         if (killer.streak !== s.kills) continue;
-        if (s.name === 'UAV') this.uavUntil = sim.time + 30;
+        if (s.name === 'UAV') this.uavUntil[killer.id] = sim.time + 30;
         if (s.name === 'Airstrike') sim.callAirstrike(killer);
         if (s.name === 'Juggernaut') killer.armor = 0.45;
-        this.notices.push({ kind: 'streak', name: s.name, kills: s.kills });
+        this.notices.push({ kind: 'streak', name: s.name, kills: s.kills, agent: killer.id });
       }
     }
   }
@@ -448,12 +480,14 @@ export class Match {
     const winner = alive[0] > 0 ? 0 : 1;
     this.scores[winner]++;
     if (this.scores[winner] >= ROUND_TARGET) {
-      this.finish(winner === 0);
+      this.finish(winner === 0, 0, winner);
       return;
     }
     this.phase = 'roundOver';
-    this.breakUntil = sim.time + ROUND_BREAK;
-    this.announce(winner === 0 ? 'Round won' : 'Round lost', ROUND_BREAK);
+    // A lost 1v1 round gets a longer break so the killcam can play.
+    const pause = this.mode === '1v1' && !this.player.alive ? KILLCAM_BREAK : ROUND_BREAK;
+    this.breakUntil = sim.time + pause;
+    this.announceTeam(winner, 'Round won', 'Round lost', Math.min(pause, 2.5));
   }
 
   private resetRound(): void {
@@ -493,7 +527,7 @@ export class Match {
     if (target !== undefined) {
       for (const a of this.sim.agents) {
         if (a.kills >= target) {
-          this.finish(a === this.player);
+          this.finish(a === this.player, 0, a.team);
           return;
         }
       }
@@ -507,7 +541,7 @@ export class Match {
     this.scores = s;
     const target = TARGETS.tdm!;
     if (s[0] >= target || s[1] >= target) {
-      this.finish(s[0] >= target);
+      this.finish(s[0] >= target, 0, s[0] >= target ? 0 : 1);
       return;
     }
     this.autoRespawn();
@@ -516,7 +550,7 @@ export class Match {
   private rulesKc(): void {
     const target = TARGETS.kc!;
     if (this.scores[0] >= target || this.scores[1] >= target) {
-      this.finish(this.scores[0] >= target);
+      this.finish(this.scores[0] >= target, 0, this.scores[0] >= target ? 0 : 1);
       return;
     }
     this.autoRespawn();
@@ -557,11 +591,11 @@ export class Match {
     const sim = this.sim;
     for (const f of this.flags) {
       const on = [0, 0];
-      let playerOn = false;
+      const onIds: number[] = [];
       for (const a of sim.agents) {
         if (!a.alive || Math.hypot(a.x - f.x, a.z - f.z) > f.r) continue;
         on[a.team]++;
-        if (a === this.player) playerOn = true;
+        onIds.push(a.id);
       }
       if (on[0] && on[1]) continue;
       const team = on[0] ? 0 : on[1] ? 1 : -1;
@@ -577,8 +611,8 @@ export class Match {
       if (f.owner >= 0 && Math.sign(f.progress) !== (f.owner === 0 ? 1 : -1)) f.owner = -1;
       if (Math.abs(f.progress) >= 1) {
         f.owner = team;
-        this.notices.push({ kind: 'capture', flag: f.label, team, byPlayer: playerOn });
-        this.announce(team === this.player.team ? `${f.label} captured` : `${f.label} lost`, 1.6);
+        this.notices.push({ kind: 'capture', flag: f.label, team, on: onIds });
+        this.announceTeam(team, `${f.label} captured`, `${f.label} lost`, 1.6);
       }
     }
     // One point per held flag per second.
@@ -588,7 +622,7 @@ export class Match {
     }
     const target = TARGETS.dom!;
     if (this.scores[0] >= target || this.scores[1] >= target) {
-      this.finish(this.scores[0] >= target);
+      this.finish(this.scores[0] >= target, 0, this.scores[0] >= target ? 0 : 1);
       return;
     }
     this.autoRespawn();
@@ -644,8 +678,8 @@ export class Match {
         if (own.home && Math.hypot(c.x - own.homeX, c.z - own.homeZ) < 2.5) {
           this.scores[c.team as 0 | 1]++;
           this.returnFlag(f);
-          this.notices.push({ kind: 'ctf', event: 'captured', team: c.team, byPlayer: c === this.player });
-          this.announce(c.team === this.player.team ? 'Flag captured!' : 'Enemy captured our flag', 2);
+          this.notices.push({ kind: 'ctf', event: 'captured', team: c.team, by: c.id });
+          this.announceTeam(c.team, 'Flag captured!', 'Enemy captured our flag', 2);
         }
         continue;
       }
@@ -654,25 +688,25 @@ export class Match {
         if (a.team !== f.team) {
           f.carrier = a.id;
           f.home = false;
-          this.notices.push({ kind: 'ctf', event: 'taken', team: f.team, byPlayer: a === this.player });
-          this.announce(f.team === this.player.team ? 'Our flag has been taken!' : 'Enemy flag taken', 1.8);
+          this.notices.push({ kind: 'ctf', event: 'taken', team: f.team, by: a.id });
+          this.announceTeam(f.team, 'Our flag has been taken!', 'Enemy flag taken', 1.8);
           break;
         }
         if (!f.home) {
           this.returnFlag(f);
-          this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, byPlayer: a === this.player });
+          this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, by: a.id });
           break;
         }
       }
       if (!f.home && f.carrier < 0 && sim.time - f.droppedAt > FLAG_RETURN) {
         this.returnFlag(f);
-        this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, byPlayer: false });
+        this.notices.push({ kind: 'ctf', event: 'returned', team: f.team, by: -1 });
       }
     }
     this.syncCtfObjectives();
     const target = TARGETS.ctf!;
     if (this.scores[0] >= target || this.scores[1] >= target) {
-      this.finish(this.scores[0] >= target);
+      this.finish(this.scores[0] >= target, 0, this.scores[0] >= target ? 0 : 1);
       return;
     }
     this.autoRespawn();
@@ -701,7 +735,7 @@ export class Match {
     if (this.hillHolder >= 0) this.scores[this.hillHolder as 0 | 1] += SIM.dt * 6;
     const target = TARGETS.koth!;
     if (this.scores[0] >= target || this.scores[1] >= target) {
-      this.finish(this.scores[0] >= target);
+      this.finish(this.scores[0] >= target, 0, this.scores[0] >= target ? 0 : 1);
       return;
     }
     if (sim.time - this.hillMovedAt > HILL_MOVE) {
@@ -730,11 +764,11 @@ export class Match {
     this.scores = [survivors.length, sim.agents.length - survivors.length];
     if (survivors.length === 0) {
       // Everyone is infected: the infection wins (and so does the player, who is one of them).
-      this.finish(this.player.team === 1);
+      this.finish(this.player.team === 1, 0, 1);
       return;
     }
     if (sim.time >= INFECTED_TIME) {
-      this.finish(this.player.team === 0);
+      this.finish(this.player.team === 0, 0, 0);
       return;
     }
     this.autoRespawn();
@@ -887,12 +921,13 @@ export class Match {
       this.finish(false, alive.length + 1);
       return;
     }
-    if (alive.length === 1) this.finish(true, 1);
+    if (alive.length === 1) this.finish(alive[0] === this.player, 1, alive[0].team);
   }
 
-  private finish(win: boolean, placement = 0): void {
+  private finish(win: boolean, placement = 0, winTeam = -1): void {
     if (this.phase === 'over') return;
     this.phase = 'over';
+    this.winTeam = winTeam;
     this.result = win ? 'win' : 'lose';
     this.placement = placement;
     const text =

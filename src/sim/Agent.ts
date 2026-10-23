@@ -8,9 +8,19 @@ export type ActionName = (typeof ACTIONS)[number];
 export const A: Record<ActionName, number> = Object.fromEntries(ACTIONS.map((n, i) => [n, i])) as Record<ActionName, number>;
 
 /** Who chooses a bot's actions. 'external' means the caller sets agent.action (training). */
-export type Control = 'player' | 'heuristic' | 'learned' | 'external';
+export type Control = 'player' | 'remote' | 'heuristic' | 'learned' | 'external';
 
 export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone';
+
+/**
+ * Bot personalities. They share the learned tactics but differ in how they
+ * move, aim, use cover and grenades, and which guns they carry.
+ */
+export type BotStyle = 'soldier' | 'rusher' | 'sniper' | 'flanker' | 'tactician';
+export const BOT_STYLES: BotStyle[] = ['soldier', 'rusher', 'sniper', 'flanker', 'tactician'];
+
+/** Humans: the local player and remote (online) players. */
+export const isHuman = (a: { control: Control }): boolean => a.control === 'player' || a.control === 'remote';
 
 /** The weapon in hand. */
 export const weaponOf = (a: { weapons: WeaponId[]; slot: number }) => WEAPONS[a.weapons[a.slot] ?? 'rifle'];
@@ -78,6 +88,8 @@ export interface Agent {
   fireCd: number;
   recoil: number;
   recoilYaw: number;
+  /** Position in the weapon's recoil pattern; resets when the trigger rests. */
+  recoilIdx: number;
   lastShotT: number;
   aiming: boolean;
 
@@ -125,6 +137,10 @@ export interface Agent {
   pathT: number;
   /** Free-form memory for the heuristic brain. */
   brain: { strafeDir: number; strafeUntil: number; aggression: number };
+  /** How this bot likes to fight. */
+  style: BotStyle;
+  /** Wait-and-watch timer for snipers holding an angle. */
+  holdUntil: number;
 
   // Stats and RL.
   kills: number;
@@ -174,6 +190,7 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   fireCd: 0,
   recoil: 0,
   recoilYaw: 0,
+  recoilIdx: 0,
   lastShotT: -99,
   aiming: false,
   lastHitT: -99,
@@ -211,6 +228,8 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   pathGoalZ: 0,
   pathT: -99,
   brain: { strafeDir: 1, strafeUntil: 0, aggression: 0.5 },
+  style: 'soldier',
+  holdUntil: 0,
   kills: 0,
   deaths: 0,
   damageDealt: 0,

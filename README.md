@@ -45,7 +45,38 @@ npm run build      # type-check + production build
 
 Controls: WASD move, mouse aim, LMB fire, RMB aim down sights, Shift sprint, Space jump, C / Ctrl crouch or slide, 1 / 2 / Q / mouse wheel switch weapon, V knife, G grenade, R reload, Tab scoreboard, Esc pause.
 
+## Online multiplayer
+
+Under **Play online**, click **Host game** to open a room. Send the 5-letter code to friends, who type it in and press **Join**. The host picks the mode and presses **Start**, and any empty slots are filled by computer players. In 1v1 the first friend is your opponent; in team modes friends alternate between teams.
+
+- **Host-authoritative peer-to-peer:** WebRTC through [PeerJS](https://peerjs.com). The host's browser runs the real match and sends snapshots 20 times a second.
+- **Clients:** each moves their own soldier locally, so movement feels instant, and sends position and buttons to the host 30 times a second. Hits, deaths, scores and objectives are decided by the host.
+- **No server of our own**, so it works on static hosting such as Cloudflare Pages. Only the public PeerJS signalling service is used, to introduce the browsers to each other.
+- **Background tabs:** if the host switches tabs, a background worker keeps the match running. If the host leaves, clients see "Lost connection to the host" within about 6 seconds.
+- **Limitations:**
+  - Up to 8 humans.
+  - No lag compensation: you shoot at where players are on the host.
+  - Some strict networks (certain school or office firewalls, symmetric NAT) block direct peer-to-peer connections. That would need a TURN relay server.
+
+Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in headless Edge.
+
+## Feel
+
+- **Per-gun recoil patterns:** sustained fire climbs and drifts in a fixed, learnable pattern for each weapon (the rifle drifts right then left, the SMG zig-zags, the LMG starts slow then climbs hard). Pull against it. The pattern resets when you stop firing.
+- **Ragdoll push:** bodies are carried along the shot and twisted at the hit point. Shotguns and snipers push harder, and explosions launch bodies, all within a speed cap.
+- **Killcam (1v1 only):** after you die, a replay of the last few seconds from your killer's eyes, with their gun, their shots and your body falling. Press Space or click to skip.
+
 ## How the bots work
+
+Opponents have personalities that change how they play around the trained tactics:
+
+- **Rusher:** shotgun or SMG, sprints at you and hops while strafing.
+- **Sniper:** holds angles after losing you, crouches and aims well.
+- **Flanker:** swings wide around you and creeps in silently.
+- **Tactician:** uses cover, grenades and retreats to heal.
+- **Soldier:** all-rounder.
+
+Everyone hears footsteps (sprinting is loud, crouching is silent) and pre-aims where you were last seen.
 
 ```
 src/sim/            pure TypeScript, no three.js: runs in the browser AND headless in Node
