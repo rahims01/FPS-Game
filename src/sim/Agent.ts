@@ -143,6 +143,12 @@ export interface Agent {
   style: BotStyle;
   /** Wait-and-watch timer for snipers holding an angle. */
   holdUntil: number;
+  /** Movement speed multiplier (zombies get faster each wave). */
+  speedMul: number;
+  /** Knife damage (zombies claw for less than a one-hit knife kill). */
+  meleeDamage: number;
+  /** How long a bot has been trying to move without getting anywhere. */
+  stuckT: number;
 
   // Stats and RL.
   kills: number;
@@ -233,6 +239,9 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   brain: { strafeDir: 1, strafeUntil: 0, aggression: 0.5 },
   style: 'soldier',
   holdUntil: 0,
+  speedMul: 1,
+  meleeDamage: 150,
+  stuckT: 0,
   kills: 0,
   deaths: 0,
   damageDealt: 0,

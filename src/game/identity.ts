@@ -65,6 +65,10 @@ const generatedTag = (rand: () => number): string => {
   return `${a}${b}`;
 };
 
+/** Some people never change the name they start with: "Player" + 4 digits (about 1 in 12). */
+const DEFAULT_NAME_CHANCE = 0.08;
+export const defaultUsername = (): string => `Player${Math.floor(1000 + Math.random() * 9000)}`;
+
 /** A shuffled pool of unique tags: mostly hand-picked, some generated. */
 const tagPool = (count: number): string[] => {
   const pool = USERNAMES.slice().sort(() => Math.random() - 0.5);
@@ -73,7 +77,8 @@ const tagPool = (count: number): string[] => {
   for (const t of pool) {
     if (out.length >= count) break;
     // Mix in a generated tag about a third of the time.
-    const tag = Math.random() < 0.33 ? generatedTag(Math.random) : t;
+    const r = Math.random();
+    const tag = r < DEFAULT_NAME_CHANCE ? defaultUsername() : r < 0.36 ? generatedTag(Math.random) : t;
     if (used.has(tag)) continue;
     used.add(tag);
     out.push(tag);
@@ -138,6 +143,11 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
   const agents = match.sim.agents;
   const tags = tagPool(agents.length);
   const names = agents.map((a, i) => (a === match.player ? playerName : tags[i % tags.length]));
+  if (match.mode === 'zombies') {
+    // Survivors in blue, the horde in rotten green.
+    const teamColors: [number, number] = [0x3d7bd9, 0x5f8a2f];
+    return { names, colors: agents.map((a) => teamColors[a.team === 0 ? 0 : 1]), teamColors };
+  }
   if (match.def.teams) {
     const pair = TEAM_PAIRS[Math.floor(Math.random() * TEAM_PAIRS.length)];
     const flip = Math.random() < 0.5;
@@ -155,4 +165,8 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
 export const lateJoinerColor = (ids: Identities, team: number): number =>
   ids.teamColors ? ids.teamColors[team === 0 ? 0 : 1] : COLORS[Math.floor(Math.random() * COLORS.length)].hex;
 
-export const randomUsername = (): string => (Math.random() < 0.3 ? generatedTag(Math.random) : USERNAMES[Math.floor(Math.random() * USERNAMES.length)]);
+export const randomUsername = (): string => {
+  const r = Math.random();
+  if (r < DEFAULT_NAME_CHANCE) return defaultUsername();
+  return r < 0.33 ? generatedTag(Math.random) : USERNAMES[Math.floor(Math.random() * USERNAMES.length)];
+};

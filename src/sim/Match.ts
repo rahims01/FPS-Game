@@ -1,7 +1,7 @@
 import { BOT_STYLES, isHuman, setLoadout, type Agent, type BotStyle, type Control, type DeathCause } from './Agent';
 import type { ArenaLayout, Point } from './Arena';
 import { SIM } from './config';
-import { FpsSim, type DamageRule, type PlayerInput } from './FpsSim';
+import { FpsSim, type DamageRule, type PlayerInput, type Rally } from './FpsSim';
 import { classicLayout, randomLayout } from './layouts';
 import { yawTo } from './math';
 import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, WEAPONS, type WeaponId } from './weapons';
@@ -34,7 +34,13 @@ export type ModeId =
   | 'friends_ffa'
   | 'friends_tdm'
   | 'hideseek'
-  | 'potato';
+  | 'potato'
+  | 'snd'
+  | 'freeze'
+  | 'vip'
+  | 'hardcore'
+  | 'lms'
+  | 'zombies';
 
 export interface ModeDef {
   id: ModeId;
@@ -77,6 +83,12 @@ export const MODES: ModeDef[] = [
   { id: 'friends_tdm', name: 'Friends Team Deathmatch', blurb: 'Friends split into two teams, no computer players. First team to 30.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
   { id: 'hideseek', name: 'Hide & Seek', blurb: 'Seekers are blindfolded for 20 s while everyone hides. Found hiders join the seekers. Hiders win if anyone lasts 3 minutes.', players: 3, teams: true, group: 'Online only', humansOnly: true, minPlayers: 3 },
   { id: 'potato', name: 'Hot Potato', blurb: 'One player holds a ticking bomb and passes it on with a knife hit. Holding it when it blows = out. Last one standing wins.', players: 3, teams: false, group: 'Online only', humansOnly: true, minPlayers: 3 },
+  { id: 'snd', name: 'Search & Destroy', blurb: '4v4, one life per round. Attackers plant the bomb at A or B; defenders stop them or defuse it. First to 4 rounds.', players: 8, teams: true, group: 'Objective' },
+  { id: 'freeze', name: 'Freeze Tag', blurb: '5v5. Kills freeze instead of killing. Stand next to a frozen teammate to thaw them. Freeze the whole enemy team to win the round. First to 3.', players: 10, teams: true, group: 'Objective' },
+  { id: 'vip', name: 'Kill Order', blurb: 'Each team has a VIP. Kill the enemy VIP to score; protect yours. 5v5, first to 8.', players: 10, teams: true, group: 'Team' },
+  { id: 'hardcore', name: 'Hardcore TDM', blurb: 'Team deathmatch with triple damage, no health regen, no crosshair and no minimap. First to 40.', players: 10, teams: true, group: 'Team' },
+  { id: 'lms', name: 'Last Man Standing', blurb: '8 players, normal loadouts, 3 lives each. Last one standing wins.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'zombies', name: 'Zombies', blurb: 'Waves of zombies that get faster and tougher every round. Play co-op online with friends. Survive as long as you can.', players: 1, teams: true, group: 'Special' },
   { id: 'br', name: 'Battle Royale', blurb: 'Huge random 250 m map, 24 players, one life. Grab medkits and stay inside the shrinking zone.', players: 24, teams: false, group: 'Special' },
   { id: 'survival', name: 'Survival', blurb: 'Hold out against endless waves. One life, health refills between waves.', players: 1, teams: true, group: 'Special' }
 ];
@@ -116,6 +128,11 @@ export type MatchNotice =
   | { kind: 'jugg'; agent: number }
   | { kind: 'sharp'; weapon: WeaponId }
   | { kind: 'potato'; holder: number; from: number }
+  | { kind: 'frozen'; agent: number; by: number }
+  | { kind: 'thawed'; agent: number; by: number[] }
+  | { kind: 'vip'; agent: number; team: number }
+  | { kind: 'vipkill'; by: number; team: number }
+  | { kind: 'snd'; event: 'planted' | 'defused' | 'exploded' | 'pickup' | 'dropped'; by: number; site: string }
   | { kind: 'ctf'; event: 'taken' | 'captured' | 'returned' | 'dropped'; team: number; by: number };
 
 /** Capture the flag: one flag per team. */
@@ -171,9 +188,13 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   bighead: 20,
   friends_ffa: 25,
   friends_tdm: 30,
-  jugg: 100
+  jugg: 100,
+  hardcore: 40,
+  vip: 8,
+  snd: 4,
+  freeze: 3
 };
-const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'jugg', 'oitc', 'sharp', 'knife', 'lowgrav', 'bighead', 'friends_ffa', 'potato'];
+const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'jugg', 'oitc', 'sharp', 'knife', 'lowgrav', 'bighead', 'friends_ffa', 'potato', 'lms'];
 const RESPAWN_MODES: ModeId[] = [
   'ffa',
   'headshot',
@@ -194,8 +215,16 @@ const RESPAWN_MODES: ModeId[] = [
   'bighead',
   'friends_ffa',
   'friends_tdm',
-  'hideseek'
+  'hideseek',
+  'lms',
+  'vip',
+  'hardcore'
 ];
+const SND_FUSE = 35;
+const SND_PLANT = 3.5;
+const SND_DEFUSE = 6;
+const SND_ROUND = 120;
+const THAW_TIME = 2.5;
 const SHARP_POOL: WeaponId[] = ['rifle', 'smg', 'shotgun', 'sniper', 'lmg', 'pistol'];
 const OITC_LIVES = 3;
 const HIDE_TIME = 20;
@@ -272,7 +301,25 @@ export class Match {
     explodeAt: 0,
     passCd: 0,
     nextBomb: 3,
-    hideRelease: -1
+    hideRelease: -1,
+    /** Search & Destroy. */
+    snd: {
+      attackers: 0,
+      sites: [] as { label: string; x: number; z: number }[],
+      site: 0,
+      state: 'carried' as 'carried' | 'dropped' | 'planted' | 'done',
+      carrier: -1,
+      bx: 0,
+      bz: 0,
+      plant: 0,
+      defuse: 0,
+      plantedAt: 0,
+      roundStart: 0
+    },
+    /** Freeze tag: thaw progress by agent id. */
+    thaw: {} as Record<number, number>,
+    /** Kill order: VIP agent per team (-1 = being chosen). */
+    vipIds: [-1, -1] as [number, number]
   };
   /** UAV killstreak: enemies show on that player's minimap until this time, by agent id. */
   uavUntil: Record<number, number> = {};
@@ -304,7 +351,7 @@ export class Match {
     const layout: ArenaLayout =
       mode === 'br'
         ? randomLayout(seed, BR_HALF)
-        : mode === 'tdm' || mode === 'kc' || mode === 'dom' || mode === 'ctf' || mode === 'infected' || mode === 'hideseek' || mode === 'friends_tdm'
+        : ['tdm', 'kc', 'dom', 'ctf', 'infected', 'hideseek', 'friends_tdm', 'snd', 'freeze', 'vip', 'hardcore'].includes(mode)
           ? randomLayout(seed, 42)
           : FFA_MODES.includes(mode)
             ? randomLayout(seed, 36)
@@ -315,7 +362,7 @@ export class Match {
       seed,
       layout,
       damageToPlayerScale: diff.damageToPlayer,
-      regen: mode !== 'br',
+      regen: mode !== 'br' && mode !== 'hardcore',
       hunt: mode !== 'br',
       damageRule,
       ...(mode === 'br' ? { viewRange: 40, hearingRange: 30 } : {})
@@ -335,15 +382,15 @@ export class Match {
       const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
       for (let i = 1; i < lobby; i++) other(0, spawns[i % spawns.length]);
-    } else if (this.def.teams && mode !== 'survival') {
-      const n0 = this.def.humansOnly ? Math.ceil(lobby / 2) : this.def.players / 2;
-      const n1 = this.def.humansOnly ? Math.floor(lobby / 2) : this.def.players / 2;
+    } else if (this.def.teams && mode !== 'survival' && mode !== 'zombies') {
+      const n0 = this.def.humansOnly ? Math.ceil(lobby / 2) : Math.ceil(this.def.players / 2);
+      const n1 = this.def.humansOnly ? Math.floor(lobby / 2) : Math.floor(this.def.players / 2);
       const [s0, s1] = sim.arena.teamSpawns;
       const at = (s: Point[], i: number) => (i < s.length ? s[i] : { x: s[i % s.length].x + 1.2 * Math.floor(i / s.length), z: s[i % s.length].z });
       this.player = sim.spawn(0, 'player', s0[0].x, s0[0].z, yawTo(s0[0].x, s0[0].z, 0, 0));
       for (let i = 1; i < n0; i++) other(0, at(s0, i));
       for (let i = 0; i < n1; i++) other(1, at(s1, i));
-    } else if (mode === 'survival') {
+    } else if (mode === 'survival' || mode === 'zombies') {
       const p = sim.arena.teamSpawns[0][0];
       this.player = sim.spawn(0, 'player', 0, -7, yawTo(p.x, p.z, 0, 0));
     } else {
@@ -411,6 +458,27 @@ export class Match {
       }
       case 'survival':
         this.startWave();
+        break;
+      case 'zombies':
+        this.startZombieWave();
+        break;
+      case 'snd':
+        this.setupSnd();
+        break;
+      case 'freeze':
+        sim.onLethal = (v, k) => this.freezeAgent(v, k);
+        sim.rallyFor = this.freezeRally;
+        this.announce('Freeze the whole enemy team');
+        break;
+      case 'vip':
+        this.announce('Kill the enemy VIP. Protect yours.');
+        break;
+      case 'hardcore':
+        sim.damageMul = 3;
+        this.announce('Hardcore: no regen, no HUD help');
+        break;
+      case 'lms':
+        this.announce('Three lives. Last one standing wins.');
         break;
       case 'br': {
         const H = sim.arena.half;
@@ -537,7 +605,23 @@ export class Match {
         this.rulesSharp();
         break;
       case 'friends_tdm':
+      case 'hardcore':
         this.rulesTdm();
+        break;
+      case 'snd':
+        this.rulesSnd();
+        break;
+      case 'freeze':
+        this.rulesFreeze();
+        break;
+      case 'vip':
+        this.rulesVip();
+        break;
+      case 'lms':
+        this.rulesOitc();
+        break;
+      case 'zombies':
+        this.rulesZombies();
         break;
       case 'hideseek':
         this.rulesHideSeek();
@@ -589,7 +673,7 @@ export class Match {
 
   /** One in the Chamber: out of lives = out of the match. */
   private eliminated(a: Agent): boolean {
-    return (this.mode === 'oitc' && a.deaths >= OITC_LIVES) || this.mode === 'potato';
+    return ((this.mode === 'oitc' || this.mode === 'lms') && a.deaths >= OITC_LIVES) || this.mode === 'potato';
   }
 
   private rulesOitc(): void {
@@ -693,6 +777,37 @@ export class Match {
         const lead = leader ? `${nameOf(+leader[0])} ${Math.floor(leader[1])}` : '-';
         return `${j && j.id === me.id ? 'YOU ARE THE JUGGERNAUT' : `Juggernaut: ${j ? nameOf(j.id) : '-'}`} · you ${mine} · leader ${lead} · first to ${TARGETS.jugg}`;
       }
+      case 'snd': {
+        const d = p.snd;
+        const site = d.sites[d.site]?.label ?? 'A';
+        const attacking = me.team === d.attackers;
+        if (d.state === 'planted') {
+          const left = sec(SND_FUSE - (sim.time - d.plantedAt));
+          if (d.defuse > 0) return `Defusing ${Math.round(d.defuse * 100)}% · ${left}`;
+          return `Bomb planted at ${site} · ${left}${attacking ? ' · defend it' : ' · defuse it!'}`;
+        }
+        const clock = sec(SND_ROUND - (sim.time - d.roundStart));
+        if (d.carrier === me.id) return d.plant > 0 ? `Planting ${Math.round(d.plant * 100)}%` : `You have the bomb · plant at ${site} · ${clock}`;
+        if (attacking) return d.state === 'dropped' ? `The bomb was dropped · pick it up · ${clock}` : `Attack ${site} · ${clock}`;
+        return `Defend A and B · ${clock}`;
+      }
+      case 'freeze':
+        if (sim.time < me.frozenUntil) {
+          const t = p.thaw[me.id] ?? 0;
+          return t > 0 ? `Thawing ${Math.round(t * 100)}%` : 'You are frozen · wait for a teammate';
+        }
+        {
+          const active = [0, 0];
+          for (const b of sim.agents) if (b.alive && !sim.isFrozen(b)) active[b.team === me.team ? 0 : 1]++;
+          return `${active[0]} v ${active[1]} unfrozen · stand next to frozen teammates to thaw them`;
+        }
+      case 'vip': {
+        const mine = sim.agents[p.vipIds[me.team]];
+        const theirs = sim.agents[p.vipIds[1 - me.team]];
+        if (mine === me) return 'YOU ARE THE VIP · stay alive';
+        return `Your VIP: ${mine ? nameOf(mine.id) : '…'} · enemy VIP: ${theirs ? nameOf(theirs.id) : '…'}`;
+      }
+      case 'lms':
       case 'oitc': {
         const lives = Math.max(0, OITC_LIVES - me.deaths);
         const left = sim.agents.filter((a) => a.deaths < OITC_LIVES).length;
@@ -718,6 +833,24 @@ export class Match {
 
   private onKill(victim: Agent, killer: Agent | null, cause: DeathCause): void {
     const sim = this.sim;
+    // Kill order: the enemy VIP down is a point.
+    if (this.mode === 'vip' && victim.id === this.party.vipIds[victim.team]) {
+      this.party.vipIds[victim.team] = -1;
+      if (killer && killer.team !== victim.team) {
+        this.scores[killer.team as 0 | 1]++;
+        this.notices.push({ kind: 'vipkill', by: killer.id, team: killer.team });
+      }
+    }
+    // Search & destroy: the carrier drops the bomb where they fell.
+    if (this.mode === 'snd' && this.party.snd.carrier === victim.id) {
+      const d = this.party.snd;
+      d.carrier = -1;
+      d.state = 'dropped';
+      d.bx = victim.x;
+      d.bz = victim.z;
+      d.plant = 0;
+      this.notices.push({ kind: 'snd', event: 'dropped', by: victim.id, site: '' });
+    }
     if (this.mode === 'kc') sim.spawnPickup('tag', victim.x, victim.z, victim.team, 30);
     // A carrier who dies drops the flag where they fell.
     for (const f of this.ctf) {
@@ -806,6 +939,310 @@ export class Match {
     const pause = !this.player.alive ? KILLCAM_BREAK : ROUND_BREAK;
     this.breakUntil = sim.time + pause;
     this.announceTeam(winner, 'Round won', 'Round lost', Math.min(pause, 2.5));
+  }
+
+  /** Round modes (search & destroy, freeze tag): score a round and maybe the match. */
+  private endRound(winner: number, wonText = 'Round won', lostText = 'Round lost'): void {
+    const sim = this.sim;
+    this.scores[winner as 0 | 1]++;
+    if (this.scores[winner] >= (TARGETS[this.mode] ?? ROUND_TARGET)) {
+      this.finish(winner === this.player.team, 0, winner);
+      return;
+    }
+    this.phase = 'roundOver';
+    const pause = !this.player.alive ? KILLCAM_BREAK : ROUND_BREAK + 0.5;
+    this.breakUntil = sim.time + pause;
+    this.announceTeam(winner, wonText, lostText, Math.min(pause, 2.5));
+  }
+
+  // ---------------------------------------------------------------- search & destroy
+
+  private setupSnd(): void {
+    const sim = this.sim;
+    const H = sim.arena.half;
+    // Bomb sites on the defenders' (east) side.
+    for (const [label, z] of [
+      ['A', -H * 0.45],
+      ['B', H * 0.45]
+    ] as [string, number][]) {
+      const p = sim.arena.randomFreePoint(() => sim.rng.next(), H * 0.45, z, 6) ?? { x: H * 0.45, z };
+      this.party.snd.sites.push({ label, x: p.x, z: p.z });
+    }
+    this.sndRoundStart();
+    sim.rallyFor = (a) => {
+      const d = this.party.snd;
+      const site = d.sites[d.site];
+      if (a.team === d.attackers) {
+        if (d.carrier === a.id && d.state === 'carried') return { x: site.x, z: site.z, r: 2.5, urgent: true, hold: true };
+        if (d.state === 'dropped') return { x: d.bx, z: d.bz, r: 1 };
+        if (d.state === 'planted') return { x: d.bx, z: d.bz, r: 9 };
+        return { x: site.x, z: site.z, r: 7 };
+      }
+      if (d.state === 'planted') return { x: d.bx, z: d.bz, r: 1.6, hold: true };
+      const guard = d.sites[a.id % 2];
+      return { x: guard.x, z: guard.z, r: 8 };
+    };
+  }
+
+  /** New round: the side on the west attacks; a random attacker carries the bomb. */
+  private sndRoundStart(): void {
+    const sim = this.sim;
+    const d = this.party.snd;
+    d.attackers = (this.round + 1) % 2;
+    d.site = sim.rng.int(2);
+    d.state = 'carried';
+    d.plant = 0;
+    d.defuse = 0;
+    d.roundStart = sim.time;
+    const attackers = sim.agents.filter((a) => a.team === d.attackers && a.alive);
+    d.carrier = attackers.length ? attackers[sim.rng.int(attackers.length)].id : -1;
+    this.syncSndObjectives();
+    this.announceTeam(d.attackers, `Round ${this.round}: plant the bomb`, `Round ${this.round}: defend the sites`, 2.5);
+  }
+
+  private syncSndObjectives(): void {
+    const d = this.party.snd;
+    const obj: FpsSim['objectives'] = d.sites.map((p) => ({ label: p.label, x: p.x, z: p.z, r: 3.5, owner: -1, progress: 0 }));
+    if (d.state === 'dropped' || d.state === 'planted') obj.push({ label: 'BOMB', x: d.bx, z: d.bz, r: 1, owner: d.attackers, progress: 0, carried: true });
+    this.sim.objectives = obj;
+  }
+
+  private rulesSnd(): void {
+    const sim = this.sim;
+    const d = this.party.snd;
+    if (this.phase === 'roundOver') {
+      if (sim.time >= this.breakUntil) {
+        this.resetRound();
+        this.sndRoundStart();
+      }
+      return;
+    }
+    const attackers = sim.agents.filter((a) => a.team === d.attackers && a.alive);
+    const defenders = sim.agents.filter((a) => a.team !== d.attackers && a.alive);
+    const step = SIM.dt * 6;
+    if (d.state === 'dropped') {
+      const picker = attackers.find((a) => Math.hypot(a.x - d.bx, a.z - d.bz) < 1.5);
+      if (picker) {
+        d.carrier = picker.id;
+        d.state = 'carried';
+        this.notices.push({ kind: 'snd', event: 'pickup', by: picker.id, site: '' });
+      }
+    } else if (d.state === 'carried') {
+      const c = sim.agents[d.carrier];
+      const site = d.sites.find((p) => c && Math.hypot(c.x - p.x, c.z - p.z) < 3.5);
+      if (c && c.alive && site) {
+        d.plant += step / SND_PLANT;
+        if (d.plant >= 1) {
+          d.state = 'planted';
+          d.bx = c.x;
+          d.bz = c.z;
+          d.site = d.sites.indexOf(site);
+          d.plantedAt = sim.time;
+          d.carrier = -1;
+          this.notices.push({ kind: 'snd', event: 'planted', by: c.id, site: site.label });
+          this.announceTeam(d.attackers, `Bomb planted at ${site.label}`, `Bomb planted at ${site.label}: defuse it!`, 2.5);
+        }
+      } else d.plant = 0;
+    } else if (d.state === 'planted') {
+      const defuser = defenders.find((a) => Math.hypot(a.x - d.bx, a.z - d.bz) < 2);
+      if (defuser) d.defuse += step / SND_DEFUSE;
+      else d.defuse = 0;
+      if (d.defuse >= 1) {
+        d.state = 'done';
+        this.notices.push({ kind: 'snd', event: 'defused', by: defuser!.id, site: d.sites[d.site].label });
+        this.syncSndObjectives();
+        this.endRound(1 - d.attackers, 'Bomb defused!', 'Bomb defused');
+        return;
+      }
+      if (sim.time - d.plantedAt >= SND_FUSE) {
+        d.state = 'done';
+        sim.explode(d.bx, 0.3, d.bz, -1, 'airstrike');
+        this.notices.push({ kind: 'snd', event: 'exploded', by: -1, site: d.sites[d.site].label });
+        this.syncSndObjectives();
+        this.endRound(d.attackers, 'Target destroyed', 'Target destroyed');
+        return;
+      }
+    }
+    this.syncSndObjectives();
+    // Eliminations and the clock.
+    if (defenders.length === 0) this.endRound(d.attackers);
+    else if (attackers.length === 0 && d.state !== 'planted') this.endRound(1 - d.attackers);
+    else if (d.state !== 'planted' && sim.time - d.roundStart > SND_ROUND) this.endRound(1 - d.attackers, 'Time up: sites held', 'Time up');
+  }
+
+  // ---------------------------------------------------------------- freeze tag
+
+  /** A lethal hit freezes instead (counts as a kill for the stats). */
+  private freezeAgent(v: Agent, killer: Agent | null): boolean {
+    if (this.phase !== 'live') return false;
+    v.hp = 100;
+    v.frozenUntil = 1e9;
+    v.vx = v.vz = 0;
+    v.deaths++;
+    v.streak = 0;
+    this.party.thaw[v.id] = 0;
+    if (killer && killer !== v) {
+      killer.kills++;
+      killer.streak++;
+    }
+    this.notices.push({ kind: 'frozen', agent: v.id, by: killer ? killer.id : -1 });
+    return true;
+  }
+
+  private rulesFreeze(): void {
+    const sim = this.sim;
+    if (this.phase === 'roundOver') {
+      if (sim.time >= this.breakUntil) {
+        this.resetRound();
+        this.party.thaw = {};
+        this.announce(`Round ${this.round}`);
+      }
+      return;
+    }
+    // Teammates standing next to a frozen soldier thaw them.
+    for (const a of sim.agents) {
+      if (!sim.isFrozen(a)) continue;
+      const helpers = sim.agents.filter((b) => b !== a && b.alive && b.team === a.team && !sim.isFrozen(b) && Math.hypot(b.x - a.x, b.z - a.z) < 2.2);
+      const t = (this.party.thaw[a.id] ?? 0) + (helpers.length ? (SIM.dt * 6 * Math.min(2, helpers.length)) / THAW_TIME : -SIM.dt * 3);
+      this.party.thaw[a.id] = Math.max(0, t);
+      if (t >= 1) {
+        a.frozenUntil = 0;
+        a.protectedUntil = sim.time + 1;
+        this.party.thaw[a.id] = 0;
+        this.notices.push({ kind: 'thawed', agent: a.id, by: helpers.map((h) => h.id) });
+      }
+    }
+    const active = [0, 0];
+    for (const a of sim.agents) if (a.alive && !sim.isFrozen(a)) active[a.team]++;
+    if (active[0] === 0) this.endRound(1, 'Enemy team frozen!', 'Your team was frozen');
+    else if (active[1] === 0) this.endRound(0, 'Enemy team frozen!', 'Your team was frozen');
+  }
+
+  /** Freeze tag bots go thaw a nearby frozen teammate when not fighting. */
+  private freezeRally = (a: Agent): Rally | null => {
+    const sim = this.sim;
+    let best: Agent | null = null;
+    let bestD = 30;
+    for (const b of sim.agents) {
+      if (b === a || b.team !== a.team || !sim.isFrozen(b)) continue;
+      const d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best ? { x: best.x, z: best.z, r: 1.6, hold: true } : null;
+  };
+
+  // ---------------------------------------------------------------- kill order
+
+  private rulesVip(): void {
+    const sim = this.sim;
+    const p = this.party;
+    for (const team of [0, 1]) {
+      const v = sim.agents[p.vipIds[team]];
+      if (v && v.alive) {
+        // Everyone on the other side always knows where the enemy VIP is.
+        for (const a of sim.agents) {
+          if (a.team === team || !a.alive || isHuman(a) || a.seesTarget) continue;
+          a.targetId = v.id;
+          a.lastSeenX = v.x;
+          a.lastSeenZ = v.z;
+          a.lastSeenT = sim.time;
+        }
+        continue;
+      }
+      const pool = sim.agents.filter((a) => a.team === team && a.alive);
+      if (!pool.length) continue;
+      const pick = pool[sim.rng.int(pool.length)];
+      p.vipIds[team] = pick.id;
+      pick.armor = 0.75;
+      this.notices.push({ kind: 'vip', agent: pick.id, team });
+    }
+    const target = TARGETS.vip!;
+    if (this.scores[0] >= target || this.scores[1] >= target) {
+      this.finish(this.scores[0] >= target, 0, this.scores[0] >= target ? 0 : 1);
+      return;
+    }
+    this.autoRespawn();
+  }
+
+  // ---------------------------------------------------------------- zombies
+
+  private startZombieWave(): void {
+    const sim = this.sim;
+    this.wave++;
+    this.waveQueue = 5 + this.wave * 3;
+    this.phase = 'live';
+    // Fallen players come back for the new wave.
+    for (const a of sim.agents) {
+      if (a.team !== 0) continue;
+      if (!a.alive) sim.respawn(a, sim.rng.range(-4, 4), sim.rng.range(-10, -4), 0);
+      a.hp = 100;
+      a.grenades = Math.max(a.grenades, 2);
+    }
+    this.announce(this.wave === 1 ? 'Here they come…' : `Wave ${this.wave}`);
+  }
+
+  private rulesZombies(): void {
+    const sim = this.sim;
+    const humans = sim.agents.filter((a) => a.team === 0);
+    if (humans.every((a) => !a.alive)) {
+      this.finish(false, 0, 1);
+      return;
+    }
+    if (this.phase === 'roundOver') {
+      if (sim.time >= this.breakUntil) this.startZombieWave();
+      return;
+    }
+    const zombies = sim.agents.filter((a) => a.team === 1);
+    const alive = zombies.filter((a) => a.alive);
+    // Zombies always know where the nearest survivor is.
+    for (const z of alive) {
+      let best: Agent | null = null;
+      let bestD = Infinity;
+      for (const h of humans) {
+        if (!h.alive) continue;
+        const d = Math.hypot(h.x - z.x, h.z - z.z);
+        if (d < bestD) {
+          bestD = d;
+          best = h;
+        }
+      }
+      if (best) {
+        z.targetId = best.id;
+        z.lastSeenX = best.x;
+        z.lastSeenZ = best.z;
+        z.lastSeenT = sim.time;
+      }
+    }
+    const maxAlive = Math.min(14, 4 + this.wave);
+    if (this.waveQueue > 0 && alive.length < maxAlive) {
+      const living = humans.filter((h) => h.alive);
+      const far = (p: Point) => Math.min(...living.map((h) => Math.hypot(h.x - p.x, h.z - p.z)));
+      const spots = sim.arena.spawns.slice().sort((a, b) => far(b) - far(a));
+      const p = spots[sim.rng.int(Math.min(4, spots.length))];
+      const reuse = zombies.find((a) => !a.alive && sim.time - a.deathT > 4);
+      let z: Agent;
+      if (reuse) {
+        sim.respawn(reuse, p.x, p.z, 0);
+        z = reuse;
+      } else z = sim.spawn(1, this.opts.botControl, p.x, p.z, 0);
+      setLoadout(z, ['knife']);
+      z.grenades = 0;
+      z.style = 'rusher';
+      z.meleeDamage = 30 + this.wave * 2;
+      z.armor = Math.max(0.35, 1 - 0.05 * (this.wave - 1));
+      // Early waves shamble (slower than you walk); later ones run you down.
+      z.speedMul = Math.min(1.2, 0.55 + 0.06 * this.wave);
+      this.waveQueue--;
+      return;
+    }
+    if (this.waveQueue === 0 && alive.length === 0) {
+      this.phase = 'roundOver';
+      this.breakUntil = sim.time + 6;
+      this.announce(`Wave ${this.wave} survived`, 4);
+    }
   }
 
   private resetRound(): void {
@@ -1179,7 +1616,7 @@ export class Match {
   }
 
   enemiesRemaining(): number {
-    if (this.mode === 'survival') return this.waveQueue + this.sim.agents.filter((a) => a.team === 1 && a.alive).length;
+    if (this.mode === 'survival' || this.mode === 'zombies') return this.waveQueue + this.sim.agents.filter((a) => a.team === 1 && a.alive).length;
     return this.sim.agents.filter((a) => a.alive && a.team !== this.player.team).length;
   }
 
@@ -1258,7 +1695,7 @@ export class Match {
         ? win
           ? 'Winner winner!'
           : `Eliminated — #${placement}`
-        : this.mode === 'survival'
+        : this.mode === 'survival' || this.mode === 'zombies'
           ? `Survived ${this.wave - 1} wave${this.wave === 2 ? '' : 's'}`
           : win
             ? 'Victory'

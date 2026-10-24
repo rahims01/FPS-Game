@@ -120,6 +120,8 @@ export interface HudState {
   /** A killcam is about to play (the end screen waits for it). */
   killcamPending: boolean;
   fps: number;
+  /** Hardcore: no crosshair, no minimap. */
+  hardcore: boolean;
   /** Online round-trip time to the host in ms (null when not a client). */
   ping: number | null;
   online: boolean;
@@ -584,6 +586,10 @@ export class Game {
 
   private nameOf(id: number): string {
     this.ensureIdentity(id);
+    const agents = this.match.sim.agents;
+    if (this.match.mode === 'zombies' && agents[id]?.team === 1) return 'Zombie';
+    // Survival waves are faceless: Enemy 1, Enemy 2, ...
+    if (this.match.mode === 'survival' && agents[id]?.team === 1) return `Enemy ${agents.filter((a) => a.team === 1 && a.id <= id).length}`;
     return this.ids.names[id];
   }
 
@@ -1032,6 +1038,28 @@ export class Game {
         this.callout(`Upgraded to ${WEAPONS[n.weapon].name}`);
       } else if (n.kind === 'demote') {
         if (n.agent === me) this.callout(`Knifed! Back to ${WEAPONS[n.weapon].name}`);
+      } else if (n.kind === 'frozen') {
+        if (n.by === me) this.medal(MEDALS.freeze);
+        if (n.agent === me) this.callout('You are frozen! A teammate can thaw you.');
+      } else if (n.kind === 'thawed') {
+        if (n.by.includes(me)) this.medal(MEDALS.thaw);
+        if (n.agent === me) this.callout('Thawed! Back in the fight.');
+      } else if (n.kind === 'vip') {
+        if (n.agent === me) {
+          this.callout('You are the VIP! Stay alive.');
+          this.audio.fanfare();
+        } else this.callout(n.team === m.player.team ? `${this.nameOf(n.agent)} is your VIP. Protect them!` : `New enemy VIP: ${this.nameOf(n.agent)}`);
+      } else if (n.kind === 'vipkill') {
+        if (n.by === me) this.medal(MEDALS.vipKill);
+        else this.callout(n.team === m.player.team ? 'Enemy VIP down!' : 'Your VIP was killed');
+      } else if (n.kind === 'snd') {
+        if (n.event === 'planted') {
+          if (n.by === me) this.medal(MEDALS.planted);
+          this.audio.whistle();
+        } else if (n.event === 'defused') {
+          if (n.by === me) this.medal(MEDALS.defused);
+        } else if (n.event === 'pickup' && n.by === me) this.callout('You picked up the bomb');
+        else if (n.event === 'dropped') this.callout('The bomb was dropped');
       } else if (n.kind === 'jugg') {
         this.callout(n.agent === me ? 'You are the Juggernaut!' : `${this.nameOf(n.agent)} is the Juggernaut`);
         if (n.agent === me) this.audio.fanfare();
@@ -1110,7 +1138,9 @@ export class Game {
       const z = p.z + (a.z - p.z) * alpha;
       // The player's own body is only shown once it is a corpse.
       v.setVisible(a !== player || !a.alive);
-      if (dt > 0 || a !== player) v.update(a, x, y, z, dt, time);
+      const frozen = sim.isFrozen(a);
+      v.setFrozen(frozen);
+      if (dt > 0 || a !== player) v.update(a, x, y, z, frozen ? 0 : dt, time);
       if (a !== player) v.showTag(a.alive && this.tagVisible(a), this.camera.position.distanceTo(v.root.position));
       // Footsteps: one per stride, louder when sprinting, silent when crouched.
       if (a.alive && a.onGround && dt > 0) {
@@ -1333,6 +1363,7 @@ export class Game {
       blind: p.alive && sim.time < p.frozenUntil ? Math.ceil(p.frozenUntil - sim.time) : null,
       killcamPending: !!this.pendingKillcam,
       fps: Math.round(this.fps),
+      hardcore: m.mode === 'hardcore',
       ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : null,
       online: !!this.net,
       killcam: this.killcam
@@ -1423,7 +1454,8 @@ export class Game {
       const ally = a.team === p.team;
       const firing = sim.time - a.lastShotT < 1;
       const uav = sim.time < (this.match.uavUntil[this.match.player.id] ?? -1);
-      const marked = a.id === this.match.party.juggId || a.id === this.match.party.holder;
+      const party = this.match.party;
+      const marked = a.id === party.juggId || a.id === party.holder || (this.match.mode === 'vip' && party.vipIds.includes(a.id));
       if (!ally && !firing && !uav && !marked) continue;
       if (marked) {
         ctx.fillStyle = '#ffd34d';

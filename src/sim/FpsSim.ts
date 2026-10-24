@@ -94,7 +94,6 @@ const GRENADE_RADIUS = 7;
 const GRENADE_DAMAGE = 140;
 const AIRSTRIKE_RADIUS = 9;
 const AIRSTRIKE_DAMAGE = 220;
-const MELEE_DAMAGE = 150;
 const SPAWN_PROTECTION = 1.5;
 const SLIDE_TIME = 0.7;
 const SLIDE_SPEED = 9.5;
@@ -111,6 +110,8 @@ export interface Rally {
   r: number;
   /** Followed even while fighting (a flag carrier running home). */
   urgent?: boolean;
+  /** Once there, stand still (planting or defusing a bomb). */
+  hold?: boolean;
 }
 
 export interface SimOptions {
@@ -173,6 +174,10 @@ export class FpsSim {
   headScale = 1;
   /** One in the Chamber: no reloading; ammo only comes from kills. */
   noReload = false;
+  /** Multiplies all weapon damage (hardcore). */
+  damageMul = 1;
+  /** Called on what would be a killing blow; return true to cancel the death (freeze tag freezes instead). */
+  onLethal: ((victim: Agent, attacker: Agent | null, cause: DeathCause) => boolean) | null = null;
   /** Called when a knife connects; return true to cancel the damage (hot potato passes the bomb instead). */
   onMeleeHit: ((attacker: Agent, target: Agent) => boolean) | null = null;
   /** Online host: latest inputs of remote (human) players, by agent id. */
@@ -549,7 +554,7 @@ export class FpsSim {
       let victim: Agent | null = null;
       let region: HitRegion = 'torso';
       for (const b of this.agents) {
-        if (!b.alive || b === a || b.team === a.team) continue;
+        if (!b.alive || b === a || b.team === a.team || this.isFrozen(b)) continue;
         const hit = rayHitAgent(ox, oy, oz, dx, dy, dz, b, this.headScale);
         if (hit && hit.t < bestT) {
           bestT = hit.t;
@@ -630,7 +635,7 @@ export class FpsSim {
     this.emit({ type: 'melee', agent: a.id, hit: best ? best.id : -1 });
     if (best) {
       if (this.onMeleeHit?.(a, best)) return;
-      const raw = this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' ? 100 : MELEE_DAMAGE;
+      const raw = this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' ? 100 : a.meleeDamage;
       if (raw > 0) this.damage(best, a, raw, 'torso', fx, 0.1, fz, 'knife');
     }
   }
@@ -753,6 +758,7 @@ export class FpsSim {
     if (this.puppet || !v.alive || this.time < v.protectedUntil) return;
     let amount = v.control === 'player' ? raw * this.damageToPlayerScale : raw;
     amount *= v.armor;
+    if (attacker) amount *= this.damageMul;
     const dealt = Math.min(amount, v.hp);
     v.hp -= amount;
     v.lastHitT = this.time;
@@ -768,6 +774,10 @@ export class FpsSim {
       v.lastSeenX = attacker.x;
       v.lastSeenZ = attacker.z;
       v.lastSeenT = this.time;
+    }
+    if (v.hp <= 0 && this.onLethal?.(v, attacker, cause)) {
+      this.emit({ type: 'damage', target: v.id, attacker: attacker ? attacker.id : -1, amount: dealt, region, killed: true });
+      return;
     }
     const killed = v.hp <= 0;
     this.emit({ type: 'damage', target: v.id, attacker: attacker ? attacker.id : -1, amount: dealt, region, killed });
@@ -819,7 +829,19 @@ export class FpsSim {
 
   target(a: Agent): Agent | null {
     const t = this.agents[a.targetId];
-    return t && t.alive && t.team !== a.team ? t : null;
+    return t && t.alive && t.team !== a.team && !this.isFrozen(t) ? t : null;
+  }
+
+  /** Frozen soldiers (freeze tag, blindfolded seekers) can't move, shoot or be targeted. */
+  isFrozen(a: Agent): boolean {
+    return this.time < a.frozenUntil;
+  }
+
+  private jump(a: Agent): void {
+    if (!a.onGround || a.slideT > 0) return;
+    a.vy = SOLDIER.jumpSpeed * this.jumpMul;
+    a.onGround = false;
+    a.crouching = false;
   }
 
   knowsTarget(a: Agent): boolean {
@@ -833,7 +855,7 @@ export class FpsSim {
     let fallback: Agent | null = null;
     let fallbackD = Infinity;
     for (const b of this.agents) {
-      if (!b.alive || b.team === a.team) continue;
+      if (!b.alive || b.team === a.team || this.isFrozen(b)) continue;
       const d = Math.hypot(b.x - a.x, b.z - a.z);
       if (d < fallbackD) {
         fallbackD = d;
@@ -928,6 +950,39 @@ export class FpsSim {
 
   // ---------------------------------------------------------------- bot motor
 
+  /**
+   * Bots jump too: over low crates in their way, to get unstuck, and (by
+   * personality) to dodge during fights.
+   */
+  private botJumps(a: Agent, mx: number, mz: number, speed: number, name: string, crouch: boolean, dt: number): void {
+    if (!a.onGround || crouch) {
+      a.stuckT = 0;
+      return;
+    }
+    const moving = mx !== 0 || mz !== 0;
+    // Stuck: pushing into something without getting anywhere.
+    if (moving && Math.hypot(a.vx, a.vz) < 0.5) {
+      a.stuckT += dt;
+      if (a.stuckT > 0.35) {
+        this.jump(a);
+        a.stuckT = 0;
+        return;
+      }
+    } else a.stuckT = 0;
+    // A low crate right ahead: hop onto it rather than walk around.
+    if (moving && speed > 3) {
+      const b = this.arena.boxAt(a.x + mx * 0.9, a.y + 0.4, a.z + mz * 0.9);
+      const rise = b ? b.h - a.y : 0;
+      if (b && rise > SOLDIER.stepHeight && rise < 1.3) {
+        this.jump(a);
+        return;
+      }
+    }
+    // Combat hops, by personality.
+    const rate = a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
+    if (a.seesTarget && (name === 'strafe_left' || name === 'strafe_right' || name === 'advance') && this.rng.next() < rate * this.jumpMul) this.jump(a);
+  }
+
   private followPath(a: Agent, gx: number, gz: number): { x: number; z: number } {
     const moved = Math.hypot(gx - a.pathGoalX, gz - a.pathGoalZ) > 1.5;
     if (moved || a.path.length === 0 || this.time - a.pathT > 1.5) {
@@ -947,6 +1002,10 @@ export class FpsSim {
   }
 
   private driveBot(a: Agent, dt: number): void {
+    if (this.isFrozen(a)) {
+      this.accelerate(a, 0, 0, dt);
+      return;
+    }
     const t = this.target(a);
     const w = weaponOf(a);
     let name = ACTIONS[a.action];
@@ -973,6 +1032,8 @@ export class FpsSim {
     const known = this.knowsTarget(a);
     const dTarget = Math.hypot(tx - a.x, tz - a.z);
     let crouch = false;
+    // Standing objectives (planting, defusing): hold still once there.
+    if (r && r.hold && !farFromRally && (!a.seesTarget || r.urgent)) name = 'hold';
     if (!override) {
       if (style === 'rusher' && name === 'advance' && !a.seesTarget) name = 'sprint';
       if (style === 'sniper' && !a.seesTarget && known && (name === 'advance' || name === 'sprint') && this.time < a.holdUntil) name = 'hold';
@@ -1047,15 +1108,11 @@ export class FpsSim {
         mayFire = false;
         break;
     }
-    speed *= w.move;
+    speed *= w.move * a.speedMul;
     if (crouch) speed = Math.min(speed, SOLDIER.walkSpeed * 0.55);
     a.crouching = crouch;
     a.sprinting = !crouch && speed >= SOLDIER.sprintSpeed * 0.85 && (mx !== 0 || mz !== 0);
-    // Rushers hop while strafing in a fight.
-    if (style === 'rusher' && a.seesTarget && a.onGround && (name === 'strafe_left' || name === 'strafe_right') && this.rng.next() < 0.012) {
-      a.vy = SOLDIER.jumpSpeed * this.jumpMul;
-      a.onGround = false;
-    }
+    this.botJumps(a, mx, mz, speed, name, crouch, dt);
     this.accelerate(a, mx * speed, mz * speed, dt);
 
     // Knife: swing when in reach.

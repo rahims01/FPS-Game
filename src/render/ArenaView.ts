@@ -223,6 +223,7 @@ export class ArenaView {
       this.hill.scale.set(sim.rally.r, 1, sim.rally.r);
     }
     // Domination flags: pole, cloth in the owner's colour, capture ring and a letter.
+    for (let i = sim.objectives.length; i < this.flagViews.length; i++) this.flagViews[i].group.visible = false;
     sim.objectives.forEach((o, i) => {
       let fv = this.flagViews[i];
       if (!fv) {
@@ -265,6 +266,7 @@ export class ArenaView {
       (fv.label.material as THREE.SpriteMaterial).color.setHex(color);
       fv.cloth.rotation.y = Math.sin(time * 2 + i) * 0.25;
       // Capture-the-flag flags move: carried ones ride on the carrier, smaller and without a ring.
+      fv.group.visible = true;
       fv.group.position.set(o.x, 0, o.z);
       fv.group.scale.setScalar(o.carried ? 0.55 : 1);
       fv.ring.visible = !o.carried;

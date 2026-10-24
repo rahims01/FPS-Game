@@ -98,6 +98,11 @@ export const MEDALS = {
   flagReturned: { name: 'Flag Returned', xp: 100 },
   carrierKill: { name: 'Carrier Kill', xp: 75 },
   promoted: { name: 'Weapon Up', xp: 50 },
+  freeze: { name: 'Freeze', xp: 100 },
+  thaw: { name: 'Thawed a Teammate', xp: 75 },
+  vipKill: { name: 'VIP Kill', xp: 200, big: true },
+  planted: { name: 'Bomb Planted', xp: 200 },
+  defused: { name: 'Bomb Defused', xp: 300, big: true },
   win: { name: 'Match Won', xp: 500, big: true },
   played: { name: 'Match Complete', xp: 200 }
 } satisfies Record<string, Medal>;

@@ -38,6 +38,12 @@ npm run build      # type-check + production build
 | Online only | Friends Free-for-all / Friends Team Deathmatch | Humans only, no computer players. |
 | Online only | Hide & Seek | Seekers are blindfolded for 20 s while the hiders (knife only) hide. Found hiders become seekers. Hiders win if anyone lasts 3 minutes. Needs 3 players. |
 | Online only | Hot Potato | One player holds a ticking bomb and passes it with a knife hit. Whoever holds it when it blows is out. Needs 3 players. |
+| Objective | Search & Destroy | 4v4, one life per round. Attackers carry a bomb to site A or B and plant it (3.5 s); defenders stop them or defuse it (6 s) before the 35 s fuse runs out. Sides swap each round. First to 4. |
+| Objective | Freeze Tag | 5v5. A killing blow freezes instead; stand next to a frozen teammate to thaw them. Freeze the whole enemy team to win the round. First to 3. |
+| Team | Kill Order | Each team has a VIP (shown on everyone's minimap). Killing the enemy VIP scores. First to 8. |
+| Team | Hardcore TDM | Triple damage, no health regen, no crosshair, no minimap. First to 40. |
+| Free-for-all | Last Man Standing | Normal loadouts, 3 lives each; last one standing wins. |
+| Special | Zombies | Endless co-op waves of melee zombies that get faster and tougher. Fallen players return next wave. |
 | Special | Battle Royale | 24 players on a random 250 × 250 m map. One life, medkits, and a zone that shrinks in 6 phases. |
 | Special | Survival | Endless waves. Later waves bring better guns. One life. |
 
@@ -90,7 +96,7 @@ Opponents have personalities that change how they play around the trained tactic
 - **Tactician:** uses cover, grenades and retreats to heal.
 - **Soldier:** all-rounder.
 
-Everyone hears footsteps (sprinting is loud, crouching is silent) and pre-aims where you were last seen.
+Everyone hears footsteps (sprinting is loud, crouching is silent) and pre-aims where you were last seen. Bots jump too: over low crates, to get unstuck, and (by personality) to dodge mid-fight.
 
 ```
 src/sim/            pure TypeScript, no three.js: runs in the browser AND headless in Node

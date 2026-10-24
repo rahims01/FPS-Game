@@ -258,6 +258,18 @@ export class SoldierView {
     this.root.visible = v;
   }
 
+  private frozen = false;
+  /** Freeze tag: an icy tint while frozen. */
+  setFrozen(on: boolean): void {
+    if (on === this.frozen) return;
+    this.frozen = on;
+    for (const m of this.materials) {
+      const mat = m as THREE.MeshPhongMaterial;
+      if (!mat.emissive) continue;
+      mat.emissive.setHex(on ? 0x3a7fc4 : 0x000000);
+    }
+  }
+
   /**
    * Floating name above the head, in the player's colour. Ally tags draw
    * through walls; enemy tags are depth-tested (and only shown when seen).

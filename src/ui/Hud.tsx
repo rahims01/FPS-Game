@@ -33,7 +33,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           <i className="v" />
         </div>
       )}
-      {hud.alive && !hud.aiming && !hud.scoped && (
+      {hud.alive && !hud.aiming && !hud.scoped && !hud.hardcore && (
         <div className="crosshair" style={{ ['--gap' as string]: `${gap}px`, ['--len' as string]: `${ch.size}px`, ['--thick' as string]: `${ch.thickness}px`, ['--col' as string]: ch.color }}>
           <i className="t" />
           <i className="b" />
@@ -110,7 +110,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
             <small> · moves in {fmt(hud.hill.seconds)}</small>
           </div>
         )}
-        {hud.mode === 'survival' && (
+        {(hud.mode === 'survival' || hud.mode === 'zombies') && (
           <div className="score">
             <span>Wave {hud.wave}</span>
             <span className="alive">{hud.enemiesLeft} left</span>
@@ -239,7 +239,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
 
       {hud.showScoreboard && <Scoreboard hud={hud} />}
 
-      <canvas ref={minimap} className="minimap" width={180} height={180} />
+      <canvas ref={minimap} className="minimap" width={180} height={180} style={hud.hardcore ? { display: 'none' } : undefined} />
       {(settings.showFps || (settings.showPing && hud.ping !== null)) && (
         <div className="perf">
           {settings.showFps && <span>{hud.fps} FPS</span>}

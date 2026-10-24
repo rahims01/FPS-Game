@@ -205,7 +205,7 @@ export class HostSession {
     for (const c of this.clients) {
       if (!c.profile) continue;
       k++;
-      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : k % 2 === 1 ? 1 : 0;
+      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'zombies' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : k % 2 === 1 ? 1 : 0;
       const free = (team: number | null) =>
         sim.agents.find((a) => !taken.has(a.id) && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
       let a: Agent | undefined = free(wantTeam) ?? free(null);

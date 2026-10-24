@@ -245,7 +245,10 @@ export const App = () => {
       setNetBusy(false);
     }
   };
-  const resume = () => game.current?.requestLock();
+  const resume = () => {
+    setShowSettings(false);
+    game.current?.requestLock();
+  };
   const def = modeDef(mode);
   const lobbyFull = joined >= def.players;
 
@@ -467,19 +470,31 @@ export const App = () => {
       {screen.kind === 'playing' && hud && (
         <>
           <Hud hud={hud} minimap={minimap} settings={settings} />
-          {hud.paused && hud.phase !== 'over' && (
+          {hud.paused && hud.phase !== 'over' && !showSettings && (
             <div className="overlay">
-              <div className="menu-card small">
+              <div className="menu-card small pause-card">
                 <h2>Paused</h2>
                 <button className="play" onClick={resume}>
                   RESUME
                 </button>
+                <button className="pause-btn" onClick={() => setShowSettings(true)}>
+                  ⚙ Settings
+                </button>
+                <button className="pause-btn" onClick={toMenu}>
+                  Leave match
+                </button>
+                {hud.online && <p className="set-hint">Online matches keep running while you're paused.</p>}
+              </div>
+            </div>
+          )}
+          {hud.paused && showSettings && (
+            <div className="overlay">
+              <div className="menu-card settings-card">
+                <h2>Settings</h2>
                 <SettingsPanel settings={settings} onChange={setSettings} />
-                <div className="row">
-                  <button className="chip" onClick={toMenu}>
-                    Leave match
-                  </button>
-                </div>
+                <button className="play" onClick={() => setShowSettings(false)}>
+                  BACK
+                </button>
               </div>
             </div>
           )}

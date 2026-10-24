@@ -36,11 +36,17 @@ body,
 .overlay {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  /* Flex + auto margins: centred when it fits, scrollable (not cut off) when it doesn't. */
+  display: flex;
+  flex-direction: column;
   background: radial-gradient(ellipse at 30% 20%, #2b3a2b 0%, #0d100d 70%);
   padding: 16px;
-  overflow: auto;
+  overflow-y: auto;
+}
+.menu > *,
+.overlay > * {
+  margin: auto;
+  flex-shrink: 0;
 }
 .overlay {
   background: rgba(5, 7, 5, 0.6);
@@ -1316,5 +1322,38 @@ input[type='range'] {
   }
   .set-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- pause ---------- */
+.pause-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+}
+.pause-card h2 {
+  margin-bottom: 4px;
+}
+.pause-btn {
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.pause-btn:hover {
+  border-color: var(--accent);
+}
+.settings-card .set-body {
+  max-height: min(52vh, 460px);
+}
+@media (max-height: 640px) {
+  .menu-card {
+    padding: 18px;
+  }
+  .settings-card .set-body {
+    max-height: 44vh;
   }
 }
