@@ -158,6 +158,12 @@ export interface Agent {
   meleeDamage: number;
   /** How long a bot has been trying to move without getting anywhere. */
   stuckT: number;
+  /** Human habits (matchmade bots only): teabag after a kill, glance around, still loading in. */
+  tbagUntil: number;
+  glanceUntil: number;
+  glanceYaw: number;
+  nextGlance: number;
+  afkUntil: number;
 
   // Stats and RL.
   kills: number;
@@ -255,6 +261,11 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   speedMul: 1,
   meleeDamage: 150,
   stuckT: 0,
+  tbagUntil: 0,
+  glanceUntil: 0,
+  glanceYaw: 0,
+  nextGlance: 0,
+  afkUntil: 0,
   kills: 0,
   deaths: 0,
   damageDealt: 0,

@@ -829,6 +829,8 @@ export class FpsSim {
         attacker.kills++;
         attacker.streak++;
         attacker.bestStreak = Math.max(attacker.bestStreak, attacker.streak);
+        // Some players can't resist crouching on the body (only bots, never online fillers).
+        if (!isHuman(attacker) && !this.roboticBots && this.rng.next() < 0.18) attacker.tbagUntil = this.time + 0.9 + this.rng.next() * 1.1;
         attacker.reward += 1;
       }
       v.reward -= 1;
@@ -1013,6 +1015,8 @@ export class FpsSim {
     // Combat hops, by personality.
     const rate = this.roboticBots ? 0 : a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
     if (a.seesTarget && (name === 'strafe_left' || name === 'strafe_right' || name === 'advance') && this.rng.next() < rate * this.jumpMul) this.jump(a);
+    // Bunny hops while running between fights, like plenty of real players.
+    else if (!this.roboticBots && !a.seesTarget && speed >= SOLDIER.sprintSpeed * 0.85 && this.rng.next() < rate * 0.5) this.jump(a);
   }
 
   private followPath(a: Agent, gx: number, gz: number): { x: number; z: number } {
@@ -1035,6 +1039,11 @@ export class FpsSim {
 
   private driveBot(a: Agent, dt: number): void {
     if (this.isFrozen(a)) {
+      this.accelerate(a, 0, 0, dt);
+      return;
+    }
+    // Still loading in at the start of the match (until shot at).
+    if (!this.roboticBots && this.time < a.afkUntil && a.lastHitT <= 0) {
       this.accelerate(a, 0, 0, dt);
       return;
     }
@@ -1064,6 +1073,7 @@ export class FpsSim {
     const known = this.knowsTarget(a);
     const dTarget = Math.hypot(tx - a.x, tz - a.z);
     let crouch = false;
+    const tbag = !this.roboticBots && this.time < a.tbagUntil && !a.seesTarget && !override;
     // Standing objectives (planting, defusing): hold still once there.
     if (r && r.hold && !farFromRally && (!a.seesTarget || r.urgent)) name = 'hold';
     if (!override) {
@@ -1141,6 +1151,10 @@ export class FpsSim {
         break;
     }
     speed *= w.move * a.speedMul;
+    if (tbag) {
+      mx = mz = 0;
+      crouch = Math.floor(this.time * 7) % 2 === 0;
+    }
     // Robotic bots (online fillers): stand still to shoot, never strafe, crouch or
     // sprint, and stop to turn on the spot before walking a new way.
     let robotFace: number | null = null;
@@ -1190,6 +1204,15 @@ export class FpsSim {
     } else if (t) {
       const aimY = a.seesTarget ? t.y + 1.25 * crouchScale(t) : 1.55;
       wantPitch = Math.atan2(aimY - (a.y + eyeHeight(a)), Math.max(0.5, Math.hypot(tx - a.x, tz - a.z)));
+    }
+    // Humans check corners: a quick look to one side every few seconds when nobody is in view.
+    if (!this.roboticBots && !a.seesTarget) {
+      if (this.time >= a.nextGlance) {
+        a.nextGlance = this.time + 2 + this.rng.next() * 4;
+        a.glanceUntil = this.time + 0.35 + this.rng.next() * 0.45;
+        a.glanceYaw = (this.rng.next() < 0.5 ? -1 : 1) * (0.5 + this.rng.next() * 0.9);
+      }
+      if (this.time < a.glanceUntil) wantYaw += a.glanceYaw;
     }
     const maxTurn = BOT_AIM.turnRate * dt * (this.roboticBots ? 0.7 : 1);
     a.yaw = wrapAngle(a.yaw + clamp(wrapAngle(wantYaw - a.yaw), -maxTurn, maxTurn));

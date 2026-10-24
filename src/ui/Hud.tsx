@@ -213,7 +213,12 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
 
       <div className="right-col">
         <div className="feed">
-          {hud.feed.map((f) => (
+          {hud.feed.map((f) =>
+            f.system ? (
+              <div key={f.id} className="feed-row system">
+                {f.system}
+              </div>
+            ) : (
             <div key={f.id} className="feed-row">
               <span className={`${f.killerIsPlayer ? 'me' : ''} ${isDark(f.killerColor) ? 'dark' : ''}`} style={{ color: f.killerColor }}>
                 {f.killer}
@@ -226,7 +231,8 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
                 {f.victim}
               </span>
             </div>
-          ))}
+            )
+          )}
         </div>
         {LEADERBOARD_MODES.has(hud.mode) && (
           <div className="leaderboard">
@@ -335,12 +341,17 @@ const Scoreboard = ({ hud }: { hud: HudState }) => {
             <span>{g.title}</span>
             <span>K</span>
             <span>D</span>
+            <span>Ping</span>
           </div>
           {g.rows.map((p) => (
             <div key={p.id} className={`sb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'}`}>
-              <Name row={p} />
+              <span className="sb-name">
+                <i className="lvl">{p.level}</i>
+                <Name row={p} />
+              </span>
               <span>{p.kills}</span>
               <span>{p.deaths}</span>
+              <span className={`ping ${p.ping !== null && p.ping > 120 ? 'bad' : p.ping !== null && p.ping > 70 ? 'meh' : ''}`}>{p.bot ? '–' : p.ping === null ? '' : p.ping}</span>
             </div>
           ))}
         </div>

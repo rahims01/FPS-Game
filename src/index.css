@@ -444,6 +444,11 @@ input[type='range'] {
   display: flex;
   gap: 8px;
 }
+.feed-row.system {
+  color: var(--dim);
+  font-style: italic;
+  font-size: 12px;
+}
 .feed-row .me {
   color: var(--accent);
   font-weight: 700;
@@ -692,9 +697,52 @@ input[type='range'] {
 .sb-head,
 .sb-row {
   display: grid;
-  grid-template-columns: 1fr 50px 50px;
+  grid-template-columns: 1fr 44px 44px 48px;
   gap: 8px;
   padding: 4px 8px;
+  align-items: center;
+}
+.sb-row span:not(.sb-name):not(.name),
+.sb-head span:not(:first-child) {
+  text-align: right;
+}
+.sb-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sb-name .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lvl {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 4px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--dim);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
+}
+.sb-name .lvl {
+  margin-right: 0;
+}
+.ping {
+  font-variant-numeric: tabular-nums;
+  color: #7dde8f;
+}
+.ping.meh {
+  color: var(--accent);
+}
+.ping.bad {
+  color: var(--red);
 }
 .sb-head {
   border-bottom: 2px solid rgba(255, 255, 255, 0.2);
@@ -1801,7 +1849,7 @@ b.dark {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.end-row span:not(.name) {
+.end-row > span:not(:first-child) {
   text-align: right;
 }
 .end-row.head {
@@ -1993,4 +2041,51 @@ b.dark {
 }
 .hud.touch .kd {
   display: none;
+}
+
+/* ---------- matchmaking ---------- */
+.online-count {
+  margin-left: 8px;
+  color: #7dde8f;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.joining {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 12px;
+  text-align: left;
+}
+.joining-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 14px;
+}
+.joining-row span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.joining-row.new {
+  animation: join-in 0.35s ease-out;
+}
+@keyframes join-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+.rule-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font: inherit;
 }

@@ -267,6 +267,8 @@ const RESPAWN_MODES: ModeId[] = [
   'marksman'
 ];
 const CRANK_TIME = 30;
+/** Respawn modes where a matchmade lobby sees people leave and join. */
+const CHURN_MODES: ModeId[] = ['tdm', 'kc', 'dom', 'ctf', 'koth', 'ffa', 'headshot', 'instagib', 'snipers', 'sharp', 'lowgrav', 'bighead', 'hardcore', 'cranked', 'defender', 'roulette', 'marksman', 'knife'];
 /** Every gun but the knife, for roulette loadouts. */
 const ROULETTE_POOL: WeaponId[] = [...PRIMARIES, ...SECONDARIES];
 const SND_FUSE = 35;
@@ -362,6 +364,10 @@ export class Match {
     /** Counter-UAV: minimaps of this team are jammed until then, by team. */
     jamUntil: {} as Record<number, number>
   };
+  /** Players who left mid-match (their slot is empty), by agent id. */
+  private away = new Set<number>();
+  /** Team kills by players who have since left. */
+  private bankedKills: [number, number] = [0, 0];
   /** Killstreak picks for humans, by agent id. */
   streakChoices: Record<number, StreakId[]> = {};
   private pendingStrikes: { at: number; agent: number }[] = [];
@@ -490,6 +496,10 @@ export class Match {
     }
     this.streakChoices[this.player.id] = normalizeStreaks(opts.streaks ?? DEFAULT_STREAKS);
     sim.onKill = (v, k, cause) => this.onKill(v, k, cause);
+    // A player or two is still loading in when the match starts.
+    if (RESPAWN_MODES.includes(mode) || mode === 'br') {
+      for (const a of sim.agents) if (a !== this.player && sim.rng.next() < 0.12) a.afkUntil = 2 + sim.rng.next() * 7;
+    }
 
     switch (mode) {
       case 'koth':
@@ -734,6 +744,48 @@ export class Match {
   goal(mode: ModeId): number | undefined {
     const t = TARGETS[mode];
     return t === undefined ? undefined : Math.max(1, Math.round(t * this.targetMul));
+  }
+
+  /** Modes where people drop out and others join mid-match (matchmade lobbies only). */
+  get allowsChurn(): boolean {
+    return CHURN_MODES.includes(this.mode) && this.phase === 'live';
+  }
+
+  /** A player left: their slot stays empty until someone new joins. */
+  setAway(a: Agent): void {
+    this.away.add(a.id);
+    if (a.alive) {
+      a.alive = false;
+      a.deathT = this.sim.time;
+    }
+  }
+
+  /** Someone new takes the empty slot: fresh stats, new personality, and they spawn in. */
+  fillSlot(a: Agent): void {
+    const sim = this.sim;
+    if (this.def.teams) this.bankedKills[a.team as 0 | 1] += a.kills;
+    a.kills = 0;
+    a.deaths = 0;
+    a.streak = 0;
+    a.bestStreak = 0;
+    a.damageDealt = 0;
+    a.damageTaken = 0;
+    a.shots = 0;
+    a.hits = 0;
+    a.headshots = 0;
+    a.style = BOT_STYLES[sim.rng.int(BOT_STYLES.length)];
+    const diff = this.opts.skill ?? DIFFICULTY[this.opts.difficulty];
+    a.skill = diff.skill * STYLE_KIT[a.style].aim * (0.85 + sim.rng.next() * 0.3);
+    if (this.mode === 'roulette') setLoadout(a, this.rouletteLoadout());
+    else if (this.mode === 'marksman') setLoadout(a, ['dmr', 'revolver']);
+    else if (this.mode === 'snipers') setLoadout(a, ['sniper', 'pistol']);
+    else if (this.mode === 'sharp') setLoadout(a, [this.party.sharpWeapon]);
+    else if (this.lobbyWeapon === 'any') {
+      const kit = STYLE_KIT[a.style];
+      setLoadout(a, [kit.guns[sim.rng.int(kit.guns.length)], sim.rng.next() < 0.25 ? 'revolver' : 'pistol']);
+    }
+    this.away.delete(a.id);
+    this.respawnSafely(a);
   }
 
   /** The private lobby's forced weapon, if any. */
@@ -1568,7 +1620,7 @@ export class Match {
   private autoRespawn(): void {
     const sim = this.sim;
     for (const a of sim.agents) {
-      if (a.alive || (a === this.player && a.control === 'player') || this.eliminated(a)) continue;
+      if (a.alive || (a === this.player && a.control === 'player') || this.eliminated(a) || this.away.has(a.id)) continue;
       const at = this.respawnAt.get(a.id);
       if (at === undefined) this.respawnAt.set(a.id, sim.time + (isHuman(a) ? 6 : 3));
       else if (sim.time >= at) {
@@ -1594,6 +1646,9 @@ export class Match {
   private rulesTdm(): void {
     const s: [number, number] = [0, 0];
     for (const a of this.sim.agents) s[a.team as 0 | 1] += a.kills;
+    // Kills by players who left still count for their team.
+    s[0] += this.bankedKills[0];
+    s[1] += this.bankedKills[1];
     this.scores = s;
     const target = this.goal(this.mode) ?? this.goal('tdm')!;
     if (s[0] >= target || s[1] >= target) {

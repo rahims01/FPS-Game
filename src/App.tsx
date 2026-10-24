@@ -5,7 +5,7 @@ import { Game, type GameSettings, type HudState, type NetRole } from './game/Gam
 import { ClientSession, HostSession, type ChatMsg } from './net/Session';
 import type { LobbyPlayer } from './net/protocol';
 import type { ChatLine } from './net/chat';
-import { COLORS, cssColor, isDark } from './game/identity';
+import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
 import { DEFAULT_RULES, MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
@@ -65,6 +65,15 @@ const MODE_GROUPS = ['Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'O
 
 let chatId = 0;
 
+/** Players online right now: a daily rhythm (busy evenings, quiet mornings) plus noise. */
+const playersOnline = (): number => {
+  const d = new Date();
+  const h = d.getHours() + d.getMinutes() / 60;
+  const wave = 0.55 + 0.45 * Math.sin(((h - 13) / 24) * Math.PI * 2);
+  const weekend = d.getDay() === 0 || d.getDay() === 6 ? 1.25 : 1;
+  return Math.round((6000 + 15000 * wave) * weekend + (Math.random() - 0.5) * 400);
+};
+
 export const App = () => {
   const [assets, setAssets] = useState<LoadedAssets | null>(null);
   const [loadMsg, setLoadMsg] = useState('Loading…');
@@ -93,6 +102,8 @@ export const App = () => {
   const [netError, setNetError] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [joined, setJoined] = useState(1);
+  const [lobbyNames, setLobbyNames] = useState<string[]>([]);
+  const [online, setOnline] = useState(playersOnline);
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const mount = useRef<HTMLDivElement>(null);
   const minimap = useRef<HTMLCanvasElement>(null);
@@ -110,21 +121,28 @@ export const App = () => {
     game.current?.applySettings(settings);
   }, [settings]);
 
-  // Matchmaking screen: players trickle into the lobby.
+  // The online counter drifts.
+  useEffect(() => {
+    const t = window.setInterval(() => setOnline((n) => Math.max(1000, Math.round(n * 0.9 + playersOnline() * 0.1 + (Math.random() - 0.5) * 60))), 4000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  // Matchmaking screen: named players trickle into the lobby (the same people you then play with).
   useEffect(() => {
     if (screen.kind !== 'finding') return;
     const total = modeDef(mode).players;
+    setLobbyNames(prepareLobby(total - 1));
     setJoined(1);
     let n = 1;
-    const timer = window.setInterval(
-      () => {
-        n = Math.min(total, n + 1 + Math.floor(Math.random() * Math.max(1, total / 6)));
-        setJoined(n);
-        if (n >= total) window.clearInterval(timer);
-      },
-      Math.max(90, 1600 / total)
-    );
-    return () => window.clearInterval(timer);
+    let timer = 0;
+    // Uneven arrivals: sometimes a party of three, sometimes a short wait.
+    const tick = () => {
+      n = Math.min(total, n + 1 + (Math.random() < 0.25 ? Math.floor(Math.random() * 3) : 0));
+      setJoined(n);
+      if (n < total) timer = window.setTimeout(tick, Math.max(80, (2400 / total) * (0.4 + Math.random() * 1.4)));
+    };
+    timer = window.setTimeout(tick, 500 + Math.random() * 600);
+    return () => window.clearTimeout(timer);
   }, [screen, mode, round]);
 
   // Create the game when entering the playing screen.
@@ -354,7 +372,9 @@ export const App = () => {
         <div className="menu">
           <div className="menu-card">
             <h1>FPS SHOOTER</h1>
-            <p className="sub">Pick a mode and jump into a lobby.</p>
+            <p className="sub">
+              Pick a mode and jump into a lobby. <span className="online-count">● {online.toLocaleString()} players online</span>
+            </p>
             <div className="profile-row">
               <ProfileBar profile={profile} />
               <div className="ranked-card" style={{ borderColor: division.color }}>
@@ -596,6 +616,16 @@ export const App = () => {
             <p>
               {joined} / {def.players} players
             </p>
+            <div className="joining">
+              {[settings.playerName.trim() || 'You', ...lobbyNames.slice(0, joined - 1)].slice(-8).map((n, i, arr) => (
+                <div key={n} className={`joining-row ${i === arr.length - 1 && joined > 1 && !lobbyFull ? 'new' : ''}`}>
+                  <i className="lvl">{n === (settings.playerName.trim() || 'You') ? levelOf(profile.xp).level : levelFor(n)}</i>
+                  <span>{n}</span>
+                  <small className="ping">{basePingFor(n)} ms</small>
+                </div>
+              ))}
+              {joined > 9 && <small className="set-hint">and {joined - 8} more</small>}
+            </div>
             {ranked && <p className="set-hint">Leaving a ranked match early counts as a loss.</p>}
             <div className="row">
               <button className="play" disabled={!lobbyFull} onClick={deploy}>
@@ -748,7 +778,21 @@ const RulesPanel = ({ rules, editable, onChange, humansOnly }: { rules: LobbyRul
         ],
         (v) => onChange({ score: v })
       )}
-      {opt('Weapons', rules.weapon, [['any', 'Own picks'] as [WeaponId | 'any', string], ...PRIMARIES.map((w): [WeaponId | 'any', string] => [w, `${WEAPONS[w].tag} only`])], (v) => onChange({ weapon: v }))}
+      <div className="rule">
+        <span>Weapons</span>
+        {editable ? (
+          <select className="rule-select" value={rules.weapon} onChange={(e) => onChange({ weapon: e.target.value as WeaponId | 'any' })}>
+            <option value="any">Everyone's own picks</option>
+            {PRIMARIES.map((w) => (
+              <option key={w} value={w}>
+                {WEAPONS[w].name} only
+              </option>
+            ))}
+          </select>
+        ) : (
+          <b>{rules.weapon === 'any' ? "Everyone's own picks" : `${WEAPONS[rules.weapon].name} only`}</b>
+        )}
+      </div>
       {opt(
         'Health regen',
         rules.regen,

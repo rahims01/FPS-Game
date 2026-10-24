@@ -8,14 +8,15 @@ import { Viewmodel } from '../render/Viewmodel';
 import { eyeHeight, weaponOf, type Agent, type DeathCause } from '../sim/Agent';
 import { grenadeMesh, weaponModels } from '../assets/weaponModels';
 import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, type WeaponId } from '../sim/weapons';
-import { MEDALS, loadProfile, saveProfile, type Medal } from './progression';
+import { MEDALS, levelOf, loadProfile, saveProfile, type Medal } from './progression';
 import { SKINS } from '../assets/skins';
 import { streakDef } from '../sim/killstreaks';
 import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, type MatchOptions, type ModeId } from '../sim/Match';
-import { assignIdentities, cssColor, lateJoinerColor, randomUsername, type Identities } from './identity';
+import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
+import { randomSkin } from '../assets/skins';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
 import { touchEnabled, type GameSettings } from './settings';
@@ -44,6 +45,9 @@ export interface ScoreRow {
   bestStreak: number;
   /** Bots in online rooms are labelled as such. */
   bot: boolean;
+  level: number;
+  /** Connection in ms (null for bots and the local player offline). */
+  ping: number | null;
 }
 
 export interface KillFeedEntry {
@@ -56,6 +60,8 @@ export interface KillFeedEntry {
   victimColor: string;
   killerIsPlayer: boolean;
   victimIsPlayer: boolean;
+  /** A line that is not a kill ("X left the match"). */
+  system?: string;
   at: number;
 }
 
@@ -281,6 +287,11 @@ export class Game {
   // Skin unlocks this match.
   private baseWeaponKills: Record<string, number> = {};
   private weaponKills: Record<string, number> = {};
+  // Matchmade lobbies: people come and go, and everyone has a connection.
+  private nextChurn = 60 + Math.random() * 80;
+  private joining: { id: number; at: number }[] = [];
+  private pings = new Map<number, number>();
+  private pingT = 0;
   // Chat and touch.
   chatOpen = false;
   /** Touch: the scoreboard button is held. */
@@ -701,6 +712,7 @@ export class Game {
         this.acc -= SIM.dt;
       }
       if (net?.role === 'host') net.session.tick(now);
+      if (!net) this.updateLobby();
       if (net?.role === 'client') {
         this.smoothRemotes(dt);
         // WebRTC can take a long time to notice a vanished host; give up after 6 s of silence.
@@ -730,7 +742,7 @@ export class Game {
   private ensureIdentity(id: number): void {
     const a = this.match.sim.agents[id];
     while (this.ids.names.length <= id) {
-      this.ids.names.push(this.net ? `Bot ${this.ids.names.length + 1}` : randomUsername());
+      this.ids.names.push(this.net ? `Bot ${this.ids.names.length + 1}` : randomUsername(this.ids.names));
       this.ids.skins.push(null);
       this.ids.colors.push(lateJoinerColor(this.ids, a ? a.team : 1));
     }
@@ -900,6 +912,64 @@ export class Game {
         }
       }
     }
+  }
+
+  // ---------------------------------------------------------------- matchmade lobby
+
+  private myLevel = levelOf(loadProfile().xp).level;
+
+  /** Feed line for something other than a kill. */
+  private systemLine(text: string): void {
+    const sim = this.match.sim;
+    this.feed.push({ id: this.feedId++, killer: '', victim: '', headshot: false, weapon: '', killerColor: '', victimColor: '', killerIsPlayer: false, victimIsPlayer: false, at: sim.time, system: text });
+    if (this.feed.length > 6) this.feed.shift();
+  }
+
+  /**
+   * Matchmade lobbies behave like public servers: pings drift, and every
+   * minute or two someone who just died quits and a new player takes the slot
+   * a few seconds later.
+   */
+  private updateLobby(): void {
+    const m = this.match;
+    const sim = m.sim;
+    if (sim.time - this.pingT > 1) {
+      this.pingT = sim.time;
+      for (const a of sim.agents) {
+        const base = a === m.player ? 22 + (this.myLevel % 18) : basePingFor(this.nameOf(a.id));
+        const prev = this.pings.get(a.id) ?? base;
+        // Drift around the base, with the odd spike.
+        const spike = Math.random() < 0.03 ? 40 + Math.random() * 80 : 0;
+        this.pings.set(a.id, Math.max(8, Math.round(prev + (base - prev) * 0.5 + (Math.random() - 0.5) * 8 + spike)));
+      }
+    }
+    for (let i = this.joining.length - 1; i >= 0; i--) {
+      const j = this.joining[i];
+      if (sim.time < j.at) continue;
+      this.joining.splice(i, 1);
+      const a = sim.agents[j.id];
+      if (!a || m.phase !== 'live') continue;
+      const name = randomUsername(this.ids.names);
+      this.ids.names[a.id] = name;
+      this.ids.skins[a.id] = Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]));
+      this.pings.delete(a.id);
+      m.fillSlot(a);
+      this.views.get(a.id)?.dispose();
+      this.views.delete(a.id);
+      this.systemLine(`${name} joined`);
+    }
+    if (!m.allowsChurn || sim.time < this.nextChurn) return;
+    this.nextChurn = sim.time + 50 + Math.random() * 100;
+    // Rage quits happen right after dying.
+    const quitters = sim.agents.filter((a) => a !== m.player && !a.alive && sim.time - a.deathT < 3 && !this.joining.some((j) => j.id === a.id));
+    const q = quitters[Math.floor(Math.random() * quitters.length)];
+    if (!q) {
+      this.nextChurn = sim.time + 5;
+      return;
+    }
+    m.setAway(q);
+    this.systemLine(`${this.nameOf(q.id)} left`);
+    this.joining.push({ id: q.id, at: sim.time + 4 + Math.random() * 10 });
   }
 
   // ---------------------------------------------------------------- online
@@ -1656,7 +1726,9 @@ export class Game {
         accuracy: a.shots > 0 ? Math.round((a.hits / a.shots) * 100) : -1,
         headshots: a.headshots,
         bestStreak: a.bestStreak,
-        bot: bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id)
+        bot: bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id),
+        level: a === p && !this.spectator ? this.myLevel : levelFor(this.nameOf(a.id)),
+        ping: this.pings.get(a.id) ?? null
       }))
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
     const hill = sim.rally
@@ -1743,7 +1815,7 @@ export class Game {
       killcamPending: !!this.pendingKillcam,
       fps: Math.round(this.fps),
       hardcore: m.mode === 'hardcore',
-      ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : null,
+      ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : (this.pings.get(p.id) ?? null),
       online: !!this.net,
       spectating: spec ? { name: this.nameOf(spec.id), color: cssColor(this.colorOf(spec.id)), weapon: weaponOf(spec).name } : null,
       spectator: this.spectator,

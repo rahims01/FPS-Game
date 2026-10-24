@@ -1,5 +1,6 @@
 import { randomSkin, type SkinChoice } from '../assets/skins';
 import type { Match } from '../sim/Match';
+import { MORE_FIRST_NAMES, MORE_TAG_FIRST, MORE_TAG_SECOND, MORE_USERNAMES, TAG_ADJ, TAG_WORDS } from './usernames';
 
 /** Gamer tags for the other players in the lobby. */
 const USERNAMES = [
@@ -50,24 +51,35 @@ const USERNAMES = [
 ];
 
 /** Common gamer-tag building blocks, combined for extra variety beyond the hand-picked list. */
-const TAG_FIRST = ['Dark', 'Shadow', 'Silent', 'Toxic', 'Mad', 'Lil', 'Big', 'Pro', 'Epic', 'Savage', 'Frozen', 'Crimson', 'Rogue', 'Turbo', 'Hyper', 'Mega', 'Ultra', 'Sneaky', 'Lucky', 'Salty', 'Sweaty', 'Cracked', 'Feral', 'Spicy'];
-const TAG_SECOND = ['Wolf', 'Sniper', 'Ninja', 'Viper', 'Reaper', 'Ghost', 'Hunter', 'Dragon', 'Tiger', 'Knight', 'Gamer', 'Slayer', 'Phoenix', 'Panda', 'Shark', 'Fox', 'Bandit', 'Rebel', 'Demon', 'Samurai', 'Pirate', 'Cowboy', 'Goblin', 'Potato'];
+const TAG_FIRST = [...MORE_TAG_FIRST, 'Dark', 'Shadow', 'Silent', 'Toxic', 'Mad', 'Lil', 'Big', 'Pro', 'Epic', 'Savage', 'Frozen', 'Crimson', 'Rogue', 'Turbo', 'Hyper', 'Mega', 'Ultra', 'Sneaky', 'Lucky', 'Salty', 'Sweaty', 'Cracked', 'Feral', 'Spicy'];
+const TAG_SECOND = [...MORE_TAG_SECOND, 'Wolf', 'Sniper', 'Ninja', 'Viper', 'Reaper', 'Ghost', 'Hunter', 'Dragon', 'Tiger', 'Knight', 'Gamer', 'Slayer', 'Phoenix', 'Panda', 'Shark', 'Fox', 'Bandit', 'Rebel', 'Demon', 'Samurai', 'Pirate', 'Cowboy', 'Goblin', 'Potato'];
+
+const pick = <T>(arr: readonly T[], rand: () => number): T => arr[Math.floor(rand() * arr.length)];
 
 const generatedTag = (rand: () => number): string => {
-  const a = TAG_FIRST[Math.floor(rand() * TAG_FIRST.length)];
-  const b = TAG_SECOND[Math.floor(rand() * TAG_SECOND.length)];
+  const a = pick(TAG_FIRST, rand);
+  const b = pick(TAG_SECOND, rand);
   const style = rand();
   const n = Math.floor(rand() * 100);
-  if (style < 0.25) return `${a}${b}${n}`;
-  if (style < 0.45) return `${a}_${b}`;
-  if (style < 0.6) return `xX${a}${b}Xx`;
-  if (style < 0.75) return `${a.toLowerCase()}_${b.toLowerCase()}${n}`;
-  if (style < 0.85) return `TTV_${a}${b}`;
+  if (style < 0.16) return `${a}${b}${n}`;
+  if (style < 0.28) return `${a}_${b}`;
+  if (style < 0.36) return `xX${a}${b}Xx`;
+  if (style < 0.46) return `${a.toLowerCase()}_${b.toLowerCase()}${n}`;
+  if (style < 0.52) return `TTV_${a}${b}`;
+  // Lowercase run-together words: "sleepypickle", "the_cursed_goose", "spicytaco77".
+  const adj = pick(TAG_ADJ, rand);
+  const word = pick(TAG_WORDS, rand);
+  if (style < 0.64) return `${adj}${word}`;
+  if (style < 0.7) return `the_${adj}_${word}`;
+  if (style < 0.78) return `${adj}${word}${Math.floor(rand() * 1000)}`;
+  if (style < 0.83) return `not${a}${b}`;
+  if (style < 0.88) return `${word}_irl`;
+  if (style < 0.93) return `Im${a}${b}`;
   return `${a}${b}`;
 };
 
 /** Real-name style tags: "jake_2009", "TylerM", "emma.rose". */
-const FIRST_NAMES = ['jake', 'tyler', 'ethan', 'mason', 'liam', 'noah', 'logan', 'aiden', 'caleb', 'ryan', 'kyle', 'austin', 'brandon', 'dylan', 'emma', 'olivia', 'ava', 'mia', 'chloe', 'maddie', 'jordan', 'alex', 'sam', 'chris', 'marcus', 'devon', 'jayden', 'carlos', 'luis', 'andre'];
+const FIRST_NAMES = [...MORE_FIRST_NAMES, 'jake', 'tyler', 'ethan', 'mason', 'liam', 'noah', 'logan', 'aiden', 'caleb', 'ryan', 'kyle', 'austin', 'brandon', 'dylan', 'emma', 'olivia', 'ava', 'mia', 'chloe', 'maddie', 'jordan', 'alex', 'sam', 'chris', 'marcus', 'devon', 'jayden', 'carlos', 'luis', 'andre'];
 const CLAN_TAGS = ['[RIP]', '[GG]', '[TTV]', '[AFK]', '[NoX]', '[OG]', '[KOS]', '[BRB]', '[MLG]', '[EZ]', 'CLAN|', 'v0id|'];
 
 const casualTag = (rand: () => number): string => {
@@ -122,18 +134,47 @@ const pickTag = (handPicked: string): string => {
   return handPicked;
 };
 
-/** A shuffled pool of unique tags. */
-const tagPool = (count: number): string[] => {
-  const pool = USERNAMES.slice().sort(() => Math.random() - 0.5);
+/** Every hand-picked tag, without duplicates. */
+const ALL_NAMES = [...new Set([...USERNAMES, ...MORE_USERNAMES])];
+
+/**
+ * Names shown in recent matches, so the same tags don't keep turning up.
+ * A real lobby is full of strangers; seeing "Kai2009" three games running
+ * would give the game away.
+ */
+const RECENT_KEY = 'fps-recent-names';
+const RECENT_MAX = 260;
+const loadRecent = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+};
+const rememberNames = (names: string[]): void => {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify([...loadRecent(), ...names].slice(-RECENT_MAX)));
+  } catch {
+    /* no storage: names may repeat a little more */
+  }
+};
+
+/** A shuffled pool of unique tags, avoiding names seen recently and any in `exclude`. */
+const tagPool = (count: number, exclude: Iterable<string> = []): string[] => {
+  const recent = new Set(loadRecent());
+  const shuffled = ALL_NAMES.slice().sort(() => Math.random() - 0.5);
+  // Fresh names first; recently seen ones only if we somehow run out.
+  const pool = [...shuffled.filter((n) => !recent.has(n)), ...shuffled.filter((n) => recent.has(n))];
   const out: string[] = [];
-  const used = new Set<string>();
-  for (const t of pool) {
-    if (out.length >= count) break;
-    const tag = pickTag(t);
-    if (used.has(tag)) continue;
+  const used = new Set<string>(exclude);
+  for (let i = 0; out.length < count && i < pool.length * 2; i++) {
+    const tag = pickTag(pool[i % pool.length]);
+    if (used.has(tag) || (i < pool.length && recent.has(tag))) continue;
     used.add(tag);
     out.push(tag);
   }
+  rememberNames(out);
   return out;
 };
 
@@ -194,8 +235,10 @@ export interface Identities {
  */
 export const assignIdentities = (match: Match, playerName: string, playerColor: number, playerSkins: SkinChoice = {}): Identities => {
   const agents = match.sim.agents;
-  const tags = tagPool(agents.length);
-  const names = agents.map((a, i) => (a === match.player ? playerName : tags[i % tags.length]));
+  const tags = preset && preset.length >= agents.length - 1 ? [...preset] : tagPool(agents.length);
+  preset = null;
+  let next = 0;
+  const names = agents.map((a) => (a === match.player ? playerName : tags[next++ % tags.length]));
   // Other players show off a camo on the gun they carry now and then.
   const skins = agents.map((a): SkinChoice | null => (a === match.player ? playerSkins : Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]))));
   if (match.mode === 'zombies') {
@@ -220,4 +263,38 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
 export const lateJoinerColor = (ids: Identities, team: number): number =>
   ids.teamColors ? ids.teamColors[team === 0 ? 0 : 1] : COLORS[Math.floor(Math.random() * COLORS.length)].hex;
 
-export const randomUsername = (): string => pickTag(USERNAMES[Math.floor(Math.random() * USERNAMES.length)]);
+/** Names picked for the matchmaking screen, used by the next match so the lobby you watched fill up is the one you play. */
+let preset: string[] | null = null;
+export const prepareLobby = (count: number): string[] => {
+  preset = tagPool(count);
+  return preset;
+};
+
+const hash = (s: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+
+/**
+ * A player's level (1-55), fixed per name. Default-name players are new; most
+ * people sit in the middle; a few are maxed out.
+ */
+export const levelFor = (name: string): number => {
+  const h = hash(name);
+  const u = (h % 1000) / 1000;
+  if (/^Player\d{4}$/.test(name)) return 1 + (h % 6);
+  if (u < 0.25) return 2 + (h % 14);
+  if (u < 0.8) return 15 + (h % 30);
+  return 45 + (h % 11);
+};
+
+/** A believable connection for a player: mostly 20-80 ms, some laggier. */
+export const basePingFor = (name: string): number => {
+  const h = hash(name + '#ping');
+  const u = (h % 1000) / 1000;
+  return u < 0.75 ? 18 + (h % 60) : u < 0.95 ? 80 + (h % 60) : 140 + (h % 90);
+};
+
+/** A fresh name for someone joining mid-match (not already in `taken`). */
+export const randomUsername = (taken: Iterable<string> = []): string => tagPool(1, taken)[0] ?? defaultUsername();

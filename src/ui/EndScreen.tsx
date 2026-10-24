@@ -25,6 +25,7 @@ const Table = ({ rows, mvp, title, color }: { rows: ScoreRow[]; mvp: number; tit
     {rows.map((p) => (
       <div key={p.id} className={`end-row ${p.isPlayer ? 'mine' : ''}`}>
         <span className={`name ${isDark(p.color) ? 'dark' : ''}`} style={{ color: p.color }}>
+          <i className="lvl">{p.level}</i>
           {p.id === mvp && <em className="mvp-tag">MVP</em>}
           {p.name}
           {p.bot && <small className="bot-tag">BOT</small>}
