@@ -1,4 +1,6 @@
 import type { WeaponId } from '../sim/weapons';
+import type { SkinChoice } from '../assets/skins';
+import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstreaks';
 
 /** Rebindable actions (mouse buttons stay fire / aim). */
 export const KEY_ACTIONS = [
@@ -15,7 +17,8 @@ export const KEY_ACTIONS = [
   ['weapon1', 'Primary weapon'],
   ['weapon2', 'Secondary weapon'],
   ['swap', 'Swap weapon'],
-  ['scores', 'Scoreboard']
+  ['scores', 'Scoreboard'],
+  ['chat', 'Chat (online)']
 ] as const;
 export type KeyAction = (typeof KEY_ACTIONS)[number][0];
 export type KeyBinds = Record<KeyAction, string>;
@@ -34,7 +37,8 @@ export const DEFAULT_KEYS: KeyBinds = {
   weapon1: 'Digit1',
   weapon2: 'Digit2',
   swap: 'KeyQ',
-  scores: 'Tab'
+  scores: 'Tab',
+  chat: 'KeyT'
 };
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
@@ -86,6 +90,17 @@ export interface GameSettings {
   playerColor: number;
   /** Your primary weapon. */
   primary: WeaponId;
+  secondary: WeaponId;
+  /** Chosen skin for each weapon. */
+  skins: SkinChoice;
+  /** Chosen killstreaks (three). */
+  streaks: StreakId[];
+  /** Floating damage numbers on hits. */
+  damageNumbers: boolean;
+  /** The hit marker "tick" sound. */
+  hitSounds: boolean;
+  /** On-screen touch controls: automatic on touch screens, or forced on / off. */
+  touchControls: 'auto' | 'on' | 'off';
   keys: KeyBinds;
   quality: Quality;
   graphics: Graphics;
@@ -107,6 +122,12 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   playerName: name,
   playerColor: color,
   primary: 'rifle',
+  secondary: 'pistol',
+  skins: {},
+  streaks: DEFAULT_STREAKS.slice(),
+  damageNumbers: true,
+  hitSounds: true,
+  touchControls: 'auto',
   keys: { ...DEFAULT_KEYS },
   quality: 'high',
   graphics: { ...QUALITY_PRESETS.high },
@@ -125,7 +146,9 @@ export const loadSettings = (name: string, color: number): GameSettings => {
       ...raw,
       keys: { ...base.keys, ...(raw.keys ?? {}) },
       graphics: { ...base.graphics, ...(raw.graphics ?? {}) },
-      crosshair: { ...base.crosshair, ...(raw.crosshair ?? {}) }
+      crosshair: { ...base.crosshair, ...(raw.crosshair ?? {}) },
+      skins: { ...(raw.skins ?? {}) },
+      streaks: normalizeStreaks(raw.streaks)
     };
   } catch {
     return base;
@@ -172,3 +195,14 @@ export const suggestQuality = (): Exclude<Quality, 'custom'> => {
   if (cores <= 4) return 'medium';
   return 'high';
 };
+
+/** True on phones and tablets (a coarse pointer and no hover). */
+export const isTouchDevice = (): boolean => {
+  try {
+    return matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
+  } catch {
+    return false;
+  }
+};
+
+export const touchEnabled = (s: GameSettings): boolean => (s.touchControls === 'auto' ? isTouchDevice() : s.touchControls === 'on');

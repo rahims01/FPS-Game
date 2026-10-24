@@ -6,6 +6,7 @@
  * single-threaded PPO with the same minibatch.
  */
 import { parentPort, workerData } from 'node:worker_threads';
+import type { BotStyle } from '../src/sim/Agent';
 import { Rng } from '../src/sim/math';
 import { CombatEnv } from './env';
 import { Net } from './nn';
@@ -16,6 +17,7 @@ export interface WorkerInit {
   horizon: number;
   sizesActor: number[];
   sizesCritic: number[];
+  style: BotStyle;
 }
 
 export type ToWorker =
@@ -43,7 +45,7 @@ const H = init.horizon;
 const E = init.envs;
 const N = E * H;
 
-const envs = Array.from({ length: E }, (_, i) => new CombatEnv(init.seed * 7 + i));
+const envs = Array.from({ length: E }, (_, i) => new CombatEnv(init.seed * 7 + i, init.style));
 const obsNow = envs.map((e) => Float64Array.from(e.reset()));
 const bufObs = new Float64Array(N * OBS);
 const bufAct = new Int32Array(N);

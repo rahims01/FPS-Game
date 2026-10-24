@@ -1,6 +1,8 @@
 import type { Agent } from '../sim/Agent';
 import type { SimEvent } from '../sim/FpsSim';
-import type { Difficulty, Match, MatchNotice, ModeId } from '../sim/Match';
+import type { Difficulty, LobbyRules, Match, MatchNotice, ModeId } from '../sim/Match';
+import type { SkinChoice } from '../assets/skins';
+import type { StreakId } from '../sim/killstreaks';
 import type { WeaponId } from '../sim/weapons';
 
 /**
@@ -10,7 +12,7 @@ import type { WeaponId } from '../sim/weapons';
  * instant), send their position and button state, and draw everything else
  * from the host's snapshots.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const PEER_PREFIX = 'fpsgame-v1-';
 export const SNAPSHOT_HZ = 20;
 
@@ -18,12 +20,30 @@ export interface PlayerProfile {
   name: string;
   color: number;
   primary: WeaponId;
+  secondary: WeaponId;
+  skins: SkinChoice;
+  streaks: StreakId[];
 }
 
 export interface LobbyPlayer {
+  /** Stable id within the room ('host' for the host). */
+  id: string;
   name: string;
   color: number;
   host: boolean;
+  /** Chosen to play; everyone else spectates (when the room has more people than the mode has slots). */
+  playing: boolean;
+}
+
+export interface LobbyMsg {
+  t: 'lobby';
+  mode: ModeId;
+  difficulty: Difficulty;
+  players: LobbyPlayer[];
+  max: number;
+  /** Players the mode can take; the rest spectate. */
+  slots: number;
+  rules: LobbyRules;
 }
 
 /** Buttons sent by a client each input packet. One-shot actions are latched until sent. */
@@ -52,7 +72,8 @@ export type ClientMsg =
       b: NetButtons;
     }
   | { t: 'bye' }
-  | { t: 'ping'; at: number };
+  | { t: 'ping'; at: number }
+  | { t: 'chat'; text: string };
 
 export interface StartMsg {
   t: 'start';
@@ -66,10 +87,16 @@ export interface StartMsg {
   teamColors: [number, number] | null;
   /** Agents controlled by humans (for nametag styling and so on). */
   humans: number[];
+  /** This client watches instead of playing (`you` is then -1). */
+  spectate: boolean;
+  /** Weapon skins by agent id. */
+  skins: (SkinChoice | null)[];
+  rules: LobbyRules;
 }
 
 export type HostMsg =
-  | { t: 'lobby'; mode: ModeId; difficulty: Difficulty; players: LobbyPlayer[]; max: number }
+  | LobbyMsg
+  | { t: 'chat'; name: string; color: number; text: string; system?: boolean }
   | { t: 'reject'; reason: string }
   | StartMsg
   | { t: 'snap'; snap: Snapshot }
@@ -162,5 +189,10 @@ export const packAgent = (a: Agent): AgentNet => [
   a.tier,
   a.tierKills,
   r3(a.switchT),
-  r3(a.frozenUntil)
+  r3(a.frozenUntil),
+  a.shots,
+  a.hits,
+  Math.round(a.damageDealt),
+  a.headshots,
+  a.bestStreak
 ];

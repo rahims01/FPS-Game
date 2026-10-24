@@ -1,4 +1,4 @@
-import type { Agent } from '../src/sim/Agent';
+import { setLoadout, STYLE_KIT, type Agent, type BotStyle } from '../src/sim/Agent';
 import { SIM } from '../src/sim/config';
 import { FpsSim } from '../src/sim/FpsSim';
 import { heuristicBrain } from '../src/sim/heuristicBrain';
@@ -43,8 +43,42 @@ export class CombatEnv {
   readonly obs = new Float32Array(OBS_SIZE);
   forceScenario: Scenario | null = null;
 
-  constructor(seed: number) {
+  /** The personality being trained; it picks the learner's guns and shapes its reward. */
+  constructor(seed: number, readonly style: BotStyle = 'soldier') {
     this.rng = new Rng(seed);
+  }
+
+  /**
+   * Small per-step bonuses and penalties that pull each personality's policy
+   * towards how that personality should fight. Kills and damage still dominate.
+   */
+  private shaping(dealt: boolean): number {
+    const sim = this.sim;
+    const me = this.learner;
+    const t = sim.target(me);
+    if (!me.alive || !t) return 0;
+    const d = Math.hypot(t.x - me.x, t.z - me.z);
+    switch (this.style) {
+      case 'rusher':
+        // Close the gap; damage up close is worth more.
+        return (me.seesTarget && d > 14 ? -0.004 : 0) + (dealt && d < 12 ? 0.05 : 0);
+      case 'sniper':
+        // Keep the distance; get punished for letting enemies close in.
+        return (d < 12 ? -0.006 : 0) + (dealt && d > 22 ? 0.06 : 0);
+      case 'flanker': {
+        // Hits on enemies who are looking the other way.
+        if (!dealt) return 0;
+        const toMe = Math.atan2(me.x - t.x, me.z - t.z);
+        let off = Math.abs(toMe - t.yaw) % (Math.PI * 2);
+        if (off > Math.PI) off = Math.PI * 2 - off;
+        return off > 1.2 ? 0.08 : 0;
+      }
+      case 'tactician':
+        // Fight from cover; standing in the open while seen costs a little.
+        return (me.seesTarget && !me.inCover ? -0.003 : 0) + (dealt && me.inCover ? 0.04 : 0);
+      default:
+        return 0;
+    }
   }
 
   private pickScenario(): Scenario {
@@ -86,6 +120,9 @@ export class CombatEnv {
       for (let i = 0; i < n; i++) sim.spawn(1, 'heuristic', s1[i].x, s1[i].z, face(s1[i].x, s1[i].z)).skill = skill();
     }
     this.learner.skill = 1;
+    this.learner.style = this.style;
+    const guns = STYLE_KIT[this.style].guns;
+    setLoadout(this.learner, [guns[this.rng.int(guns.length)], 'pistol']);
     this.steps = 0;
     this.episodeReturn = 0;
     sim.perceive(this.learner);
@@ -103,6 +140,7 @@ export class CombatEnv {
     }
     this.steps++;
     let reward = me.reward - STEP_PENALTY;
+    reward += this.shaping(me.reward > 0);
     me.reward = 0;
     let enemiesAlive = 0;
     for (const a of sim.agents) if (a.alive && a.team !== me.team) enemiesAlive++;

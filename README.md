@@ -46,21 +46,39 @@ npm run build      # type-check + production build
 | Special | Zombies | Endless co-op waves of melee zombies that get faster and tougher. Fallen players return next wave. |
 | Special | Battle Royale | 24 players on a random 250 × 250 m map. One life, medkits, and a zone that shrinks in 6 phases. |
 | Special | Survival | Endless waves. Later waves bring better guns. One life. |
+| Team | Cranked | 5v5. A kill makes you faster for 30 s; fail to get another kill in time and you explode. First team to 40. |
+| Team | Gunfight Roulette | 2v2, no respawns. Every round everyone gets the same random loadout. First to 5 rounds. |
+| Objective | Team Defender | 5v5. Grab the flag and keep it: kills by the team holding it count double. First to 60 points. |
+| Party | Weapon Roulette | Free-for-all where every life hands you a random gun. First to 20. |
+| Free-for-all | Marksmen | DMRs and magnums only. First to 20. |
+| Ranked | Ranked playlist | A random team mode (TDM, S&D, Domination, Hardpoint, 3v3, CTF, Kill Confirmed). See **Ranked** below. |
 
 ## Combat features
 
-- **Weapons:** M16 rifle, SMG, pump shotgun (pellets), bolt-action sniper (scope overlay), M60 LMG, pistol and knife. Each has its own damage, fire rate, magazine, reload, spread, damage falloff, recoil and movement speed. Pick your primary on the menu; you always carry a pistol, a knife (V) and 2 frag grenades (G).
+- **Weapons:** M16, AK-47 (harder hitting, harder kick), M4 Burst (3-round bursts, red dot), Vector SMG, pump shotgun (pellets), Marksman DMR (semi-auto, ring sight), bolt-action sniper (scope overlay), M60 LMG; pistol or Magnum revolver as a secondary; and a knife. Each has its own damage, fire rate, magazine, reload, spread, damage falloff, recoil and movement speed. Pick them in **Edit loadout**; you always carry a knife (V) and 2 frag grenades (G).
+- **Camos:** 10 per weapon (Woodland, Desert, Arctic, Digital, Tiger, Carbon, Crimson, Neon, Gold, Diamond), unlocked by kills with that weapon (5 up to 250). Shown on your gun and to everyone else; other players sometimes carry camos too.
 - **Movement:** sprint, jump, crouch (C or Ctrl) for a smaller hitbox and tighter spread, and a slide (crouch while sprinting).
-- **Killstreaks**, awarded for kills without dying: 3 = UAV (every enemy shows on the minimap for 30 s), 5 = Airstrike (strikes on every enemy, locking on 0.6 s before impact), 8 = Juggernaut armour (takes 45% damage).
+- **Killstreaks:** pick any 3 in **Edit loadout**, earned by kills without dying: Adrenaline (2: full health and faster movement), UAV (3: enemies on your minimap for 30 s), Supply Drop (4: health, ammo and grenades), Counter-UAV (4: jams enemy minimaps), Airstrike (5), Cluster Strike (7: three airstrikes), Juggernaut (8: takes 45% damage) and Tactical Nuke (20: every enemy dies and your side wins).
 - **Medals and XP:** headshot, double / triple / multi kill, killing spree, first blood, revenge, longshot, point blank, frag, knife, afterlife, comeback, buzzkill, captures, confirms and denies. XP is saved in your browser, with 55 levels and ranks from Recruit to Legend.
-- **Feedback:** a "killed by" card (weapon, distance, the killer's remaining HP), spawn protection, positional footsteps (crouching is silent), synthesised per-weapon gunshots, explosions with smoke, scorch marks and screen shake, and ragdolls thrown by blasts.
-- **Lobby feel:** about 350 hand-picked gamer tags plus a tag generator, a matchmaking screen, coloured nametags, and colours you pick for free-for-all modes.
+- **Feedback:** hit marker ticks and floating damage numbers (both can be turned off; headshots in yellow, kills in red), a "killed by" card (weapon, distance, the killer's remaining HP), spawn protection, positional footsteps (crouching is silent), synthesised per-weapon gunshots, explosions with smoke, scorch marks and screen shake, and ragdolls thrown by blasts.
+- **Lobby feel:** about 350 hand-picked gamer tags, generated and real-name style tags, the odd `Player####` who never changed their name and rare players from abroad (other languages and scripts), a matchmaking screen, coloured nametags, and colours you pick for free-for-all modes.
+- **Spectating:** when you are out (no-respawn modes, out of lives), you watch your teammates through their eyes; click or Space for the next player.
+- **Post-match screen:** result, XP, your kills, deaths, damage, accuracy, headshots and best streak, the MVP, and a full scoreboard with all of those for everyone.
+
+## Ranked
+
+**Play ranked** on the menu queues a random team mode. After 5 placement matches you get a division: Bronze, Silver, Gold, Platinum and Diamond (each with tiers III, II, I), then Champion. Wins and losses move your skill rating (placements move it twice as far), with a small bonus or penalty for your K/D. Opponents get sharper as your rating climbs. Leaving a ranked match early counts as a loss. Everything is saved in your browser.
 
 Controls: WASD move, mouse aim, LMB fire, RMB aim down sights, Shift sprint, Space jump, C / Ctrl crouch or slide, 1 / 2 / Q / mouse wheel switch weapon, V knife, G grenade, R reload, Tab scoreboard, Esc pause.
 
 ## Online multiplayer
 
 Under **Play online**, click **Host game** to open a room. Send the 5-letter code to friends, who type it in and press **Join**. The host picks the mode and presses **Start**, and any empty slots are filled by computer players. In 1v1 the first friend is your opponent; in team modes friends alternate between teams.
+
+- **Who plays:** up to 8 people per room. If there are more people than the mode has slots (say 4 friends in a 1v1), the host picks who plays (themselves included) and everyone else spectates, watching through the players' eyes.
+- **Match rules:** the host can set health (half / normal / double), gravity, score to win, a weapon everyone must use, health regen, and whether empty slots get bots.
+- **Bots are labelled:** in rooms with friends, the computer players are called Bot 1, Bot 2 and so on, and move like machines (no strafing, crouching or hopping; they stop to turn), so they are never mistaken for people.
+- **Chat:** in the lobby, and in the match with T. Only rooms with friends have chat. Messages are filtered for swearing and slurs (including l33t spellings and s p a c e d words).
 
 - **Host-authoritative peer-to-peer:** WebRTC through [PeerJS](https://peerjs.com). The host's browser runs the real match and sends snapshots 20 times a second.
 - **Clients:** each moves their own soldier locally, so movement feels instant, and sends position and buttons to the host 30 times a second. Hits, deaths, scores and objectives are decided by the host.
@@ -84,7 +102,8 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 - **Graphics:** quality presets (Low, Medium, High, Ultra), with the first visit picking one to suit the device. Individual options: render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing. Low and Medium make a big difference on older laptops and integrated graphics.
 - **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
-- **HUD:** optional FPS counter and online ping.
+- **HUD:** optional FPS counter and online ping, damage numbers and hit marker sound.
+- **Touch controls:** on phones and tablets (automatic, or forced on or off): a floating stick, drag to look, and buttons for fire (also turns the view), aim, jump, crouch, reload, grenade, knife, swap, pause and scores.
 
 ## How the bots work
 
@@ -95,6 +114,8 @@ Opponents have personalities that change how they play around the trained tactic
 - **Flanker:** swings wide around you and creeps in silently.
 - **Tactician:** uses cover, grenades and retreats to heal.
 - **Soldier:** all-rounder.
+
+Rushers and tacticians also have their own fine-tuned policy (see Training); the others use the shared one.
 
 Everyone hears footsteps (sprinting is loud, crouching is silent) and pre-aims where you were last seen. Bots jump too: over low crates, to get unstuck, and (by personality) to dodge mid-fight.
 
@@ -124,7 +145,12 @@ npm run train                     # 3M steps from scratch, ~15 min on 8 threads
 npm run train -- --steps 6e6      # longer
 npm run train -- --resume         # continue from training/checkpoints/latest.json
 npm run eval                      # policy vs heuristic, per scenario
+npm run train -- --style rusher --from latest --steps 1.2e6 --lr 3e-4
+                                  # fine-tune a personality's own policy
+npm run eval -- --styles          # each personality's policy vs the base one
 ```
+
+Personality policies start from the base policy and add small reward nudges: rushers for closing in and hitting up close, snipers for keeping distance, flankers for hitting enemies who face away, tacticians for fighting from cover. After 1.2M steps each, rushers (53% vs 47% wins, K/D 1.63 vs 1.20) and tacticians (65% vs 62%, K/D 2.71 vs 2.32) beat the base policy, so the game loads `soldier_rusher.json` and `soldier_tactician.json`. The sniper and flanker runs did not beat it, so they use the base policy.
 
 The trainer uses a random mix of training scenarios: duels on the arena and on random maps, 2v2, 3v3 and 4-player free-for-all. Opponents get sharper over the run (a curriculum). Reward is damage dealt minus damage taken (per 100 HP), plus 1 per kill, minus 1 per death, plus a win bonus and a small time penalty.
 

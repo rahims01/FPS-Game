@@ -9,6 +9,7 @@ import { SOLDIER } from '../sim/config';
 import { wrapAngle } from '../sim/math';
 import type { WeaponId } from '../sim/weapons';
 import { weaponModels } from '../assets/weaponModels';
+import { skinned, type SkinChoice, type SkinId } from '../assets/skins';
 
 const DEG = Math.PI / 180;
 
@@ -21,6 +22,10 @@ const DEATH_PUSH: Record<string, number> = {
   sniper: 3.3,
   shotgun: 3.6,
   knife: 1.4,
+  ak: 2.4,
+  burst: 2.2,
+  dmr: 3,
+  revolver: 2.6,
   grenade: 4.5,
   airstrike: 5.5,
   zone: 0
@@ -102,13 +107,22 @@ const solveArm = (arm: ArmChain, target: THREE.Vector3, pole: THREE.Vector3, wei
   aimBoneAt(arm.lower, arm.hand, S.addScaledVector(n, d), weight);
 };
 
-const weaponCache = new Map<WeaponId, THREE.Object3D>();
+const weaponCache = new Map<string, THREE.Object3D>();
 const THIRD_PERSON_SCALE = 1.35;
 /**
  * Other players carry slightly oversized, lifted-brightness copies of their
  * weapons: real-scale dark guns all but vanish against the walls at range.
  */
-const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId): THREE.Object3D => {
+const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none'): THREE.Object3D => {
+  if (skin !== 'none') {
+    const key = `${id}:${skin}`;
+    let s = weaponCache.get(key);
+    if (!s) {
+      s = skinned(thirdPersonWeapon(assets, id), skin);
+      weaponCache.set(key, s);
+    }
+    return s;
+  }
   let r = weaponCache.get(id);
   if (!r) {
     r = weaponModels(assets.rifle)[id].object.clone(true);
@@ -164,7 +178,12 @@ export class SoldierView {
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
 
-  constructor(assets: LoadedAssets, agent: Agent, color: THREE.ColorRepresentation) {
+  constructor(
+    assets: LoadedAssets,
+    agent: Agent,
+    color: THREE.ColorRepresentation,
+    private skins: SkinChoice = {}
+  ) {
     this.life = agent.life;
     this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
     this.model.scale.setScalar(STICKMAN_SCALE);
@@ -250,7 +269,7 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id).clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none').clone(true));
     this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
   }
 

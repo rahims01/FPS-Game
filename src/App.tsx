@@ -2,16 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadAssets, type LoadedAssets } from './assets/AssetRegistry';
 import { GameAudio } from './game/Audio';
 import { Game, type GameSettings, type HudState, type NetRole } from './game/Game';
-import { ClientSession, HostSession } from './net/Session';
+import { ClientSession, HostSession, type ChatMsg } from './net/Session';
 import type { LobbyPlayer } from './net/protocol';
+import type { ChatLine } from './net/chat';
 import { COLORS, cssColor, isDark } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
-import { MODES, modeDef, type Difficulty, type ModeId } from './sim/Match';
-import { PRIMARIES, WEAPONS } from './sim/weapons';
-import { levelOf, loadProfile, rankOf, type Profile } from './game/progression';
+import { DEFAULT_RULES, MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
+import { streakDef } from './sim/killstreaks';
+import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
+import { divisionOf, levelOf, loadProfile, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, type Division, type Profile } from './game/progression';
 import { Hud } from './ui/Hud';
 import { SettingsPanel } from './ui/SettingsPanel';
+import { LoadoutPanel } from './ui/LoadoutPanel';
+import { TouchControls } from './ui/TouchControls';
+import { ChatBox } from './ui/ChatBox';
+import { EndScreen } from './ui/EndScreen';
 import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' };
@@ -21,6 +27,8 @@ interface LobbyView {
   difficulty: Difficulty;
   players: LobbyPlayer[];
   max: number;
+  slots: number;
+  rules: LobbyRules;
 }
 
 const defaultName = () => `Player${Math.floor(1000 + Math.random() * 9000)}`;
@@ -55,6 +63,8 @@ const audio = new GameAudio();
 
 const MODE_GROUPS = ['Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
 
+let chatId = 0;
+
 export const App = () => {
   const [assets, setAssets] = useState<LoadedAssets | null>(null);
   const [loadMsg, setLoadMsg] = useState('Loading…');
@@ -65,8 +75,13 @@ export const App = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [settings, setSettings] = useState<GameSettings>(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLoadout, setShowLoadout] = useState(false);
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
+  // Ranked.
+  const [ranked, setRanked] = useState(false);
+  const [rankedResult, setRankedResult] = useState<{ delta: number; division: Division; sr: number } | null>(null);
+  const rankedDone = useRef(false);
   // Online play.
   const netRef = useRef<NetRole | null>(null);
   const hostRef = useRef<HostSession | null>(null);
@@ -76,6 +91,7 @@ export const App = () => {
   const [joinCode, setJoinCode] = useState('');
   const [netBusy, setNetBusy] = useState(false);
   const [netError, setNetError] = useState<string | null>(null);
+  const [chat, setChat] = useState<ChatLine[]>([]);
   const [joined, setJoined] = useState(1);
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const mount = useRef<HTMLDivElement>(null);
@@ -116,6 +132,9 @@ export const App = () => {
     if (screen.kind !== 'playing' || !assets || !mount.current) return;
     audio.setVolume(settings.volume);
     const name = settings.playerName.trim() || defaultName();
+    const host = netRef.current?.role === 'host' ? netRef.current.session : null;
+    rankedDone.current = false;
+    setRankedResult(null);
     const g = new Game(
       mount.current,
       assets,
@@ -124,7 +143,11 @@ export const App = () => {
         difficulty,
         botControl: brain && !forceHeuristic ? 'learned' : 'heuristic',
         primary: settings.primary,
-        humans: netRef.current?.role === 'host' ? netRef.current.session.players.length : 1
+        secondary: settings.secondary,
+        streaks: settings.streaks,
+        humans: host ? host.playingCount : 1,
+        ...(host ? { rules: host.lobby.rules } : {}),
+        ...(ranked && !netRef.current ? { skill: rankedDifficulty(loadProfile().sr) } : {})
       },
       brain,
       { ...settings, playerName: name },
@@ -150,8 +173,35 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, assets, round]);
 
+  // Ranked: the result counts once the match is over.
+  useEffect(() => {
+    if (!ranked || !hud || hud.phase !== 'over' || rankedDone.current || hud.online) return;
+    rankedDone.current = true;
+    const delta = recordRanked(hud.result === 'win', hud.kills, hud.deaths);
+    const p = loadProfile();
+    setProfile(p);
+    setRankedResult({ delta, division: divisionOf(p), sr: p.sr });
+  }, [hud, ranked]);
+
+  const addChat = useCallback((m: ChatMsg) => {
+    setChat((c) => [...c.slice(-80), { id: chatId++, name: m.name, color: m.color, text: m.text, system: m.system, at: Date.now() }]);
+  }, []);
+
+  const sendChat = (text: string) => {
+    if (hostRef.current) hostRef.current.sendChat(text);
+    else clientRef.current?.sendChat(text);
+  };
+
   const findMatch = () => {
     audio.unlock();
+    setRanked(false);
+    setScreen({ kind: 'finding' });
+    setRound((r) => r + 1);
+  };
+  const playRanked = () => {
+    audio.unlock();
+    setRanked(true);
+    setMode(RANKED_MODES[Math.floor(Math.random() * RANKED_MODES.length)]);
     setScreen({ kind: 'finding' });
     setRound((r) => r + 1);
   };
@@ -160,6 +210,12 @@ export const App = () => {
     setScreen({ kind: 'playing' });
   };
   const toMenu = useCallback(() => {
+    // Quitting a ranked match early counts as a loss.
+    const g = game.current;
+    if (ranked && g && !rankedDone.current && !g.net && g.match.phase !== 'over') {
+      rankedDone.current = true;
+      recordRanked(false, g.match.player.kills, g.match.player.deaths);
+    }
     setProfile(loadProfile());
     // Leaving a lobby (a match's sessions are closed when its Game is disposed).
     if (screen.kind !== 'playing') {
@@ -170,10 +226,18 @@ export const App = () => {
     clientRef.current = null;
     netRef.current = null;
     setLobby(null);
+    setChat([]);
     setScreen({ kind: 'menu' });
-  }, [screen.kind]);
+  }, [screen.kind, ranked]);
 
-  const profileForNet = () => ({ name: settings.playerName.trim() || defaultName(), color: settings.playerColor, primary: settings.primary });
+  const profileForNet = () => ({
+    name: settings.playerName.trim() || defaultName(),
+    color: settings.playerColor,
+    primary: settings.primary,
+    secondary: settings.secondary,
+    skins: settings.skins,
+    streaks: settings.streaks
+  });
 
   const hostGame = async () => {
     audio.unlock();
@@ -183,10 +247,14 @@ export const App = () => {
       const p = profileForNet();
       const session = await HostSession.create(mode, difficulty, p.name, p.color);
       hostRef.current = session;
-      const refresh = () => setLobby({ mode: session.lobby.mode, difficulty: session.lobby.difficulty, players: session.players, max: session.maxPlayers });
+      const refresh = () =>
+        setLobby({ mode: session.lobby.mode, difficulty: session.lobby.difficulty, players: session.players, max: session.maxPlayers, slots: session.slots, rules: session.lobby.rules });
       session.onChange = refresh;
+      session.onChat = addChat;
       refresh();
+      setChat([]);
       setRoomCode(session.code);
+      setRanked(false);
       setScreen({ kind: 'host-lobby' });
     } catch (e) {
       setNetError((e as Error).message);
@@ -195,12 +263,22 @@ export const App = () => {
     }
   };
 
+  const refreshHostLobby = () => {
+    const s = hostRef.current;
+    if (s) setLobby({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules });
+  };
+
   const changeLobbyMode = (m: ModeId) => {
     setMode(m);
-    const session = hostRef.current;
-    if (!session) return;
-    session.setLobby(m, difficulty);
-    setLobby({ mode: m, difficulty, players: session.players, max: session.maxPlayers });
+    hostRef.current?.setLobby(m, difficulty);
+    refreshHostLobby();
+  };
+
+  const changeRules = (patch: Partial<LobbyRules>) => {
+    const s = hostRef.current;
+    if (!s) return;
+    s.setRules({ ...s.lobby.rules, ...patch });
+    refreshHostLobby();
   };
 
   const startOnline = () => {
@@ -224,7 +302,9 @@ export const App = () => {
     try {
       const session = await ClientSession.connect(joinCode, profileForNet());
       clientRef.current = session;
-      session.onLobby = (msg) => setLobby({ mode: msg.mode, difficulty: msg.difficulty, players: msg.players, max: msg.max });
+      setChat([]);
+      session.onChat = addChat;
+      session.onLobby = (msg) => setLobby({ mode: msg.mode, difficulty: msg.difficulty, players: msg.players, max: msg.max, slots: msg.slots, rules: msg.rules });
       session.onStart = (start) => {
         netRef.current = { role: 'client', session, start };
         setMode(start.mode);
@@ -238,6 +318,7 @@ export const App = () => {
         setScreen({ kind: 'menu' });
       };
       setRoomCode(joinCode.trim().toUpperCase());
+      setRanked(false);
       setScreen({ kind: 'join-lobby' });
     } catch (e) {
       setNetError((e as Error).message);
@@ -251,6 +332,7 @@ export const App = () => {
   };
   const def = modeDef(mode);
   const lobbyFull = joined >= def.players;
+  const division = divisionOf(profile);
 
   if (loadError) {
     return (
@@ -261,6 +343,10 @@ export const App = () => {
     );
   }
 
+  const isHostLobby = screen.kind === 'host-lobby';
+  const playingCount = lobby ? lobby.players.filter((p) => p.playing).length : 0;
+  const minNeeded = lobby ? Math.max(1, modeDef(lobby.mode).minPlayers ?? 1) : 1;
+
   return (
     <>
       <div ref={mount} className="viewport" />
@@ -269,7 +355,25 @@ export const App = () => {
           <div className="menu-card">
             <h1>FPS SHOOTER</h1>
             <p className="sub">Pick a mode and jump into a lobby.</p>
-            <ProfileBar profile={profile} />
+            <div className="profile-row">
+              <ProfileBar profile={profile} />
+              <div className="ranked-card" style={{ borderColor: division.color }}>
+                <small>Ranked</small>
+                <b style={{ color: division.color }}>{division.name}</b>
+                {division.placed && (
+                  <div className="xpbar">
+                    <div style={{ width: `${division.progress * 100}%`, background: division.color }} />
+                  </div>
+                )}
+                <small>
+                  {division.placed ? `${profile.sr} SR · ` : ''}
+                  {profile.rankedWins}W {profile.rankedMatches - profile.rankedWins}L
+                </small>
+                <button className="play ranked-btn" disabled={!assets} onClick={playRanked}>
+                  PLAY RANKED
+                </button>
+              </div>
+            </div>
             <div className="profile">
               <label className="name-field">
                 Username
@@ -314,13 +418,13 @@ export const App = () => {
               </div>
             ))}
             <div className="row">
-              <label>Primary</label>
-              {PRIMARIES.map((w) => (
-                <button key={w} title={WEAPONS[w].name} className={`chip ${settings.primary === w ? 'on' : ''}`} onClick={() => setSettings({ ...settings, primary: w })}>
-                  {WEAPONS[w].tag}
-                </button>
-              ))}
-              <span className="policy-note">{WEAPONS[settings.primary].name} + pistol, knife and 2 frag grenades. Some modes hand out their own guns.</span>
+              <label>Loadout</label>
+              <span className="loadout-summary">
+                <b>{WEAPONS[settings.primary].name}</b> + {WEAPONS[settings.secondary].name} · {settings.streaks.map((s) => streakDef(s).name).join(' / ')}
+              </span>
+              <button className="chip" onClick={() => setShowLoadout(true)}>
+                ✎ Edit loadout
+              </button>
             </div>
             <div className="row">
               <label>Lobby</label>
@@ -340,7 +444,7 @@ export const App = () => {
             <div className="online">
               <div className="online-head">
                 <b>Play online with friends</b>
-                <span>Host a room and share the code. Works on any static host (peer-to-peer).</span>
+                <span>Host a room and share the code. Pick who plays, set the rules and chat in the lobby.</span>
               </div>
               <div className="row">
                 <button className="chip" disabled={!assets || netBusy} onClick={hostGame}>
@@ -381,6 +485,7 @@ export const App = () => {
                 {keyLabel(settings.keys.weapon1)}/{keyLabel(settings.keys.weapon2)}/{keyLabel(settings.keys.swap)}/wheel switch
               </span>
               <span>{keyLabel(settings.keys.scores)} scores</span>
+              <span>{keyLabel(settings.keys.chat)} chat (online)</span>
               <span>Esc pause</span>
             </div>
           </div>
@@ -388,46 +493,70 @@ export const App = () => {
       )}
       {(screen.kind === 'host-lobby' || screen.kind === 'join-lobby') && lobby && (
         <div className="menu">
-          <div className="menu-card small">
-            <h2>{screen.kind === 'host-lobby' ? 'Your room' : 'Joined room'}</h2>
-            <div className="room-code">{roomCode}</div>
-            <p className="sub">{screen.kind === 'host-lobby' ? 'Send this code to your friends. They enter it under "Play online".' : 'Waiting for the host to start…'}</p>
-            {screen.kind === 'host-lobby' ? (
-              <select className="mode-select" value={lobby.mode} onChange={(e) => changeLobbyMode(e.target.value as ModeId)}>
-                {MODES.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p>
-                <b>{modeDef(lobby.mode).name}</b>
-              </p>
-            )}
-            <div className="lobby-players">
-              {lobby.players.map((p, i) => (
-                <div key={i} className="lb-row">
-                  <span className="rank">{i + 1}</span>
-                  <span className={`name ${isDark(cssColor(p.color)) ? 'dark' : ''}`} style={{ color: cssColor(p.color) }}>
-                    {p.name}
-                  </span>
-                  <span className="k">{p.host ? 'host' : ''}</span>
-                </div>
-              ))}
-              <small>
-                {lobby.players.length} / {lobby.max} players · empty slots are filled automatically
-              </small>
-            </div>
-            <div className="row">
-              {screen.kind === 'host-lobby' && (
-                <button className="play" disabled={lobby.players.length < (modeDef(lobby.mode).minPlayers ?? 1)} onClick={startOnline}>
-                  {lobby.players.length < (modeDef(lobby.mode).minPlayers ?? 1) ? `NEEDS ${modeDef(lobby.mode).minPlayers} PLAYERS` : 'START'}
-                </button>
+          <div className="menu-card lobby-card">
+            <div className="lobby-main">
+              <h2>{isHostLobby ? 'Your room' : 'Joined room'}</h2>
+              <div className="room-code">{roomCode}</div>
+              <p className="sub">{isHostLobby ? 'Send this code to your friends. They enter it under "Play online".' : 'Waiting for the host to start…'}</p>
+              {isHostLobby ? (
+                <select className="mode-select" value={lobby.mode} onChange={(e) => changeLobbyMode(e.target.value as ModeId)}>
+                  {MODES.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p>
+                  <b>{modeDef(lobby.mode).name}</b>
+                </p>
               )}
-              <button className="chip" onClick={toMenu}>
-                Leave
-              </button>
+              <div className="lobby-players">
+                {lobby.players.map((p, i) => (
+                  <div key={p.id} className="lb-row">
+                    <span className="rank">{i + 1}</span>
+                    <span className={`name ${isDark(cssColor(p.color)) ? 'dark' : ''}`} style={{ color: cssColor(p.color) }}>
+                      {p.name}
+                      {p.host && <small className="host-tag">host</small>}
+                    </span>
+                    {isHostLobby ? (
+                      <button
+                        className={`chip play-toggle ${p.playing ? 'on' : ''}`}
+                        disabled={!p.playing && playingCount >= lobby.slots}
+                        title={p.playing ? 'Playing: click to make them spectate' : 'Spectating: click to put them in'}
+                        onClick={() => {
+                          hostRef.current?.togglePlaying(p.id);
+                          refreshHostLobby();
+                        }}
+                      >
+                        {p.playing ? 'Playing' : 'Spectating'}
+                      </button>
+                    ) : (
+                      <span className={`k ${p.playing ? '' : 'spec'}`}>{p.playing ? 'playing' : 'spectating'}</span>
+                    )}
+                  </div>
+                ))}
+                <small>
+                  {playingCount} / {lobby.slots} playing{lobby.players.length > playingCount ? ` · ${lobby.players.length - playingCount} spectating` : ''}
+                  {lobby.rules.bots && !modeDef(lobby.mode).humansOnly ? ' · empty slots get bots' : ''}
+                  {isHostLobby && lobby.players.length > lobby.slots ? ' · more people than slots: pick who plays' : ''}
+                </small>
+              </div>
+              <RulesPanel rules={lobby.rules} editable={isHostLobby} onChange={changeRules} humansOnly={!!modeDef(lobby.mode).humansOnly} />
+              <div className="row">
+                {isHostLobby && (
+                  <button className="play" disabled={playingCount < minNeeded} onClick={startOnline}>
+                    {playingCount < minNeeded ? `NEEDS ${minNeeded} PLAYERS` : 'START'}
+                  </button>
+                )}
+                <button className="chip" onClick={toMenu}>
+                  Leave
+                </button>
+              </div>
+            </div>
+            <div className="lobby-chat">
+              <h3>Chat</h3>
+              <ChatBox lines={chat} onSend={sendChat} inGame={false} open now={Date.now()} />
             </div>
           </div>
         </div>
@@ -443,12 +572,23 @@ export const App = () => {
           </div>
         </div>
       )}
+      {showLoadout && screen.kind === 'menu' && (
+        <div className="overlay">
+          <div className="menu-card loadout-card">
+            <h2>Loadout</h2>
+            <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} />
+            <button className="play" onClick={() => setShowLoadout(false)}>
+              DONE
+            </button>
+          </div>
+        </div>
+      )}
       {screen.kind === 'finding' && (
         <div className="menu">
           <div className="menu-card small">
-            <h2>{lobbyFull ? 'Match found' : 'Finding match…'}</h2>
+            <h2>{lobbyFull ? 'Match found' : ranked ? 'Finding ranked match…' : 'Finding match…'}</h2>
             <p className="sub">
-              {def.name} · {LOBBY.find((d) => d.id === difficulty)!.label} lobby
+              {def.name} · {ranked ? <b style={{ color: division.color }}>Ranked · {division.name}</b> : `${LOBBY.find((d) => d.id === difficulty)!.label} lobby`}
             </p>
             <div className="lobby-bar">
               <div style={{ width: `${(joined / def.players) * 100}%` }} />
@@ -456,6 +596,7 @@ export const App = () => {
             <p>
               {joined} / {def.players} players
             </p>
+            {ranked && <p className="set-hint">Leaving a ranked match early counts as a loss.</p>}
             <div className="row">
               <button className="play" disabled={!lobbyFull} onClick={deploy}>
                 {lobbyFull ? 'DEPLOY' : 'WAITING…'}
@@ -470,6 +611,25 @@ export const App = () => {
       {screen.kind === 'playing' && hud && (
         <>
           <Hud hud={hud} minimap={minimap} settings={settings} />
+          {hud.online && (
+            <ChatBox
+              lines={chat}
+              onSend={sendChat}
+              inGame
+              open={hud.chatOpen}
+              onClose={() => game.current?.closeChat()}
+              now={Date.now()}
+            />
+          )}
+          {hud.touch && game.current && !hud.paused && hud.phase !== 'over' && (
+            <TouchControls
+              game={game.current}
+              onPause={() => game.current?.pause()}
+              onScores={(v) => {
+                if (game.current) game.current.showScores = v;
+              }}
+            />
+          )}
           {hud.paused && hud.phase !== 'over' && !showSettings && (
             <div className="overlay">
               <div className="menu-card small pause-card">
@@ -481,7 +641,7 @@ export const App = () => {
                   ⚙ Settings
                 </button>
                 <button className="pause-btn" onClick={toMenu}>
-                  Leave match
+                  {ranked && !hud.online ? 'Leave match (counts as a loss)' : 'Leave match'}
                 </button>
                 {hud.online && <p className="set-hint">Online matches keep running while you're paused.</p>}
               </div>
@@ -510,39 +670,7 @@ export const App = () => {
             </div>
           )}
           {hud.phase === 'over' && !hud.netMessage && !hud.killcam && !hud.killcamPending && (
-            <div className="overlay end">
-              <div className="menu-card small">
-                <h2 className={hud.result === 'win' ? 'win' : 'lose'}>{hud.banner || (hud.result === 'win' ? 'Victory' : 'Defeat')}</h2>
-                <p className="xp-earned">+{hud.xp} XP</p>
-                <p>
-                  {hud.kills} kills · {hud.deaths} deaths
-                  {hud.showTeams && ` · ${Math.floor(hud.scores[0])}–${Math.floor(hud.scores[1])}`}
-                </p>
-                <div className="final-board">
-                  {hud.players.slice(0, 8).map((p, i) => (
-                    <div key={p.id} className={`lb-row ${p.isPlayer ? 'mine' : ''}`}>
-                      <span className="rank">{i + 1}</span>
-                      <span className={`name ${isDark(p.color) ? 'dark' : ''}`} style={{ color: p.color }}>
-                        {p.name}
-                      </span>
-                      <span className="k">
-                        {p.kills} / {p.deaths}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="row">
-                  {!hud.online && (
-                    <button className="play" onClick={findMatch}>
-                      PLAY AGAIN
-                    </button>
-                  )}
-                  <button className="chip" onClick={toMenu}>
-                    Main menu
-                  </button>
-                </div>
-              </div>
-            </div>
+            <EndScreen hud={hud} ranked={ranked && !hud.online ? rankedResult : null} onAgain={hud.online ? null : ranked ? playRanked : findMatch} onMenu={toMenu} />
           )}
         </>
       )}
@@ -565,5 +693,81 @@ const ProfileBar = ({ profile }: { profile: Profile }) => {
         </small>
       </div>
     </div>
+  );
+};
+
+/** Private-lobby rules: the host edits them, everyone else sees them. */
+const RulesPanel = ({ rules, editable, onChange, humansOnly }: { rules: LobbyRules; editable: boolean; onChange: (p: Partial<LobbyRules>) => void; humansOnly: boolean }) => {
+  const opt = <T extends string | number | boolean>(label: string, value: T, options: [T, string][], set: (v: T) => void) => (
+    <div className="rule">
+      <span>{label}</span>
+      {editable ? (
+        <div className="set-choices">
+          {options.map(([v, l]) => (
+            <button key={String(v)} className={`chip ${value === v ? 'on' : ''}`} onClick={() => set(v)}>
+              {l}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <b>{options.find(([v]) => v === value)?.[1] ?? String(value)}</b>
+      )}
+    </div>
+  );
+  const changed = JSON.stringify(rules) !== JSON.stringify(DEFAULT_RULES);
+  return (
+    <details className="rules" open={editable || changed}>
+      <summary>Match rules{changed ? ' (custom)' : ''}</summary>
+      {opt(
+        'Health',
+        rules.health,
+        [
+          [0.5, 'Half'],
+          [1, 'Normal'],
+          [2, 'Double']
+        ],
+        (v) => onChange({ health: v })
+      )}
+      {opt(
+        'Gravity',
+        rules.gravity,
+        [
+          ['low', 'Low'],
+          ['normal', 'Normal'],
+          ['high', 'High']
+        ],
+        (v) => onChange({ gravity: v })
+      )}
+      {opt(
+        'Score to win',
+        rules.score,
+        [
+          [0.5, 'Short'],
+          [1, 'Normal'],
+          [2, 'Long']
+        ],
+        (v) => onChange({ score: v })
+      )}
+      {opt('Weapons', rules.weapon, [['any', 'Own picks'] as [WeaponId | 'any', string], ...PRIMARIES.map((w): [WeaponId | 'any', string] => [w, `${WEAPONS[w].tag} only`])], (v) => onChange({ weapon: v }))}
+      {opt(
+        'Health regen',
+        rules.regen,
+        [
+          [true, 'On'],
+          [false, 'Off']
+        ],
+        (v) => onChange({ regen: v })
+      )}
+      {!humansOnly &&
+        opt(
+          'Fill with bots',
+          rules.bots,
+          [
+            [true, 'On'],
+            [false, 'Off']
+          ],
+          (v) => onChange({ bots: v })
+        )}
+    </details>
   );
 };

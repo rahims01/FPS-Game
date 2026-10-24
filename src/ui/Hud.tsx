@@ -6,11 +6,12 @@ import { isDark } from '../game/identity';
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /** Modes where a kill leaderboard is shown on screen. */
-const LEADERBOARD_MODES = new Set(['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'br']);
+const LEADERBOARD_MODES = new Set(['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'br', 'roulette', 'marksman']);
 
-const Name = ({ row }: { row: Pick<ScoreRow, 'name' | 'color' | 'isPlayer'> }) => (
+const Name = ({ row }: { row: Pick<ScoreRow, 'name' | 'color' | 'isPlayer'> & { bot?: boolean } }) => (
   <span className={`name ${row.isPlayer ? 'me' : ''} ${isDark(row.color) ? 'dark' : ''}`} style={{ color: row.color }}>
     {row.name}
+    {row.bot && <small className="bot-tag">BOT</small>}
   </span>
 );
 
@@ -24,8 +25,9 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
   const top = hud.players.slice(0, 5);
   const me = hud.players.find((p) => p.isPlayer);
   const myRank = hud.players.findIndex((p) => p.isPlayer) + 1;
+  const watching = !!hud.spectating;
   return (
-    <div className={`hud ${hud.killcam ? 'in-killcam' : ''}`}>
+    <div className={`hud ${hud.killcam ? 'in-killcam' : ''} ${watching ? 'watching' : ''} ${hud.spectator ? 'benched' : ''} ${hud.touch ? 'touch' : ''}`}>
       {hud.scoped && (
         <div className="scope">
           <div className="scope-ring" />
@@ -33,7 +35,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           <i className="v" />
         </div>
       )}
-      {hud.alive && !hud.aiming && !hud.scoped && !hud.hardcore && (
+      {hud.alive && !watching && !hud.aiming && !hud.scoped && !hud.hardcore && (
         <div className="crosshair" style={{ ['--gap' as string]: `${gap}px`, ['--len' as string]: `${ch.size}px`, ['--thick' as string]: `${ch.thickness}px`, ['--col' as string]: ch.color }}>
           <i className="t" />
           <i className="b" />
@@ -174,7 +176,17 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           <div className="kc-skip">Press Space or click to skip</div>
         </div>
       )}
-      {!hud.alive && hud.phase !== 'over' && !hud.killcam && (
+      {hud.spectating && !hud.killcam && hud.phase !== 'over' && (
+        <div className="spectate-bar">
+          <small>{hud.spectator ? 'Spectating the match' : 'You are out · spectating'}</small>
+          <b className={isDark(hud.spectating.color) ? 'dark' : ''} style={{ color: hud.spectating.color }}>
+            {hud.spectating.name}
+          </b>
+          <span>{hud.spectating.weapon}</span>
+          <em>{hud.touch ? 'Tap FIRE for the next player' : 'Click or Space: next player · Right click: previous'}</em>
+        </div>
+      )}
+      {!hud.alive && !watching && !hud.spectator && hud.phase !== 'over' && !hud.killcam && (
         <div className="dead">
           <h2>You died</h2>
           {hud.killedBy && (
@@ -251,11 +263,15 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         <div className="streak">
           {hud.juggernaut && <b className="jugg">JUGGERNAUT</b>}
           {hud.uav && <b className="uav">UAV</b>}
-          {hud.nextStreak && (
-            <span>
-              Streak {hud.streak} · {hud.nextStreak.name} at {hud.nextStreak.kills}
-            </span>
-          )}
+          {hud.jammed && <b className="jammed">JAMMED</b>}
+          <span className="streak-picks">
+            Streak {hud.streak}
+            {hud.streaks.map((s) => (
+              <i key={s.name} className={s.earned ? 'earned' : hud.nextStreak?.name === s.name ? 'next' : ''} title={`${s.name} at ${s.kills} kills`}>
+                {s.name} <em>{s.kills}</em>
+              </i>
+            ))}
+          </span>
           {hud.crouching && <span className="stance">crouched</span>}
         </div>
         <div className="hp">
@@ -306,8 +322,8 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
 const Scoreboard = ({ hud }: { hud: HudState }) => {
   const groups: { title: string; color?: string; rows: ScoreRow[] }[] = hud.showTeams
     ? [
-        { title: 'Your team', color: hud.teamColors?.[0], rows: hud.players.filter((p) => p.ally) },
-        { title: 'Enemy team', color: hud.teamColors?.[1], rows: hud.players.filter((p) => !p.ally) }
+        { title: hud.spectator ? 'Team 1' : 'Your team', color: hud.teamColors?.[0], rows: hud.players.filter((p) => p.ally) },
+        { title: hud.spectator ? 'Team 2' : 'Enemy team', color: hud.teamColors?.[1], rows: hud.players.filter((p) => !p.ally) }
       ]
     : [{ title: `${hud.players.length} players`, rows: hud.players }];
   return (

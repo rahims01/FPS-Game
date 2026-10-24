@@ -24,6 +24,46 @@ const wood = new THREE.MeshStandardMaterial({ color: 0x6e4a2b, metalness: 0, rou
 const tan = new THREE.MeshStandardMaterial({ color: 0x8a7a5a, metalness: 0.1, roughness: 0.75 });
 const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25 });
 const glass = new THREE.MeshStandardMaterial({ color: 0x223344, metalness: 0.2, roughness: 0.05, emissive: 0x0a1a2a });
+/** Small parts that keep their look under a weapon skin (sights, blades, lenses). */
+steel.userData.keep = true;
+glass.userData.keep = true;
+/** Red reticles in optics. */
+const reticle = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+reticle.userData.keep = true;
+
+/**
+ * An open sight you look through when aiming: a frame (red dot) or two rings
+ * (ring sight) around the sight line at `z`, with a small reticle in the middle.
+ * Nothing solid sits on the line of sight itself.
+ */
+const openSight = (g: THREE.Group, kind: 'dot' | 'rings', y0: number, y1: number, z: number, half: number): void => {
+  const post = (x: number, y: number, h: number, w: number) => {
+    const m = box(g, w, y1 - y0, h, y, z, metal);
+    m.position.x = x;
+    return m;
+  };
+  const mid = (y0 + y1) / 2;
+  if (kind === 'dot') {
+    box(g, half * 2 + 0.008, y1 - y0, 0.006, mid, z - half - 0.003, metal); // base
+    post(-half - 0.002, mid, half * 2 + 0.006, 0.004);
+    post(half + 0.002, mid, half * 2 + 0.006, 0.004);
+    box(g, half * 2 + 0.008, y1 - y0, 0.004, mid, z + half + 0.002, metal); // hood
+  } else {
+    for (const y of [y0, y1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(half + 0.002, 0.0028, 6, 20), polymer);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0, y, z);
+      g.add(ring);
+    }
+    box(g, 0.006, y1 - y0, 0.004, mid, z - half - 0.003, polymer); // spine
+    // Fine crosshair in the front ring.
+    box(g, half * 2, 0.001, 0.0008, y1, z, reticle);
+    box(g, 0.0008, 0.001, half * 2, y1, z, reticle);
+  }
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(kind === 'dot' ? 0.0011 : 0.0009, 8, 6), reticle);
+  dot.position.set(0, kind === 'dot' ? y1 : y1 - 0.001, z);
+  g.add(dot);
+};
 
 /** Box sized (x width, y length, z height) centred at (0, y, z). */
 const box = (g: THREE.Group, w: number, l: number, h: number, y: number, z: number, mat: THREE.Material, rx = 0): THREE.Mesh => {
@@ -109,6 +149,65 @@ const pistol = (): WeaponModel => {
   return { object: g, length: 0.17, bore: 0.05, sightZ: 0.078, sightY: -0.01 };
 };
 
+const ak = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.05, 0.3, 0.07, 0.06, 0.06, metal); // receiver
+  tube(g, 0.012, 0.2, 0.62, 0.075, metal); // barrel
+  tube(g, 0.008, 0.2, 0.48, 0.1, metal); // gas tube
+  box(g, 0.055, 0.17, 0.06, 0.3, 0.07, wood); // handguard
+  box(g, 0.035, 0.05, 0.15, 0.13, -0.05, metal, -0.35); // curved magazine
+  box(g, 0.035, 0.05, 0.1, -0.06, -0.03, wood, 0.3); // grip
+  box(g, 0.045, 0.3, 0.07, -0.24, 0.035, wood, -0.1); // stock
+  box(g, 0.012, 0.03, 0.03, 0.56, 0.1, steel); // front sight
+  box(g, 0.025, 0.03, 0.02, 0.05, 0.1, steel); // rear sight
+  return { object: g, length: 0.62, bore: 0.075, sightZ: 0.11, sightY: 0.05 };
+};
+
+const burst = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.05, 0.32, 0.075, 0.06, 0.06, polymer); // receiver
+  tube(g, 0.011, 0.22, 0.58, 0.075, metal); // barrel
+  box(g, 0.06, 0.24, 0.065, 0.33, 0.075, polymer); // railed handguard
+  box(g, 0.012, 0.3, 0.012, 0.15, 0.115, metal); // top rail
+  box(g, 0.035, 0.05, 0.14, 0.12, -0.05, metal, -0.15); // magazine
+  box(g, 0.035, 0.05, 0.1, -0.06, -0.03, polymer, 0.3); // grip
+  box(g, 0.05, 0.26, 0.08, -0.24, 0.04, polymer, -0.04); // stock
+  box(g, 0.02, 0.04, 0.012, 0.02, 0.124, metal); // red dot mount
+  // The eye sits 8 mm above sightZ, so centre the window there.
+  openSight(g, 'dot', 0.0, 0.045, 0.145, 0.016);
+  return { object: g, length: 0.58, bore: 0.075, sightZ: 0.137, sightY: 0.0 };
+};
+
+const dmr = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.05, 0.34, 0.075, 0.07, 0.055, metal); // receiver
+  tube(g, 0.012, 0.24, 0.78, 0.07, metal); // long barrel
+  box(g, 0.055, 0.28, 0.06, 0.38, 0.065, tan); // handguard
+  box(g, 0.035, 0.05, 0.1, 0.13, -0.03, metal); // short magazine
+  box(g, 0.035, 0.05, 0.1, -0.05, -0.03, tan, 0.3); // grip
+  box(g, 0.05, 0.34, 0.09, -0.26, 0.035, tan, -0.05); // stock
+  box(g, 0.02, 0.03, 0.03, 0.02, 0.1, metal); // mounts
+  box(g, 0.02, 0.03, 0.03, 0.15, 0.1, metal);
+  // Ring sight: look through two rings with a crosshair in the front one.
+  openSight(g, 'rings', -0.01, 0.17, 0.138, 0.02);
+  return { object: g, length: 0.78, bore: 0.07, sightZ: 0.13, sightY: -0.02 };
+};
+
+const revolver = (): WeaponModel => {
+  const g = new THREE.Group();
+  tube(g, 0.011, 0.05, 0.22, 0.055, metal); // barrel
+  box(g, 0.02, 0.17, 0.012, 0.13, 0.072, metal); // top strap
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.06, 8), metal);
+  cyl.position.set(0, 0.03, 0.045);
+  cyl.castShadow = true;
+  g.add(cyl); // cylinder
+  box(g, 0.03, 0.06, 0.04, -0.01, 0.04, metal); // frame
+  box(g, 0.03, 0.05, 0.1, -0.03, -0.03, wood, 0.35); // grip
+  box(g, 0.008, 0.012, 0.014, 0.21, 0.082, steel); // front sight
+  box(g, 0.02, 0.012, 0.012, -0.02, 0.08, steel); // rear notch
+  return { object: g, length: 0.22, bore: 0.055, sightZ: 0.086, sightY: -0.02 };
+};
+
 const knife = (): WeaponModel => {
   const g = new THREE.Group();
   tube(g, 0.016, -0.1, 0.02, 0, polymer); // handle
@@ -130,9 +229,13 @@ export const weaponModels = (rifle: PropTemplate): Record<WeaponId, WeaponModel>
     sniper: sniper(),
     lmg: lmg(),
     pistol: pistol(),
-    knife: knife()
+    knife: knife(),
+    ak: ak(),
+    burst: burst(),
+    dmr: dmr(),
+    revolver: revolver()
   };
-  return cache;
+  return cache!;
 };
 
 /** A frag grenade mesh (shared geometry). */

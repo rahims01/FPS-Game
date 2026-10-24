@@ -7,7 +7,11 @@ const GUN_TONE: Record<string, { bright: number; length: number; pitch: number; 
   shotgun: { bright: 0.7, length: 1.8, pitch: 0.7, gain: 1.3 },
   sniper: { bright: 0.9, length: 2.4, pitch: 0.6, gain: 1.4 },
   lmg: { bright: 0.85, length: 1.1, pitch: 0.85, gain: 1.05 },
-  pistol: { bright: 1.25, length: 0.8, pitch: 1.4, gain: 0.85 }
+  pistol: { bright: 1.25, length: 0.8, pitch: 1.4, gain: 0.85 },
+  ak: { bright: 0.85, length: 1.15, pitch: 0.8, gain: 1.15 },
+  burst: { bright: 1.05, length: 0.9, pitch: 1.1, gain: 0.95 },
+  dmr: { bright: 0.95, length: 1.7, pitch: 0.75, gain: 1.25 },
+  revolver: { bright: 0.9, length: 1.6, pitch: 0.75, gain: 1.3 }
 };
 
 /**
@@ -102,12 +106,33 @@ export class GameAudio {
     o.stop(t + dur);
   }
 
+  /** The hit marker "tick": a short bright click, sharper on headshots, with a chime on kills. */
   hitMarker(head: boolean, kill: boolean): void {
+    this.click(head ? 0.32 : 0.22, head ? 5200 : 3800);
+    if (head) this.click(0.2, 7000, 0.035);
     if (kill) {
       this.beep(880, 0.08, 0.25, 'triangle');
       this.beep(1320, 0.14, 0.25, 'triangle', 0.06);
-    } else if (head) this.beep(1600, 0.07, 0.22, 'triangle');
-    else this.beep(2400, 0.03, 0.1, 'square');
+    }
+  }
+
+  private click(gain: number, freq: number, delay = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.noise) return;
+    const out = this.out(gain, 0);
+    if (!out) return;
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq;
+    bp.Q.value = 3;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(1, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+    src.connect(bp).connect(env).connect(out);
+    src.start(t, Math.random() * 0.3, 0.06);
   }
 
   hurt(): void {

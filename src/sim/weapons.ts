@@ -1,6 +1,6 @@
 import type { HitRegion } from './config';
 
-export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife';
+export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife' | 'burst' | 'dmr' | 'ak' | 'revolver';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -41,6 +41,9 @@ export interface WeaponDef {
    * pulled against. It resets once the trigger rests.
    */
   pattern: [number, number][];
+  /** Rounds per trigger pull for burst weapons, fired `burstGap` seconds apart. */
+  burst?: number;
+  burstGap?: number;
 }
 
 const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' | 'range' | 'pattern'> & Partial<WeaponDef>): WeaponDef => ({
@@ -188,6 +191,95 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsFov: 10,
     preferredRange: 12
   }),
+  burst: gun({
+    id: 'burst',
+    name: 'M4 Burst Rifle',
+    tag: 'BURST',
+    slot: 'primary',
+    damage: { head: 100, torso: 34, legs: 24 },
+    interval: 0.3,
+    burst: 3,
+    burstGap: 0.065,
+    auto: false,
+    magazine: 30,
+    reload: 2.2,
+    spreadStill: 0.003,
+    spreadMoving: 0.02,
+    falloffStart: 35,
+    falloffEnd: 80,
+    minMul: 0.8,
+    recoil: 0.01,
+    move: 1,
+    adsFov: 20,
+    preferredRange: 22,
+    pattern: [[1, 0.1], [1.15, -0.1], [1.25, 0.15]]
+  }),
+  dmr: gun({
+    id: 'dmr',
+    name: 'Marksman DMR',
+    tag: 'DMR',
+    slot: 'primary',
+    damage: { head: 140, torso: 55, legs: 40 },
+    interval: 0.3,
+    auto: false,
+    magazine: 15,
+    reload: 2.5,
+    spreadStill: 0.02,
+    spreadMoving: 0.05,
+    adsSpread: 0.08,
+    falloffStart: 999,
+    falloffEnd: 1000,
+    minMul: 1,
+    range: 250,
+    recoil: 0.03,
+    move: 0.96,
+    adsFov: 34,
+    preferredRange: 28,
+    pattern: [[1, 0.1], [1, -0.1]]
+  }),
+  ak: gun({
+    id: 'ak',
+    name: 'AK-47',
+    tag: 'AK47',
+    slot: 'primary',
+    damage: { head: 105, torso: 36, legs: 24 },
+    interval: 0.11,
+    auto: true,
+    magazine: 30,
+    reload: 2.4,
+    spreadStill: 0.005,
+    spreadMoving: 0.026,
+    falloffStart: 25,
+    falloffEnd: 60,
+    minMul: 0.7,
+    recoil: 0.014,
+    move: 0.97,
+    adsFov: 16,
+    preferredRange: 16,
+    pattern: [[1, 0], [1.3, 0.1], [1.4, 0.3], [1.4, 0.5], [1.2, 0.7], [1, 0.3], [0.9, -0.3], [0.9, -0.8], [0.8, -1], [0.8, -0.6], [0.7, 0.2], [0.7, 0.8], [0.7, 0.9], [0.6, 0.3], [0.6, -0.4]]
+  }),
+  revolver: gun({
+    id: 'revolver',
+    name: 'Magnum Revolver',
+    tag: 'MAGNUM',
+    slot: 'secondary',
+    damage: { head: 110, torso: 55, legs: 35 },
+    interval: 0.45,
+    auto: false,
+    magazine: 6,
+    reload: 2.6,
+    spreadStill: 0.005,
+    spreadMoving: 0.016,
+    adsSpread: 0.4,
+    falloffStart: 20,
+    falloffEnd: 50,
+    minMul: 0.7,
+    recoil: 0.05,
+    move: 1.05,
+    pattern: [[1, 0.2], [1, -0.2]],
+    adsFov: 10,
+    preferredRange: 14
+  }),
   knife: gun({
     id: 'knife',
     name: 'Combat Knife',
@@ -211,7 +303,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   })
 };
 
-export const PRIMARIES: WeaponId[] = ['rifle', 'smg', 'shotgun', 'sniper', 'lmg'];
+export const PRIMARIES: WeaponId[] = ['rifle', 'ak', 'burst', 'smg', 'shotgun', 'dmr', 'sniper', 'lmg'];
+export const SECONDARIES: WeaponId[] = ['pistol', 'revolver'];
 
 /** Gun Game ladder: two kills per gun, the knife kill wins. */
 export const GUN_GAME_LADDER: WeaponId[] = ['pistol', 'smg', 'shotgun', 'rifle', 'lmg', 'sniper', 'knife'];

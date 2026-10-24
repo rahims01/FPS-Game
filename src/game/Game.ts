@@ -9,14 +9,16 @@ import { eyeHeight, weaponOf, type Agent, type DeathCause } from '../sim/Agent';
 import { grenadeMesh, weaponModels } from '../assets/weaponModels';
 import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, type WeaponId } from '../sim/weapons';
 import { MEDALS, loadProfile, saveProfile, type Medal } from './progression';
+import { SKINS } from '../assets/skins';
+import { streakDef } from '../sim/killstreaks';
 import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
-import { Match, TARGETS, type MatchOptions, type ModeId } from '../sim/Match';
+import { Match, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, cssColor, lateJoinerColor, randomUsername, type Identities } from './identity';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
-import type { GameSettings } from './settings';
+import { touchEnabled, type GameSettings } from './settings';
 import type { ClientSession, HostSession } from '../net/Session';
 import type { Snapshot, StartMsg } from '../net/protocol';
 import { applySnapshot, type NetTarget } from '../net/snapshot';
@@ -35,6 +37,13 @@ export interface ScoreRow {
   alive: boolean;
   isPlayer: boolean;
   ally: boolean;
+  damage: number;
+  /** Hit percentage (0..100), or -1 if no shots. */
+  accuracy: number;
+  headshots: number;
+  bestStreak: number;
+  /** Bots in online rooms are labelled as such. */
+  bot: boolean;
 }
 
 export interface KillFeedEntry {
@@ -125,6 +134,18 @@ export interface HudState {
   /** Online round-trip time to the host in ms (null when not a client). */
   ping: number | null;
   online: boolean;
+  /** Watching another player (after dying in a no-respawn mode, or benched online). */
+  spectating: { name: string; color: string; weapon: string } | null;
+  /** Benched in an online room: watching the whole match. */
+  spectator: boolean;
+  chatOpen: boolean;
+  /** Best player of the match (agent id), for the end screen. */
+  mvp: number;
+  /** Counter-UAV: your minimap is jammed. */
+  jammed: boolean;
+  /** Your three killstreaks, for the HUD. */
+  streaks: { name: string; kills: number; earned: boolean }[];
+  touch: boolean;
 }
 
 /** One recorded agent state for the killcam. */
@@ -145,18 +166,14 @@ interface Snap {
   alive: boolean;
   /** Aiming down sights (bots aim whenever they have a target in view). */
   aiming: boolean;
+  hp: number;
+  ammo: number;
+  streak: number;
 }
 
 const KILLCAM_BEFORE = 3.5;
 const KILLCAM_AFTER = 0.6;
 const KILLCAM_DELAY = 0.9;
-
-/** Shown to the player as they approach each killstreak. */
-const STREAK_LADDER = [
-  { kills: 3, name: 'UAV' },
-  { kills: 5, name: 'Airstrike' },
-  { kills: 8, name: 'Juggernaut' }
-];
 
 const causeName = (c: DeathCause): string =>
   c === 'grenade' ? 'Frag Grenade' : c === 'airstrike' ? 'Airstrike' : c === 'zone' ? 'The Zone' : WEAPONS[c as WeaponId]?.name ?? c;
@@ -239,6 +256,8 @@ export class Game {
   // Killcam (1v1 only): a short history of every agent plus the shots fired.
   private history: { t: number; s: Snap[] }[] = [];
   private shotLog: { t: number; shooter: number; ex: number; ey: number; ez: number }[] = [];
+  /** Hits, for replaying the killer's hit markers and damage numbers in the killcam. */
+  private hitLog: { t: number; attacker: number; target: number; amount: number; head: boolean; killed: boolean; x: number; y: number; z: number }[] = [];
   private pendingKillcam: { at: number; killer: number; victim: number; deathT: number } | null = null;
   private killcam: {
     killer: number;
@@ -251,6 +270,24 @@ export class Game {
     weapon: WeaponId;
   } | null = null;
   private recordTick = 0;
+  private endFrameDrawn = false;
+  // Spectating.
+  /** Benched in an online room: never plays, only watches. */
+  readonly spectator: boolean;
+  private specId = -1;
+  private specShown = -1;
+  // Floating damage numbers.
+  private dmgNumbers: { target: number; sprite: THREE.Sprite; amount: number; head: boolean; born: number; x: number; y: number; z: number }[] = [];
+  // Skin unlocks this match.
+  private baseWeaponKills: Record<string, number> = {};
+  private weaponKills: Record<string, number> = {};
+  // Chat and touch.
+  chatOpen = false;
+  /** Touch: the scoreboard button is held. */
+  showScores = false;
+  private touchMode = false;
+  /** Touch controls: stick (-1..1) and held buttons. */
+  readonly touch = { moveX: 0, moveY: 0, fire: false, aim: false, sprint: false, crouch: false };
 
   constructor(
     private container: HTMLElement,
@@ -268,15 +305,19 @@ export class Game {
       ...opts,
       botControl: control,
       seed: client ? client.start.seed : net?.role === 'host' ? net.seed : opts.seed,
-      ...(client ? { mode: client.start.mode, difficulty: client.start.difficulty, humans: client.start.humans.length } : {})
+      ...(client ? { mode: client.start.mode, difficulty: client.start.difficulty, humans: client.start.humans.length, rules: client.start.rules } : {})
     });
     const sim = this.match.sim;
+    this.spectator = client ? client.start.spectate : net?.role === 'host' ? !net.session.hostPlaying : false;
     if (client) {
       // Mirror the host's match: we steer our own soldier, everyone else comes from snapshots.
-      const me = sim.agents[client.start.you];
       sim.agents[0].control = 'remote';
-      me.control = 'player';
-      this.match.player = me;
+      const me = sim.agents[client.start.you];
+      if (me) {
+        me.control = 'player';
+        this.match.player = me;
+        this.match.streakChoices[me.id] = settings.streaks;
+      }
       sim.puppet = true;
       sim.onKill = null;
       sim.onPickup = null;
@@ -316,15 +357,17 @@ export class Game {
     this.scene.add(this.arenaView.group, this.effects.group);
     this.physics = new PhysicsWorld(sim.arena);
     this.viewmodel = new Viewmodel(weaponModels(assets.rifle), flashTexture());
+    this.viewmodel.skins = settings.skins;
+    this.baseWeaponKills = { ...loadProfile().weaponKills };
     this.scene.add(this.grenadeGroup);
 
     const p = this.match.player;
     this.yaw = p.yaw;
     if (client) {
-      this.ids = { names: client.start.names.slice(), colors: client.start.colors.slice(), teamColors: client.start.teamColors };
+      this.ids = { names: client.start.names.slice(), colors: client.start.colors.slice(), teamColors: client.start.teamColors, skins: client.start.skins.slice() };
     } else {
-      this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor);
-      if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors);
+      this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor, settings.skins);
+      if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins);
     }
     this.yaw = this.match.player.yaw;
     if (this.ids.teamColors) this.arenaView.teamColors = this.ids.teamColors;
@@ -351,7 +394,82 @@ export class Game {
 
   requestLock(): void {
     this.audio.unlock();
-    void this.renderer.domElement.requestPointerLock?.();
+    if (this.touchMode) {
+      this.locked = true;
+      this.paused = false;
+      return;
+    }
+    // Browsers may refuse (no user gesture yet, or an unfocused document); the pause screen handles that.
+    void Promise.resolve(this.renderer.domElement.requestPointerLock?.()).catch(() => {});
+  }
+
+  /** Touch screens play without pointer lock: the on-screen controls drive the input. */
+  setTouchMode(on: boolean): void {
+    if (on === this.touchMode) return;
+    this.touchMode = on;
+    if (on) this.releaseLock();
+  }
+
+  /** Touch: pauses (the on-screen pause button). */
+  pause(): void {
+    if (this.touchMode) {
+      this.locked = false;
+      this.paused = true;
+      this.clearTouch();
+    } else this.releaseLock();
+  }
+
+  private clearTouch(): void {
+    const t = this.touch;
+    t.moveX = t.moveY = 0;
+    t.fire = t.aim = t.sprint = t.crouch = false;
+  }
+
+  /** Touch: drag to look (pixels). */
+  touchLook(dx: number, dy: number): void {
+    if (!this.locked) return;
+    const s = this.settings;
+    const ads = this.viewmodel.adsAmount;
+    const k = 0.0045 * s.sensitivity * (1 + (s.adsSensitivity - 1) * ads);
+    this.yaw -= dx * k;
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * k * (s.invertY ? -1 : 1), -1.45, 1.45);
+    this.lookDX += dx;
+    this.lookDY += dy;
+  }
+
+  /** Touch: one-shot buttons. */
+  touchPress(action: 'jump' | 'reload' | 'grenade' | 'melee' | 'swap' | 'fire'): void {
+    if (!this.locked) return;
+    if (action === 'fire') {
+      if (this.killcam) this.endKillcam();
+      else if (this.watching()) this.cycleSpectate(1);
+      else if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
+      return;
+    }
+    if (action === 'jump') {
+      if (this.killcam) {
+        this.endKillcam();
+        return;
+      }
+      this.jumpQueued = true;
+      if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
+    }
+    if (action === 'reload') this.reloadQueued = true;
+    if (action === 'grenade') this.grenadeQueued = true;
+    if (action === 'melee') this.meleeQueued = true;
+    if (action === 'swap') this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
+  }
+
+  /** Opens the chat box (online rooms only); game keys are ignored while typing. */
+  openChat(): void {
+    if (!this.net) return;
+    this.chatOpen = true;
+    this.keys.clear();
+    this.mouse.left = this.mouse.right = false;
+  }
+
+  closeChat(): void {
+    this.chatOpen = false;
   }
 
   releaseLock(): void {
@@ -359,6 +477,7 @@ export class Game {
   }
 
   private onLockChange = () => {
+    if (this.touchMode) return;
     this.locked = document.pointerLockElement === this.renderer.domElement;
     this.paused = !this.locked;
     if (!this.locked) {
@@ -373,13 +492,22 @@ export class Game {
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (!this.locked) return;
+    if (!this.locked || this.chatOpen) return;
     const k = this.settings.keys;
+    if (e.code === k.chat && this.net) {
+      e.preventDefault();
+      this.openChat();
+      return;
+    }
     if (e.code === 'Tab' || e.code === k.scores) e.preventDefault();
     if (e.repeat) return;
     this.keys.add(e.code);
     if (e.code === k.jump && this.killcam) {
       this.endKillcam();
+      return;
+    }
+    if (e.code === k.jump && this.watching()) {
+      this.cycleSpectate(1);
       return;
     }
     if (e.code === k.jump) {
@@ -414,6 +542,10 @@ export class Game {
     if (!this.locked) return;
     if (e.button === 0 && this.killcam) {
       this.endKillcam();
+      return;
+    }
+    if (this.watching() && (e.button === 0 || e.button === 2)) {
+      this.cycleSpectate(e.button === 0 ? 1 : -1);
       return;
     }
     if (e.button === 0) {
@@ -465,6 +597,7 @@ export class Game {
     fog.near = Math.min(40, fog.far * 0.4);
     this.camera.far = Math.max(60, fog.far + 20);
     this.camera.updateProjectionMatrix();
+    this.setTouchMode(touchEnabled(s));
     if (!s.toggleAim) this.aimToggled = false;
     if (!s.toggleCrouch) this.crouchToggled = false;
   }
@@ -472,17 +605,18 @@ export class Game {
   private input(): PlayerInput {
     const k = this.keys;
     const b = this.settings.keys;
+    const t = this.touch;
     const inp: PlayerInput = {
-      forward: (k.has(b.forward) || k.has('ArrowUp') ? 1 : 0) - (k.has(b.back) || k.has('ArrowDown') ? 1 : 0),
-      right: (k.has(b.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(b.left) || k.has('ArrowLeft') ? 1 : 0),
+      forward: THREE.MathUtils.clamp((k.has(b.forward) || k.has('ArrowUp') ? 1 : 0) - (k.has(b.back) || k.has('ArrowDown') ? 1 : 0) - t.moveY, -1, 1),
+      right: THREE.MathUtils.clamp((k.has(b.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(b.left) || k.has('ArrowLeft') ? 1 : 0) + t.moveX, -1, 1),
       yaw: this.yaw,
       pitch: this.pitch,
-      fire: this.mouse.left,
-      aim: this.settings.toggleAim ? this.aimToggled : this.mouse.right,
+      fire: this.mouse.left || t.fire,
+      aim: (this.settings.toggleAim ? this.aimToggled : this.mouse.right) || t.aim,
       reload: this.reloadQueued,
       jump: this.jumpQueued,
-      sprint: k.has(b.sprint),
-      crouch: this.settings.toggleCrouch ? this.crouchToggled : k.has(b.crouch),
+      sprint: k.has(b.sprint) || t.sprint || -t.moveY > 0.92,
+      crouch: (this.settings.toggleCrouch ? this.crouchToggled : k.has(b.crouch)) || t.crouch,
       melee: this.meleeQueued,
       grenade: this.grenadeQueued,
       switchSlot: this.switchQueued
@@ -517,12 +651,25 @@ export class Game {
   }
 
   private advance(now: number, render: boolean): void {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // Clamped: animation-frame timestamps and the background ticker can arrive out of order.
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     if (render && dt > 0) this.fps += (1 / dt - this.fps) * 0.05;
     this.last = now;
     const sim = this.match.sim;
     const player = this.match.player;
 
+    // Once the match is over (and any killcam has played) everything stops: no
+    // simulation, physics or drawing behind the end screen.
+    const ended = this.match.phase === 'over' && !this.pendingKillcam && !this.killcam;
+    if (ended) {
+      if (this.net?.role === 'host') this.net.session.tick(now);
+      if (render && !this.endFrameDrawn) {
+        this.endFrameDrawn = true;
+        this.renderFrame(0, 1);
+      }
+      this.acc = 0;
+      return;
+    }
     // Online matches never pause: other people are still playing.
     if (!this.paused || this.net) {
       this.acc += dt;
@@ -532,7 +679,9 @@ export class Game {
         const ammoBefore = player.ammo;
         const reloadBefore = player.reloadT;
         const input = this.input();
-        if (net?.role === 'client') {
+        if (net?.role === 'client' && this.spectator) {
+          // Watching only: everything comes from the host.
+        } else if (net?.role === 'client') {
           // Predict our own soldier locally; send inputs to the host at 30 Hz.
           net.session.press(input);
           sim.stepLocal(player, input);
@@ -542,8 +691,8 @@ export class Game {
           this.match.step(input);
           if (net) net.session.clearOneShots();
         }
-        if (player.ammo < ammoBefore) this.viewmodel.fire();
-        if (player.reloadT > 0 && reloadBefore <= 0) this.audio.reload();
+        if (player.ammo < ammoBefore && !this.spectator) this.viewmodel.fire();
+        if (player.reloadT > 0 && reloadBefore <= 0 && !this.spectator) this.audio.reload();
         const events = sim.drainEvents();
         if (net?.role === 'host') net.session.queueEvents(events);
         this.handleEvents(events);
@@ -567,7 +716,7 @@ export class Game {
   /** Allies' tags always show; an enemy's only while you can see them within 45 m. */
   private tagVisible(a: Agent): boolean {
     const me = this.match.player;
-    if (a.team === me.team) return true;
+    if (a.team === me.team || this.spectator) return true;
     const c = this.camera.position;
     const tx = a.x;
     const ty = a.y + 1.7;
@@ -581,7 +730,8 @@ export class Game {
   private ensureIdentity(id: number): void {
     const a = this.match.sim.agents[id];
     while (this.ids.names.length <= id) {
-      this.ids.names.push(randomUsername());
+      this.ids.names.push(this.net ? `Bot ${this.ids.names.length + 1}` : randomUsername());
+      this.ids.skins.push(null);
       this.ids.colors.push(lateJoinerColor(this.ids, a ? a.team : 1));
     }
   }
@@ -593,6 +743,14 @@ export class Game {
     // Survival waves are faceless: Enemy 1, Enemy 2, ...
     if (this.match.mode === 'survival' && agents[id]?.team === 1) return `Enemy ${agents.filter((a) => a.team === 1 && a.id <= id).length}`;
     return this.ids.names[id];
+  }
+
+  /** Agents played by people (online), for labelling everyone else as a bot. */
+  private isHumanId(id: number): boolean {
+    const net = this.net;
+    if (net?.role === 'client') return net.start.humans.includes(id);
+    const a = this.match.sim.agents[id];
+    return !!a && (a.control === 'player' || a.control === 'remote');
   }
 
   private colorOf(id: number): number {
@@ -610,8 +768,8 @@ export class Game {
       v = undefined;
     }
     if (!v) {
-      v = new SoldierView(this.assets, a, this.colorOf(a.id));
-      if (a !== this.match.player) v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team);
+      v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {});
+      if (a !== this.match.player || this.spectator) v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team);
       this.scene.add(v.root);
       this.views.set(a.id, v);
       this.prev.set(a.id, { x: a.x, y: a.y, z: a.z });
@@ -632,9 +790,12 @@ export class Game {
         if (e.first) this.shotLog.push({ t: sim.time, shooter: e.shooter, ex: e.ex, ey: e.ey, ez: e.ez });
         const end = this.tmpB.set(e.ex, e.ey, e.ez);
         let from: THREE.Vector3;
-        if (shooter === player) {
+        if ((shooter === player && !this.spectator) || shooter.id === this.specShown) {
           from = this.camera.localToWorld(this.viewmodel.muzzleLocal(this.tmpA));
-          if (e.first) this.audio.gunshot(0, 0, true, e.weapon);
+          if (e.first) {
+            this.audio.gunshot(0, 0, true, e.weapon);
+            if (shooter.id === this.specShown) this.viewmodel.fire();
+          }
         } else {
           const v = this.views.get(shooter.id);
           from = v ? v.muzzle(this.tmpA) : this.tmpA.set(e.ox, e.oy, e.oz);
@@ -656,10 +817,15 @@ export class Game {
           }
         }
       } else if (e.type === 'damage') {
-        if (e.attacker === player.id && e.target !== player.id) {
+        const victim = sim.agents[e.target];
+        if (victim && e.attacker >= 0 && e.amount > 0) {
+          this.hitLog.push({ t: sim.time, attacker: e.attacker, target: e.target, amount: e.amount, head: e.region === 'head', killed: e.killed, x: victim.x, y: victim.y, z: victim.z });
+        }
+        if (e.attacker === player.id && e.target !== player.id && !this.spectator) {
           this.hitMarkerAt = sim.time;
           this.hitMarkerKind = e.killed ? 'kill' : e.region === 'head' ? 'head' : 'hit';
-          this.audio.hitMarker(e.region === 'head', e.killed);
+          if (this.settings.hitSounds) this.audio.hitMarker(e.region === 'head', e.killed);
+          if (this.settings.damageNumbers && e.amount > 0) this.damageNumber(e.target, e.amount, e.region === 'head', e.killed);
         }
         if (e.target === player.id) {
           const attacker = sim.agents[e.attacker];
@@ -687,7 +853,7 @@ export class Game {
         v.setVisible(true);
         v.die(victim, this.physics, sim.time);
         if (e.attacker >= 0) this.effects.bloodPool(victim.x, victim.z);
-        if (victim === player && killer && killer !== victim) {
+        if (victim === player && killer && killer !== victim && !this.spectator) {
           this.pendingKillcam = { at: sim.time + KILLCAM_DELAY, killer: killer.id, victim: victim.id, deathT: sim.time };
         }
         if (victim === player) {
@@ -703,7 +869,7 @@ export class Game {
             headshot: e.region === 'head'
           };
         }
-        if (killer === player && victim !== player) this.awardKill(e, victim);
+        if (killer === player && victim !== player && !this.spectator) this.awardKill(e, victim);
         if (killer && !this.firstBlood) this.firstBlood = true;
         this.capRagdolls();
       } else if (e.type === 'explosion') {
@@ -813,12 +979,16 @@ export class Game {
         weapon: a.weapons[a.slot] ?? 'rifle',
         lastShotT: a.lastShotT,
         alive: a.alive,
-        aiming: a.aiming
+        aiming: a.aiming,
+        hp: a.hp,
+        ammo: a.ammo,
+        streak: a.streak
       }))
     });
     const keep = sim.time - (KILLCAM_BEFORE + KILLCAM_AFTER + KILLCAM_DELAY + 1);
     while (this.history.length && this.history[0].t < keep) this.history.shift();
     while (this.shotLog.length && this.shotLog[0].t < keep) this.shotLog.shift();
+    while (this.hitLog.length && this.hitLog[0].t < keep) this.hitLog.shift();
   }
 
   /** Recorded state of agent `id` at time `t`, interpolated. */
@@ -893,7 +1063,7 @@ export class Game {
       shown.add(a.id);
       let ghost = kc.ghosts.get(a.id);
       if (!ghost) {
-        ghost = new SoldierView(this.assets, { ...a, life: -1 }, this.colorOf(a.id));
+        ghost = new SoldierView(this.assets, { ...a, life: -1 }, this.colorOf(a.id), this.ids.skins[a.id] ?? {});
         this.scene.add(ghost.root);
         kc.ghosts.set(a.id, ghost);
       }
@@ -919,7 +1089,15 @@ export class Game {
     }
     if (killer.weapon !== this.lastWeapon) {
       this.lastWeapon = killer.weapon;
-      this.viewmodel.setWeapon(killer.weapon);
+      this.viewmodel.setWeapon(killer.weapon, this.ids.skins[kc.killer] ?? {});
+    }
+    // The killer's hits: hit markers, the tick and damage numbers, as they saw them.
+    for (const h of this.hitLog) {
+      if (h.t <= prev || h.t > kc.clock || h.attacker !== kc.killer) continue;
+      this.hitMarkerAt = sim.time;
+      this.hitMarkerKind = h.killed ? 'kill' : h.head ? 'head' : 'hit';
+      if (this.settings.hitSounds) this.audio.hitMarker(h.head, h.killed);
+      if (this.settings.damageNumbers) this.damageNumber(h.target, h.amount, h.head, h.killed, h);
     }
     // Replay the shots fired in this slice of time.
     for (const sh of this.shotLog) {
@@ -995,6 +1173,13 @@ export class Game {
     const player = this.match.player;
     this.medal(MEDALS.kill);
     const gun = e.cause !== 'grenade' && e.cause !== 'airstrike' && e.cause !== 'knife' && e.cause !== 'zone';
+    if (WEAPONS[e.cause as WeaponId]) {
+      const w = e.cause as WeaponId;
+      this.weaponKills[w] = (this.weaponKills[w] ?? 0) + 1;
+      const total = (this.baseWeaponKills[w] ?? 0) + this.weaponKills[w];
+      const unlocked = SKINS.find((s) => s.kills === total);
+      if (unlocked && unlocked.kills > 0) this.callout(`Unlocked: ${unlocked.name} camo for the ${WEAPONS[w].name}`);
+    }
     if (gun && e.region === 'head') this.medal(MEDALS.headshot);
     if (e.cause === 'knife') this.medal(MEDALS.knife);
     if (e.cause === 'grenade') this.medal(MEDALS.frag);
@@ -1030,9 +1215,30 @@ export class Game {
     while (m.notices.length) {
       const n = m.notices.shift()!;
       if (n.kind === 'streak') {
-        if (n.agent !== me) continue;
-        this.callout(n.name === 'UAV' ? 'UAV online: enemies shown on your minimap' : n.name === 'Airstrike' ? 'Airstrike inbound!' : 'Juggernaut armour equipped');
+        if (n.id === 'nuke') {
+          this.callout(n.agent === me && !this.spectator ? 'TACTICAL NUKE INCOMING' : `${this.nameOf(n.agent)} called in a Tactical Nuke!`);
+          this.audio.whistle();
+          continue;
+        }
+        if (n.agent !== me || this.spectator) continue;
+        const lines: Record<string, string> = {
+          adrenaline: 'Adrenaline: full health and faster movement',
+          uav: 'UAV online: enemies shown on your minimap',
+          supply: 'Supply drop: health, ammo and grenades refilled',
+          counter: 'Counter-UAV: enemy minimaps jammed',
+          airstrike: 'Airstrike inbound!',
+          cluster: 'Cluster strike inbound!',
+          jugg: 'Juggernaut armour equipped'
+        };
+        this.callout(lines[n.id] ?? `${n.name}!`);
         this.audio.fanfare();
+      } else if (n.kind === 'cranked') {
+        if (n.agent !== me) continue;
+        if (n.event === 'cranked') this.callout('CRANKED! Get a kill every 30 s or explode');
+        this.audio.whistle();
+      } else if (n.kind === 'defender') {
+        if (n.event === 'taken') this.callout(n.agent === me ? 'You have the flag! Your kills count double' : n.team === m.player.team ? `${this.nameOf(n.agent)} grabbed the flag` : 'The enemy has the flag');
+        else this.callout(n.team === m.player.team ? 'Your team dropped the flag' : 'The enemy dropped the flag');
       } else if (n.kind === 'capture' && n.on.includes(me) && n.team === m.player.team) this.medal(MEDALS.captured);
       else if (n.kind === 'tag' && n.by === me) this.medal(n.confirmed ? MEDALS.confirmed : MEDALS.denied);
       else if (n.kind === 'infected') {
@@ -1098,6 +1304,7 @@ export class Game {
         }
       }
     }
+    if (m.phase === 'over' && !this.xpBanked && this.spectator) this.xpBanked = true;
     if (m.phase === 'over' && !this.xpBanked) {
       this.xpBanked = true;
       this.medal(MEDALS.played);
@@ -1109,6 +1316,7 @@ export class Game {
       if (won) prof.wins++;
       prof.kills += m.player.kills;
       prof.deaths += m.player.deaths;
+      for (const [w, k] of Object.entries(this.weaponKills)) prof.weaponKills[w] = (prof.weaponKills[w] ?? 0) + k;
       saveProfile(prof);
     }
   }
@@ -1142,8 +1350,8 @@ export class Game {
       const x = p.x + (a.x - p.x) * alpha;
       const y = p.y + (a.y - p.y) * alpha;
       const z = p.z + (a.z - p.z) * alpha;
-      // The player's own body is only shown once it is a corpse.
-      v.setVisible(a !== player || !a.alive);
+      // The player's own body is only shown once it is a corpse (and nobody's while we look through their eyes).
+      v.setVisible(((a !== player || this.spectator) && a.id !== this.specShown) || !a.alive);
       const frozen = sim.isFrozen(a);
       v.setFrozen(frozen);
       if (dt > 0 || a !== player) v.update(a, x, y, z, frozen ? 0 : dt, time);
@@ -1156,7 +1364,7 @@ export class Game {
         if (stride > len) {
           this.stride.set(a.id, 0);
           const vol = a.crouching ? 0 : a.sprinting ? 1 : 0.6;
-          if (a === player) this.audio.footstep(0.5, 0, vol * 0.5);
+          if (a === player && !this.spectator) this.audio.footstep(0.5, 0, vol * 0.5);
           else if (vol > 0) {
             const d = this.distTo(a.x, a.z);
             if (d < 30) this.audio.footstep(d, this.panTo(a.x, a.z), vol);
@@ -1182,10 +1390,14 @@ export class Game {
     });
 
     const inKillcam = this.updateKillcam(dt);
+    const spec = inKillcam ? null : this.spectateTarget();
+    this.specShown = spec ? spec.id : -1;
     // Camera.
     if (inKillcam) {
       // The killcam drives the camera and viewmodel.
-    } else if (player.alive) {
+    } else if (spec) {
+      this.spectateCamera(spec, dt, alpha);
+    } else if (player.alive && !this.spectator) {
       const p = this.prev.get(player.id) ?? player;
       const x = p.x + (player.x - p.x) * alpha;
       const y = p.y + (player.y - p.y) * alpha;
@@ -1228,7 +1440,8 @@ export class Game {
       }
     }
 
-    if (!inKillcam) this.updateViewmodel(dt);
+    if (!inKillcam && !spec) this.updateViewmodel(dt);
+    this.updateDamageNumbers(time);
     this.lookDX = 0;
     this.lookDY = 0;
     this.arenaView.update(time, this.camera.position);
@@ -1240,12 +1453,161 @@ export class Game {
     this.renderer.render(this.viewmodel.scene, this.viewmodel.camera);
   }
 
+  // ---------------------------------------------------------------- spectating
+
+  /** True while we are watching someone else (benched, or out of lives / out for the round). */
+  private watching(): boolean {
+    return !this.killcam && !!this.spectateTarget();
+  }
+
+  private spectateCandidates(): Agent[] {
+    const m = this.match;
+    const p = m.player;
+    const alive = m.sim.agents.filter((a) => a.alive && (this.spectator || a !== p));
+    if (this.spectator || !m.def.teams) return alive;
+    // Teammates first; the whole lobby once the team is wiped.
+    const team = alive.filter((a) => a.team === p.team);
+    return team.length ? team : alive;
+  }
+
+  private spectateTarget(): Agent | null {
+    const m = this.match;
+    const p = m.player;
+    const want = this.spectator || (!p.alive && !this.pendingKillcam && this.deathCamT > 2.5 && !m.respawns(p) && m.phase !== 'over');
+    if (!want) {
+      this.specId = -1;
+      return null;
+    }
+    const pool = this.spectateCandidates();
+    if (!pool.length) return null;
+    let t = pool.find((a) => a.id === this.specId);
+    if (!t) {
+      t = pool[0];
+      this.specId = t.id;
+    }
+    return t;
+  }
+
+  private cycleSpectate(dir: number): void {
+    const pool = this.spectateCandidates();
+    if (!pool.length) return;
+    const i = pool.findIndex((a) => a.id === this.specId);
+    this.specId = pool[(i + dir + pool.length) % pool.length].id;
+  }
+
+  /** First person through the spectated player's eyes, with their gun. */
+  private spectateCamera(t: Agent, dt: number, alpha: number): void {
+    const p = this.prev.get(t.id) ?? t;
+    const x = p.x + (t.x - p.x) * alpha;
+    const y = p.y + (t.y - p.y) * alpha;
+    const z = p.z + (t.z - p.z) * alpha;
+    this.camera.position.set(x, y + eyeHeight(t), z);
+    this.camera.rotation.set(t.pitch + (t.control === 'player' ? t.recoil : 0), t.yaw + Math.PI, 0);
+    const w = weaponOf(t);
+    const zoom = w.scope ? Math.max(0, this.settings.fov - 20) : w.adsFov;
+    const fov = this.settings.fov - this.viewmodel.adsAmount * zoom;
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    const key = `${t.id}:${w.id}`;
+    if (key !== this.lastSpecWeapon) {
+      this.lastSpecWeapon = key;
+      this.lastWeapon = null;
+      this.viewmodel.setWeapon(w.id, this.ids.skins[t.id] ?? {});
+    }
+    this.viewmodel.update(dt, {
+      speed: Math.hypot(t.vx, t.vz),
+      aiming: t.aiming,
+      sprinting: t.sprinting,
+      reload: t.reloadT > 0 && w.reload > 0 ? 1 - t.reloadT / w.reload : 0,
+      switching: t.switchT / 0.45,
+      onGround: t.onGround,
+      lookDX: 0,
+      lookDY: 0,
+      visible: true,
+      scope: w.scope
+    });
+  }
+
+  private lastSpecWeapon = '';
+
+  // ---------------------------------------------------------------- damage numbers
+
+  private damageNumber(target: number, amount: number, head: boolean, killed: boolean, at?: { x: number; y: number; z: number }): void {
+    const a = at ?? this.match.sim.agents[target];
+    if (!a) return;
+    const time = this.match.sim.time;
+    // Pellets and bursts on one target add up into one number.
+    const recent = this.dmgNumbers.find((d) => d.target === target && time - d.born < 0.3);
+    if (recent) {
+      recent.amount += amount;
+      recent.head ||= head;
+      this.paintNumber(recent.sprite, recent.amount, recent.head, killed);
+      return;
+    }
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false }));
+    sprite.renderOrder = 10;
+    this.paintNumber(sprite, amount, head, killed);
+    const side = (Math.random() - 0.5) * 0.5;
+    this.scene.add(sprite);
+    this.dmgNumbers.push({ target, sprite, amount, head, born: time, x: a.x + side, y: a.y + 2.05, z: a.z });
+    if (this.dmgNumbers.length > 24) this.dropNumber(0);
+  }
+
+  private paintNumber(sprite: THREE.Sprite, amount: number, head: boolean, killed: boolean): void {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 64;
+    const g = c.getContext('2d')!;
+    g.font = `900 ${head ? 44 : 38}px system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 7;
+    g.strokeStyle = 'rgba(0,0,0,0.85)';
+    const text = String(Math.round(amount));
+    g.strokeText(text, 64, 34);
+    g.fillStyle = killed ? '#ff5a4a' : head ? '#ffd34d' : '#ffffff';
+    g.fillText(text, 64, 34);
+    const mat = sprite.material;
+    mat.map?.dispose();
+    mat.map = new THREE.CanvasTexture(c);
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    mat.needsUpdate = true;
+  }
+
+  private dropNumber(i: number): void {
+    const d = this.dmgNumbers[i];
+    this.scene.remove(d.sprite);
+    d.sprite.material.map?.dispose();
+    d.sprite.material.dispose();
+    this.dmgNumbers.splice(i, 1);
+  }
+
+  private updateDamageNumbers(time: number): void {
+    for (let i = this.dmgNumbers.length - 1; i >= 0; i--) {
+      const d = this.dmgNumbers[i];
+      const age = time - d.born;
+      if (age > 0.9 || age < 0) {
+        this.dropNumber(i);
+        continue;
+      }
+      d.sprite.position.set(d.x, d.y + age * 0.9, d.z);
+      // Constant size on screen.
+      const dist = this.camera.position.distanceTo(d.sprite.position);
+      const s = Math.max(0.35, dist * 0.045) * (d.head ? 1.15 : 1) * (age < 0.08 ? 1.3 - age * 3.75 : 1);
+      d.sprite.scale.set(s * 2, s, 1);
+      d.sprite.material.opacity = age > 0.55 ? 1 - (age - 0.55) / 0.35 : 1;
+    }
+  }
+
   private updateViewmodel(dt: number): void {
     const player = this.match.player;
     const pw = weaponOf(player);
+    this.lastSpecWeapon = '';
     if (pw.id !== this.lastWeapon) {
       this.lastWeapon = pw.id;
-      this.viewmodel.setWeapon(pw.id);
+      this.viewmodel.setWeapon(pw.id, this.settings.skins);
     }
     this.viewmodel.update(dt, {
       speed: Math.hypot(player.vx, player.vz),
@@ -1256,7 +1618,7 @@ export class Game {
       onGround: player.onGround,
       lookDX: this.lookDX,
       lookDY: this.lookDY,
-      visible: player.alive,
+      visible: player.alive && !this.spectator,
       scope: pw.scope
     });
   }
@@ -1272,7 +1634,13 @@ export class Game {
     let spread = !p.onGround ? w.spreadAir : moving ? w.spreadMoving : w.spreadStill;
     if (p.aiming) spread *= w.adsSpread;
     if (p.crouching) spread *= 0.75;
-    const next = STREAK_LADDER.find((s) => s.kills > p.streak) ?? null;
+    const picks = m.streaksFor(p).map(streakDef);
+    const next = picks.find((s) => s.kills > p.streak) ?? null;
+    const bots = !!this.net;
+    const spec = this.specShown >= 0 ? sim.agents[this.specShown] : null;
+    // During the killcam the HUD shows the killer's health, ammo and crosshair.
+    const kcSnap = this.killcam ? this.snapAt(this.killcam.killer, this.killcam.clock) : null;
+    const mvp = sim.agents.reduce((best, a) => (a.kills * 100 + a.damageDealt > best.kills * 100 + best.damageDealt ? a : best), sim.agents[0]);
     const teamMode = m.def.teams && m.mode !== 'survival';
     const players: ScoreRow[] = sim.agents
       .map((a) => ({
@@ -1282,8 +1650,13 @@ export class Game {
         kills: a.kills,
         deaths: a.deaths,
         alive: a.alive,
-        isPlayer: a === p,
-        ally: a.team === p.team
+        isPlayer: a === p && !this.spectator,
+        ally: a.team === p.team,
+        damage: Math.round(a.damageDealt),
+        accuracy: a.shots > 0 ? Math.round((a.hits / a.shots) * 100) : -1,
+        headshots: a.headshots,
+        bestStreak: a.bestStreak,
+        bot: bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id)
       }))
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
     const hill = sim.rally
@@ -1293,7 +1666,7 @@ export class Game {
           onHill: p.alive && Math.hypot(p.x - sim.rally.x, p.z - sim.rally.z) < sim.rally.r
         }
       : null;
-    return {
+    const state: HudState = {
       mode: m.mode,
       modeName: m.def.name,
       hp: Math.max(0, Math.ceil(p.hp)),
@@ -1311,9 +1684,9 @@ export class Game {
       showTeams: teamMode,
       teamColors: this.ids.teamColors ? [cssColor(this.ids.teamColors[0]), cssColor(this.ids.teamColors[1])] : null,
       players,
-      showScoreboard: this.keys.has(this.settings.keys.scores) && !this.paused,
+      showScoreboard: (this.keys.has(this.settings.keys.scores) || this.showScores) && !this.paused,
       hill,
-      targetScore: TARGETS[m.mode] ?? 0,
+      targetScore: m.goal(m.mode) ?? 0,
       wave: m.wave,
       enemiesLeft: m.enemiesRemaining(),
       kills: p.kills,
@@ -1372,6 +1745,13 @@ export class Game {
       hardcore: m.mode === 'hardcore',
       ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : null,
       online: !!this.net,
+      spectating: spec ? { name: this.nameOf(spec.id), color: cssColor(this.colorOf(spec.id)), weapon: weaponOf(spec).name } : null,
+      spectator: this.spectator,
+      chatOpen: this.chatOpen,
+      mvp: mvp ? mvp.id : -1,
+      jammed: sim.time < (m.party.jamUntil[p.team] ?? -1),
+      streaks: picks.map((s) => ({ name: s.name, kills: s.kills, earned: p.streak >= s.kills })),
+      touch: this.touchMode,
       killcam: this.killcam
         ? { killer: this.nameOf(this.killcam.killer), color: cssColor(this.colorOf(this.killcam.killer)), weapon: WEAPONS[this.killcam.weapon].name }
         : null,
@@ -1384,6 +1764,31 @@ export class Game {
           })()
         : null
     };
+    if (kcSnap) {
+      const kw = WEAPONS[kcSnap.weapon];
+      const moving = Math.hypot(kcSnap.vx, kcSnap.vz) > 0.6;
+      Object.assign(state, {
+        alive: true,
+        hp: Math.max(0, Math.ceil(kcSnap.hp)),
+        ammo: kcSnap.ammo,
+        magazine: kw.magazine,
+        reloading: kcSnap.reloadT > 0 && kw.reload > 0 ? 1 - kcSnap.reloadT / kw.reload : 0,
+        aiming: kcSnap.aiming,
+        spread: (moving ? kw.spreadMoving : kw.spreadStill) * (kcSnap.aiming ? kw.adsSpread : 1),
+        weaponName: kw.name,
+        weaponId: kw.id,
+        loadout: [{ id: kw.id, name: kw.tag, active: true }],
+        grenades: 0,
+        crouching: kcSnap.crouching,
+        protected: false,
+        streak: kcSnap.streak,
+        nextStreak: null,
+        streaks: [],
+        damage: [],
+        killedBy: null
+      });
+    }
+    return state;
   }
 
   /** Top-down map: walls, zone, medkits, allies; enemies only while they are firing. */
@@ -1398,6 +1803,18 @@ export class Game {
     ctx.clearRect(0, 0, size, size);
     ctx.fillStyle = 'rgba(20,24,20,0.72)';
     ctx.fillRect(0, 0, size, size);
+    if (sim.time < (this.match.party.jamUntil[p.team] ?? -1)) {
+      // Counter-UAV: static instead of a map.
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.35})`;
+        ctx.fillRect(Math.random() * size, Math.random() * size, 3, 2);
+      }
+      ctx.fillStyle = '#ff5a4a';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('JAMMED', size / 2, size / 2);
+      return;
+    }
     ctx.fillStyle = 'rgba(200,200,190,0.75)';
     for (const b of sim.arena.boxes) {
       ctx.fillRect(X(b.maxX), Z(b.maxZ), (b.maxX - b.minX) * s, (b.maxZ - b.minZ) * s);

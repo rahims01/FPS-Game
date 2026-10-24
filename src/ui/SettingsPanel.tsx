@@ -94,6 +94,18 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             <Slider label="Field of view" value={settings.fov} min={60} max={115} step={1} fmt={(v) => `${v}°`} onChange={(v) => set({ fov: v })} />
             <Toggle label="Show FPS" value={settings.showFps} onChange={(v) => set({ showFps: v })} />
             <Toggle label="Show ping (online)" value={settings.showPing} onChange={(v) => set({ showPing: v })} />
+            <Toggle label="Damage numbers" hint="Floating numbers on everyone you hit" value={settings.damageNumbers} onChange={(v) => set({ damageNumbers: v })} />
+            <Toggle label="Hit marker sound" value={settings.hitSounds} onChange={(v) => set({ hitSounds: v })} />
+            <Choice
+              label="Touch controls"
+              value={settings.touchControls}
+              options={[
+                ['auto', 'Auto'],
+                ['on', 'On'],
+                ['off', 'Off']
+              ]}
+              onChange={(v) => set({ touchControls: v })}
+            />
           </>
         )}
         {tab === 'graphics' && (

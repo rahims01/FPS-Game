@@ -1,3 +1,4 @@
+import { randomSkin, type SkinChoice } from '../assets/skins';
 import type { Match } from '../sim/Match';
 
 /** Gamer tags for the other players in the lobby. */
@@ -180,6 +181,8 @@ export const isDark = (css: string): boolean => {
 export interface Identities {
   names: string[];
   colors: number[];
+  /** Weapon skins by agent id (null = factory finish everywhere). */
+  skins: (SkinChoice | null)[];
   /** Team colours for team modes, indexed by team (team 0 is yours). */
   teamColors: [number, number] | null;
 }
@@ -189,26 +192,28 @@ export interface Identities {
  * their team's colour (picked at random, so you are not always blue); in
  * free-for-all modes you wear the colour you chose and nobody else does.
  */
-export const assignIdentities = (match: Match, playerName: string, playerColor: number): Identities => {
+export const assignIdentities = (match: Match, playerName: string, playerColor: number, playerSkins: SkinChoice = {}): Identities => {
   const agents = match.sim.agents;
   const tags = tagPool(agents.length);
   const names = agents.map((a, i) => (a === match.player ? playerName : tags[i % tags.length]));
+  // Other players show off a camo on the gun they carry now and then.
+  const skins = agents.map((a): SkinChoice | null => (a === match.player ? playerSkins : Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]))));
   if (match.mode === 'zombies') {
     // Survivors in blue, the horde in rotten green.
     const teamColors: [number, number] = [0x3d7bd9, 0x5f8a2f];
-    return { names, colors: agents.map((a) => teamColors[a.team === 0 ? 0 : 1]), teamColors };
+    return { names, colors: agents.map((a) => teamColors[a.team === 0 ? 0 : 1]), teamColors, skins };
   }
   if (match.def.teams) {
     const pair = TEAM_PAIRS[Math.floor(Math.random() * TEAM_PAIRS.length)];
     const flip = Math.random() < 0.5;
     const teamColors: [number, number] = [COLORS[pair[flip ? 1 : 0]].hex, COLORS[pair[flip ? 0 : 1]].hex];
-    return { names, colors: agents.map((a) => teamColors[a.team === match.player.team ? 0 : 1]), teamColors };
+    return { names, colors: agents.map((a) => teamColors[a.team === match.player.team ? 0 : 1]), teamColors, skins };
   }
   const others = COLORS.map((c) => c.hex)
     .filter((h) => h !== playerColor)
     .sort(() => Math.random() - 0.5);
   let k = 0;
-  return { names, colors: agents.map((a) => (a === match.player ? playerColor : others[k++ % others.length])), teamColors: null };
+  return { names, colors: agents.map((a) => (a === match.player ? playerColor : others[k++ % others.length])), teamColors: null, skins };
 };
 
 /** Colour for agents spawned after the match started (survival waves). */

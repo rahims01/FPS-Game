@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { WeaponModel } from '../assets/weaponModels';
+import { skinned, type SkinChoice } from '../assets/skins';
 import type { WeaponId } from '../sim/weapons';
 
 interface Pose {
@@ -18,8 +19,9 @@ interface Pose {
 const poseFor = (id: WeaponId, m: WeaponModel): Pose => {
   if (id === 'rifle') return { hip: new THREE.Vector3(0.2, -0.24, -0.5), ads: new THREE.Vector3(0, -0.151, -0.161), tilt: 0.078 };
   if (id === 'knife') return { hip: new THREE.Vector3(0.24, -0.25, -0.38), ads: new THREE.Vector3(0.24, -0.25, -0.38), tilt: 0 };
-  const hip = id === 'pistol' ? new THREE.Vector3(0.16, -0.19, -0.46) : new THREE.Vector3(0.2, -0.23, -0.42);
-  const eyeBehind = id === 'pistol' ? 0.3 : 0.16;
+  const handgun = id === 'pistol' || id === 'revolver';
+  const hip = handgun ? new THREE.Vector3(0.16, -0.19, -0.46) : new THREE.Vector3(0.2, -0.23, -0.42);
+  const eyeBehind = handgun ? 0.3 : 0.16;
   return { hip, ads: new THREE.Vector3(0, -(m.sightZ + 0.008), m.sightY - eyeBehind), tilt: 0 };
 };
 
@@ -45,7 +47,9 @@ export class Viewmodel {
   private swingT = 0;
   private current: WeaponId | null = null;
   private pose: Pose = { hip: new THREE.Vector3(), ads: new THREE.Vector3(), tilt: 0 };
-  private copies = new Map<WeaponId, THREE.Object3D>();
+  private copies = new Map<string, THREE.Object3D>();
+  /** Skins for the weapons shown (the player's own, or the killer's in a killcam). */
+  skins: SkinChoice = {};
   /** Scoped weapons hide the gun once fully aimed (the HUD draws the scope). */
   scoped = false;
 
@@ -69,20 +73,25 @@ export class Viewmodel {
     this.setWeapon('rifle');
   }
 
-  setWeapon(id: WeaponId): void {
-    if (id === this.current) return;
+  private currentKey = '';
+
+  setWeapon(id: WeaponId, skins: SkinChoice = this.skins): void {
+    const skin = skins[id] ?? 'none';
+    const key = `${id}:${skin}`;
+    if (key === this.currentKey) return;
+    this.currentKey = key;
     this.current = id;
     const m = this.models[id];
     for (const c of this.copies.values()) c.visible = false;
-    let copy = this.copies.get(id);
+    let copy = this.copies.get(key);
     if (!copy) {
-      copy = m.object.clone(true);
+      copy = skinned(m.object, skin);
       copy.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (mesh.isMesh) mesh.castShadow = false;
       });
       this.holder.add(copy);
-      this.copies.set(id, copy);
+      this.copies.set(key, copy);
     }
     copy.visible = true;
     this.pose = poseFor(id, m);
@@ -100,7 +109,7 @@ export class Viewmodel {
     this.kickRot = 1;
     this.flashLife = 0.04;
     this.flash.material.rotation = Math.random() * Math.PI;
-    const big = this.current === 'shotgun' || this.current === 'sniper' ? 1.6 : 1;
+    const big = this.current === 'shotgun' || this.current === 'sniper' || this.current === 'revolver' ? 1.6 : this.current === 'dmr' || this.current === 'ak' ? 1.25 : 1;
     this.flash.scale.setScalar((0.16 + Math.random() * 0.08) * big);
   }
 
@@ -155,7 +164,7 @@ export class Viewmodel {
     p.z += this.kick * (0.045 - this.adsT * 0.02) - swing * 0.15;
     p.x += this.sprintT * 0.04;
     this.gun.position.copy(p);
-    const kickScale = this.current === 'shotgun' || this.current === 'sniper' ? 2.2 : 1;
+    const kickScale = this.current === 'shotgun' || this.current === 'sniper' || this.current === 'revolver' ? 2.2 : this.current === 'dmr' ? 1.6 : 1;
     this.gun.rotation.set(
       this.adsT * this.pose.tilt + this.kickRot * 0.06 * kickScale * (1 - this.adsT * 0.7) + reloadDip * -0.3 - this.sprintT * 0.25 - switchDip * 0.8 + swing * 0.4,
       this.sprintT * 0.75 + this.swayX * 2 + swing * 1.1,

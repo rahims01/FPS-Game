@@ -11,12 +11,20 @@ export interface Profile {
   wins: number;
   kills: number;
   deaths: number;
+  /** Kills with each weapon (unlocks its skins). */
+  weaponKills: Record<string, number>;
+  /** Ranked skill rating, placement progress and record. */
+  sr: number;
+  bestSr: number;
+  rankedMatches: number;
+  rankedWins: number;
 }
 
 export const loadProfile = (): Profile => {
-  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0 };
+  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0, weaponKills: {}, sr: 1000, bestSr: 1000, rankedMatches: 0, rankedWins: 0 };
   try {
-    return { ...base, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    return { ...base, ...raw, weaponKills: { ...(raw.weaponKills ?? {}) } };
   } catch {
     return base;
   }
@@ -106,3 +114,69 @@ export const MEDALS = {
   win: { name: 'Match Won', xp: 500, big: true },
   played: { name: 'Match Complete', xp: 200 }
 } satisfies Record<string, Medal>;
+
+// ---------------------------------------------------------------- ranked
+
+/** Ranked matches before a division is shown. */
+export const PLACEMENT_MATCHES = 5;
+
+const DIVISIONS = [
+  { name: 'Bronze', min: 0, color: '#c8814a' },
+  { name: 'Silver', min: 900, color: '#c3cbd3' },
+  { name: 'Gold', min: 1200, color: '#f2c94c' },
+  { name: 'Platinum', min: 1500, color: '#5fd3c6' },
+  { name: 'Diamond', min: 1800, color: '#7fb8ff' },
+  { name: 'Champion', min: 2100, color: '#ff6b8a' }
+];
+
+export interface Division {
+  /** e.g. "Gold II", or "Unranked" during placements. */
+  name: string;
+  color: string;
+  /** Progress to the next tier, 0..1. */
+  progress: number;
+  placed: boolean;
+}
+
+export const divisionOf = (p: Profile): Division => {
+  if (p.rankedMatches < PLACEMENT_MATCHES) {
+    return { name: `Placements ${p.rankedMatches}/${PLACEMENT_MATCHES}`, color: '#9aa4ad', progress: p.rankedMatches / PLACEMENT_MATCHES, placed: false };
+  }
+  let i = 0;
+  while (i + 1 < DIVISIONS.length && p.sr >= DIVISIONS[i + 1].min) i++;
+  const d = DIVISIONS[i];
+  if (i === DIVISIONS.length - 1) return { name: d.name, color: d.color, progress: 1, placed: true };
+  // Three tiers per division: III, II, I.
+  const span = (DIVISIONS[i + 1].min - (i === 0 ? 600 : d.min)) / 3;
+  const from = i === 0 ? 600 : d.min;
+  const tier = Math.max(0, Math.min(2, Math.floor((p.sr - from) / span)));
+  return { name: `${d.name} ${['III', 'II', 'I'][tier]}`, color: d.color, progress: Math.max(0, Math.min(1, (p.sr - from - tier * span) / span)), placed: true };
+};
+
+/** Modes in the ranked playlist (team modes where the result is down to how you play). */
+export const RANKED_MODES = ['tdm', 'snd', 'dom', 'koth', '3v3', 'ctf', 'kc'] as const;
+
+/** Opponent sharpness for a rating: aim error multiplier (lower = better) and damage taken. */
+export const rankedDifficulty = (sr: number): { skill: number; damageToPlayer: number } => {
+  const t = Math.max(0, Math.min(1, (sr - 600) / 1600));
+  return { skill: 1.9 - 1.3 * t, damageToPlayer: 0.55 + 0.45 * t };
+};
+
+/** Rating change for one ranked result; placements move twice as far. */
+export const srChange = (p: Profile, won: boolean, kills: number, deaths: number): number => {
+  const perf = Math.max(-8, Math.min(8, (kills - deaths) * 1.5));
+  const base = won ? 25 : -22;
+  return Math.round((base + perf) * (p.rankedMatches < PLACEMENT_MATCHES ? 2 : 1));
+};
+
+/** Applies one ranked result to the saved profile and returns the change. */
+export const recordRanked = (won: boolean, kills: number, deaths: number): number => {
+  const p = loadProfile();
+  const delta = srChange(p, won, kills, deaths);
+  p.sr = Math.max(0, p.sr + delta);
+  p.bestSr = Math.max(p.bestSr, p.sr);
+  p.rankedMatches++;
+  if (won) p.rankedWins++;
+  saveProfile(p);
+  return delta;
+};

@@ -140,6 +140,11 @@ const applyAgent = (a: Agent, r: AgentNet, me: boolean, targets: Map<number, Net
   a.tier = num(r[32]);
   a.tierKills = num(r[33]);
   a.frozenUntil = num(r[35] ?? 0);
+  a.shots = num(r[36] ?? 0);
+  a.hits = num(r[37] ?? 0);
+  a.damageDealt = num(r[38] ?? 0);
+  a.headshots = num(r[39] ?? 0);
+  a.bestStreak = num(r[40] ?? 0);
   const pos = { x: num(r[1]), y: num(r[2]), z: num(r[3]), yaw: num(r[7]), pitch: num(r[8]) };
   if (me) {
     // Our own movement is simulated locally; only take the host's position on respawn.

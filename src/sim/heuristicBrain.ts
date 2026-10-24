@@ -1,4 +1,4 @@
-import { A, type Agent } from './Agent';
+import { A, weaponOf, type Agent } from './Agent';
 import type { FpsSim } from './FpsSim';
 
 /**
@@ -8,7 +8,9 @@ import type { FpsSim } from './FpsSim';
  */
 export const heuristicBrain = (a: Agent, sim: FpsSim): number => {
   const t = sim.target(a);
-  if (!t) return a.ammo < 30 ? A.reload : A.hold;
+  // Reload thresholds scale with the magazine (a full sniper holds 5, an LMG 75).
+  const mag = Math.max(1, weaponOf(a).magazine);
+  if (!t) return a.ammo < mag ? A.reload : A.hold;
   const known = sim.knowsTarget(a);
   const tx = a.seesTarget ? t.x : a.lastSeenX;
   const tz = a.seesTarget ? t.z : a.lastSeenZ;
@@ -20,7 +22,7 @@ export const heuristicBrain = (a: Agent, sim: FpsSim): number => {
     return a.seesTarget ? strafe(a, sim) : A.hold;
   }
   if (a.ammo === 0) return A.reload;
-  if (!a.seesTarget && a.ammo < 12) return A.reload;
+  if (!a.seesTarget && a.ammo < mag * 0.4) return A.reload;
   if (a.hp < 40 && a.seesTarget && !a.inCover && sim.coverFor(a)) return A.take_cover;
 
   if (a.seesTarget) {

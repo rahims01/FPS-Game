@@ -5,9 +5,12 @@
  *   npm run train -- --steps 6e6        # longer
  *   npm run train -- --resume           # continue from training/checkpoints/latest.json
  *   npm run train -- --workers 4        # thread count (default: cores - 1)
+ *   npm run train -- --style sniper --from latest --steps 1.5e6
+ *                                       # fine-tune a personality from the base policy
  *
- * Writes public/policies/soldier.json (the browser loads it on start) and
- * training/checkpoints/latest.json (actor + critic, for --resume).
+ * Writes public/policies/soldier.json (or soldier_<style>.json; the browser
+ * loads them on start) and training/checkpoints/latest.json (or <style>.json;
+ * actor + critic, for --resume).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
@@ -15,20 +18,34 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { MlpParams } from '../src/rl/mlp';
-import { ACTIONS } from '../src/sim/Agent';
+import { ACTIONS, BOT_STYLES, type BotStyle } from '../src/sim/Agent';
 import { Rng } from '../src/sim/math';
 import { OBS_SIZE, OBS_VERSION } from '../src/sim/observation';
 import { Net } from './nn';
 import type { EpisodeStat, FromWorker, ToWorker, WorkerInit } from './worker';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CKPT = join(ROOT, 'training', 'checkpoints', 'latest.json');
-const POLICY = join(ROOT, 'public', 'policies', 'soldier.json');
 
 const arg = (name: string, def: number): number => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? Number(process.argv[i + 1]) : def;
 };
+const argStr = (name: string): string | null => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : null;
+};
+
+const STYLE = (argStr('style') ?? 'soldier') as BotStyle;
+if (!BOT_STYLES.includes(STYLE)) {
+  console.error(`unknown style ${STYLE}; use one of ${BOT_STYLES.join(', ')}`);
+  process.exit(1);
+}
+const BASE = STYLE === 'soldier';
+const ckptPath = (name: string) => join(ROOT, 'training', 'checkpoints', `${name}.json`);
+const CKPT = ckptPath(BASE ? 'latest' : STYLE);
+const POLICY = join(ROOT, 'public', 'policies', BASE ? 'soldier.json' : `soldier_${STYLE}.json`);
+/** Checkpoint to start from (e.g. `--from latest` to fine-tune the base policy). */
+const FROM = argStr('from');
 
 const CFG = {
   totalSteps: arg('steps', 3e6),
@@ -64,8 +81,9 @@ interface Checkpoint {
   critic: MlpParams;
 }
 
-if (process.argv.includes('--resume') && existsSync(CKPT)) {
-  const c = JSON.parse(readFileSync(CKPT, 'utf8')) as Checkpoint;
+const startFrom = process.argv.includes('--resume') ? CKPT : FROM ? ckptPath(FROM) : null;
+if (startFrom && existsSync(startFrom)) {
+  const c = JSON.parse(readFileSync(startFrom, 'utf8')) as Checkpoint;
   if (c.obs_size !== OBS_SIZE || c.obs_version !== OBS_VERSION) {
     console.error(`checkpoint is obs v${c.obs_version}/${c.obs_size}, code is v${OBS_VERSION}/${OBS_SIZE}; start fresh instead`);
     process.exit(1);
@@ -76,8 +94,10 @@ if (process.argv.includes('--resume') && existsSync(CKPT)) {
   }
   actor.load(c.actor);
   critic.load(c.critic);
-  stepsDone = c.steps;
-  console.log(`resumed at ${stepsDone.toLocaleString()} steps`);
+  if (startFrom === CKPT) {
+    stepsDone = c.steps;
+    console.log(`resumed at ${stepsDone.toLocaleString()} steps`);
+  } else console.log(`starting from ${startFrom}`);
 }
 
 const save = (evaluation?: Record<string, number>) => {
@@ -88,7 +108,7 @@ const save = (evaluation?: Record<string, number>) => {
   writeFileSync(
     POLICY,
     JSON.stringify({
-      meta: { obs_size: OBS_SIZE, obs_version: OBS_VERSION, actions: [...ACTIONS], algorithm: 'PPO', timesteps: stepsDone, trained_at: new Date().toISOString(), evaluation },
+      meta: { style: STYLE, obs_size: OBS_SIZE, obs_version: OBS_VERSION, actions: [...ACTIONS], algorithm: 'PPO', timesteps: stepsDone, trained_at: new Date().toISOString(), evaluation },
       actor: ck.actor
     })
   );
@@ -101,7 +121,7 @@ const curriculum = (progress: number): [number, number] => {
 };
 
 const workers = Array.from({ length: CFG.workers }, (_, i) => {
-  const data: WorkerInit = { seed: CFG.seed * 1000 + i + 1, envs: CFG.envsPerWorker, horizon: CFG.horizon, sizesActor, sizesCritic };
+  const data: WorkerInit = { seed: CFG.seed * 1000 + i + 1, envs: CFG.envsPerWorker, horizon: CFG.horizon, sizesActor, sizesCritic, style: STYLE };
   return new Worker(new URL('./worker.ts', import.meta.url), { workerData: data, execArgv: ['--import', 'tsx'] });
 });
 
@@ -128,7 +148,7 @@ const ask = (msgs: ToWorker[]): Promise<FromWorker[]> =>
 const main = async () => {
   const N = CFG.workers * CFG.envsPerWorker * CFG.horizon;
   console.log(
-    `PPO  obs=${OBS_SIZE} actions=${A} net=${CFG.hidden.join('x')} workers=${CFG.workers} envs=${CFG.workers * CFG.envsPerWorker} batch=${N} target=${CFG.totalSteps.toLocaleString()}`
+    `PPO  style=${STYLE}  obs=${OBS_SIZE} actions=${A} net=${CFG.hidden.join('x')} workers=${CFG.workers} envs=${CFG.workers * CFG.envsPerWorker} batch=${N} target=${CFG.totalSteps.toLocaleString()}`
   );
   const recent: EpisodeStat[] = [];
   const t0 = Date.now();

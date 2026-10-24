@@ -1,14 +1,17 @@
 import Peer, { type DataConnection } from 'peerjs';
 import { setLoadout, type Agent } from '../sim/Agent';
 import type { PlayerInput, SimEvent } from '../sim/FpsSim';
-import type { Difficulty, Match, MatchNotice, ModeId } from '../sim/Match';
-import { modeDef } from '../sim/Match';
+import { DEFAULT_RULES, modeDef, type Difficulty, type LobbyRules, type Match, type MatchNotice, type ModeId } from '../sim/Match';
+import { normalizeStreaks } from '../sim/killstreaks';
+import type { SkinChoice } from '../assets/skins';
+import { cleanChat } from './chat';
 import {
   PEER_PREFIX,
   PROTOCOL_VERSION,
   SNAPSHOT_HZ,
   type ClientMsg,
   type HostMsg,
+  type LobbyMsg,
   type LobbyPlayer,
   type NetButtons,
   type PlayerProfile,
@@ -19,6 +22,9 @@ import { buildSnapshot } from './snapshot';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const makeCode = () => Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+
+/** People in a room, players and spectators together. */
+const ROOM_MAX = 8;
 
 /** Opens a PeerJS peer (free public signalling server; the game traffic itself is peer-to-peer). */
 const openPeer = (id?: string): Promise<Peer> =>
@@ -39,10 +45,17 @@ const openPeer = (id?: string): Promise<Peer> =>
     });
   });
 
+/** A chat line as the host relays it. */
+export type ChatMsg = Extract<HostMsg, { t: 'chat' }>;
+
 interface RemoteClient {
   conn: DataConnection;
   profile: PlayerProfile | null;
+  /** Chosen to play (otherwise spectates). */
+  playing: boolean;
   agentId: number;
+  /** In the running match (as a player or a spectator). */
+  started: boolean;
   input: PlayerInput;
   /** Latest reported body state, applied once per host tick. */
   state: { life: number; s: number[]; f: number; slide: number } | null;
@@ -64,9 +77,17 @@ const blankInput = (): PlayerInput => ({
   switchSlot: -1
 });
 
+/** How many people a mode can field; anyone beyond that spectates. */
+export const modeSlots = (mode: ModeId): number => {
+  const def = modeDef(mode);
+  if (def.humansOnly) return ROOM_MAX;
+  if (mode === 'survival' || mode === 'zombies') return 4;
+  return Math.min(ROOM_MAX, def.players);
+};
+
 /**
- * The host: owns the room code, the lobby and, during a match, receives client
- * inputs and broadcasts snapshots.
+ * The host: owns the room code, the lobby (mode, rules, who plays) and the
+ * chat, and during a match receives client inputs and broadcasts snapshots.
  */
 export class HostSession {
   readonly code: string;
@@ -75,9 +96,12 @@ export class HostSession {
   private events: SimEvent[] = [];
   private notices: MatchNotice[] = [];
   private lastSnap = 0;
-  lobby: { mode: ModeId; difficulty: Difficulty; hostName: string; hostColor: number };
+  lobby: { mode: ModeId; difficulty: Difficulty; hostName: string; hostColor: number; rules: LobbyRules };
+  /** The host plays (or only watches). */
+  hostPlaying = true;
   onChange: (() => void) | null = null;
   onClientLeft: ((name: string) => void) | null = null;
+  onChat: ((msg: ChatMsg) => void) | null = null;
 
   private constructor(
     private peer: Peer,
@@ -88,7 +112,7 @@ export class HostSession {
     hostColor: number
   ) {
     this.code = code;
-    this.lobby = { mode, difficulty, hostName, hostColor };
+    this.lobby = { mode, difficulty, hostName, hostColor, rules: { ...DEFAULT_RULES } };
     peer.on('connection', (conn) => this.accept(conn));
   }
 
@@ -107,24 +131,64 @@ export class HostSession {
 
   get players(): LobbyPlayer[] {
     return [
-      { name: this.lobby.hostName, color: this.lobby.hostColor, host: true },
-      ...this.clients.filter((c) => c.profile).map((c) => ({ name: c.profile!.name, color: c.profile!.color, host: false }))
+      { id: 'host', name: this.lobby.hostName, color: this.lobby.hostColor, host: true, playing: this.hostPlaying },
+      ...this.clients.filter((c) => c.profile).map((c) => ({ id: c.conn.peer, name: c.profile!.name, color: c.profile!.color, host: false, playing: c.playing }))
     ];
   }
 
+  /** Everyone in the room, players and spectators. */
   get maxPlayers(): number {
-    const def = modeDef(this.lobby.mode);
-    return def.humansOnly ? 8 : Math.max(2, Math.min(8, def.id === 'survival' ? 4 : def.players));
+    return ROOM_MAX;
+  }
+
+  get slots(): number {
+    return modeSlots(this.lobby.mode);
+  }
+
+  /** People picked to play. */
+  get playingCount(): number {
+    return this.players.filter((p) => p.playing).length;
   }
 
   setLobby(mode: ModeId, difficulty: Difficulty): void {
     this.lobby.mode = mode;
     this.lobby.difficulty = difficulty;
+    this.fitSlots();
     this.broadcastLobby();
   }
 
+  setRules(rules: LobbyRules): void {
+    this.lobby.rules = { ...rules };
+    this.broadcastLobby();
+  }
+
+  /** The host picks who plays: flips one person between playing and spectating. */
+  togglePlaying(id: string): void {
+    const want = !this.players.find((p) => p.id === id)?.playing;
+    if (want && this.playingCount >= this.slots) return;
+    if (id === 'host') this.hostPlaying = want;
+    else {
+      const c = this.clients.find((x) => x.conn.peer === id);
+      if (c) c.playing = want;
+    }
+    this.broadcastLobby();
+    this.onChange?.();
+  }
+
+  /** After a mode change: bench the latest joiners if there are too many players now. */
+  private fitSlots(): void {
+    let over = this.playingCount - this.slots;
+    for (let i = this.clients.length - 1; i >= 0 && over > 0; i--) {
+      if (this.clients[i].playing) {
+        this.clients[i].playing = false;
+        over--;
+      }
+    }
+    if (over > 0) this.hostPlaying = false;
+  }
+
   private accept(conn: DataConnection): void {
-    const client: RemoteClient = { conn, profile: null, agentId: -1, input: blankInput(), state: null };
+    const client: RemoteClient = { conn, profile: null, playing: false, agentId: -1, started: false, input: blankInput(), state: null };
     conn.on('data', (raw) => this.receive(client, raw as ClientMsg));
     conn.on('close', () => this.drop(client));
     conn.on('error', () => this.drop(client));
@@ -141,7 +205,10 @@ export class HostSession {
       if (a) a.control = 'learned' in this.match.sim.brains ? 'learned' : 'heuristic';
       this.match.sim.remoteInputs.delete(client.agentId);
     }
-    if (client.profile) this.onClientLeft?.(client.profile.name);
+    if (client.profile) {
+      this.onClientLeft?.(client.profile.name);
+      this.system(`${client.profile.name} left`);
+    }
     this.broadcastLobby();
     this.onChange?.();
   }
@@ -157,10 +224,13 @@ export class HostSession {
         return;
       }
       if (this.players.length >= this.maxPlayers) {
-        client.conn.send({ t: 'reject', reason: 'That lobby is full.' } satisfies HostMsg);
+        client.conn.send({ t: 'reject', reason: 'That room is full.' } satisfies HostMsg);
         return;
       }
-      client.profile = { ...msg.profile, name: msg.profile.name.slice(0, 16) || 'Player' };
+      client.profile = { ...msg.profile, name: cleanChat(msg.profile.name.slice(0, 16)) || 'Player', streaks: normalizeStreaks(msg.profile.streaks) };
+      // Late joiners spectate once the mode is full; the host can swap people around.
+      client.playing = this.playingCount < this.slots;
+      this.system(`${client.profile.name} joined`);
       this.broadcastLobby();
       this.onChange?.();
     } else if (msg.t === 'in') {
@@ -178,6 +248,8 @@ export class HostSession {
       inp.grenade ||= b.grenade;
       if (b.switchSlot >= 0) inp.switchSlot = b.switchSlot;
       client.state = { life: msg.life, s: msg.s, f: msg.f, slide: msg.slide };
+    } else if (msg.t === 'chat') {
+      if (client.profile) this.relayChat(client.profile.name, client.profile.color, msg.text);
     } else if (msg.t === 'ping') {
       client.conn.send({ t: 'pong', at: msg.at } satisfies HostMsg);
     } else if (msg.t === 'bye') {
@@ -186,46 +258,103 @@ export class HostSession {
     }
   }
 
+  /** The host's own chat message. */
+  sendChat(text: string): void {
+    this.relayChat(this.lobby.hostName, this.lobby.hostColor, text);
+  }
+
+  private relayChat(name: string, color: number, raw: string): void {
+    const text = cleanChat(String(raw));
+    if (!text) return;
+    this.broadcast({ t: 'chat', name, color, text });
+  }
+
+  private system(text: string): void {
+    this.broadcast({ t: 'chat', name: '', color: 0xaaaaaa, text, system: true });
+  }
+
+  private broadcast(msg: ChatMsg): void {
+    for (const c of this.clients) if (c.profile && c.conn.open) c.conn.send(msg);
+    this.onChat?.(msg);
+  }
+
+  private lobbyMsg(): LobbyMsg {
+    return { t: 'lobby', mode: this.lobby.mode, difficulty: this.lobby.difficulty, players: this.players, max: this.maxPlayers, slots: this.slots, rules: this.lobby.rules };
+  }
+
   private broadcastLobby(): void {
-    const msg: HostMsg = { t: 'lobby', mode: this.lobby.mode, difficulty: this.lobby.difficulty, players: this.players, max: this.maxPlayers };
+    const msg = this.lobbyMsg();
     for (const c of this.clients) if (c.profile) c.conn.send(msg);
   }
 
   /**
-   * Puts every lobby player into the match: each takes over a computer
+   * Puts the chosen players into the match: each takes over a computer
    * player's slot (on alternating teams, so a 1v1 is you against your friend).
+   * If the host only watches, the first player takes the host's soldier.
+   * Everyone else spectates. The remaining computer players are labelled as
+   * bots ("Bot 1", "Bot 2"...) and move like machines.
    */
-  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null): void {
+  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[]): void {
     this.match = match;
     const sim = match.sim;
     const def = match.def;
-    const forced = match.mode === 'gungame' || match.mode === 'snipers';
-    const taken = new Set<number>([match.player.id]);
-    let k = 0;
+    const forced = match.mode === 'gungame' || match.mode === 'snipers' || match.mode === 'roulette' || match.mode === 'marksman' || match.mode === 'gunfight' || match.lobbyWeapon !== 'any';
+    const taken = new Set<number>();
+    if (this.hostPlaying) taken.add(match.player.id);
+    else {
+      // Nobody steers the host's soldier until a client takes it below.
+      match.player.control = 'remote';
+    }
+    // Slot index: 0 is the host's seat (team 0); clients alternate teams after it.
+    let slot = this.hostPlaying ? 1 : 0;
     for (const c of this.clients) {
-      if (!c.profile) continue;
-      k++;
-      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'zombies' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : k % 2 === 1 ? 1 : 0;
+      if (!c.profile || !c.playing) continue;
+      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'zombies' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : slot % 2;
       const free = (team: number | null) =>
         sim.agents.find((a) => !taken.has(a.id) && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
-      let a: Agent | undefined = free(wantTeam) ?? free(null);
+      let a: Agent | undefined = slot === 0 ? match.player : (free(wantTeam) ?? free(null));
       if (!a) {
         const p = match.player;
-        a = sim.spawn(wantTeam ?? sim.agents.length, 'remote', p.x + 1.5 * k, p.z);
+        a = sim.spawn(wantTeam ?? sim.agents.length, 'remote', p.x + 1.5 * slot, p.z);
         setLoadout(a, ['rifle', 'pistol']);
       }
+      slot++;
       taken.add(a.id);
       a.control = 'remote';
       a.style = 'soldier';
-      if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [c.profile.primary, 'pistol']);
+      if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [c.profile.primary, c.profile.secondary ?? 'pistol']);
+      match.streakChoices[a.id] = c.profile.streaks;
       c.agentId = a.id;
       names[a.id] = c.profile.name;
+      skins[a.id] = c.profile.skins ?? {};
       if (!teamColors) colors[a.id] = c.profile.color;
     }
-    const humans = [match.player.id, ...this.clients.filter((c) => c.agentId >= 0).map((c) => c.agentId)];
+    // Online fillers are openly bots.
+    sim.roboticBots = true;
+    let bot = 1;
+    for (const a of sim.agents) {
+      if (a.control === 'player' || a.control === 'remote') continue;
+      names[a.id] = `Bot ${bot++}`;
+      skins[a.id] = null;
+    }
+    const humans = [...(this.hostPlaying ? [match.player.id] : []), ...this.clients.filter((c) => c.agentId >= 0).map((c) => c.agentId)];
     for (const c of this.clients) {
-      if (c.agentId < 0) continue;
-      const start: StartMsg = { t: 'start', mode: match.mode, difficulty: match.opts.difficulty, seed, you: c.agentId, names, colors, teamColors, humans };
+      if (!c.profile) continue;
+      c.started = true;
+      const start: StartMsg = {
+        t: 'start',
+        mode: match.mode,
+        difficulty: match.opts.difficulty,
+        seed,
+        you: c.agentId,
+        names,
+        colors,
+        teamColors,
+        humans,
+        spectate: c.agentId < 0,
+        skins,
+        rules: this.lobby.rules
+      };
       c.conn.send(start);
     }
   }
@@ -284,7 +413,7 @@ export class HostSession {
     this.events = [];
     this.notices = [];
     const msg: HostMsg = { t: 'snap', snap };
-    for (const c of this.clients) if (c.agentId >= 0 && c.conn.open) c.conn.send(msg);
+    for (const c of this.clients) if (c.started && c.conn.open) c.conn.send(msg);
   }
 
   close(reason = 'The host left the match.'): void {
@@ -300,12 +429,13 @@ export class HostSession {
   }
 }
 
-/** A client: joins a room code, waits in the lobby, then plays from the host's snapshots. */
+/** A client: joins a room code, waits in the lobby, then plays (or watches) from the host's snapshots. */
 export class ClientSession {
-  onLobby: ((msg: Extract<HostMsg, { t: 'lobby' }>) => void) | null = null;
+  onLobby: ((msg: LobbyMsg) => void) | null = null;
   onStart: ((msg: StartMsg) => void) | null = null;
   onSnap: ((snap: Snapshot) => void) | null = null;
   onEnd: ((reason: string) => void) | null = null;
+  onChat: ((msg: ChatMsg) => void) | null = null;
   private ended = false;
   /** Smoothed round-trip time to the host, in milliseconds. */
   ping = 0;
@@ -350,6 +480,7 @@ export class ClientSession {
     if (msg.t === 'lobby') this.onLobby?.(msg);
     else if (msg.t === 'start') this.onStart?.(msg);
     else if (msg.t === 'snap') this.onSnap?.(msg.snap);
+    else if (msg.t === 'chat') this.onChat?.(msg);
     else if (msg.t === 'pong') {
       const rtt = performance.now() - msg.at;
       this.ping = this.ping ? this.ping * 0.7 + rtt * 0.3 : rtt;
@@ -362,6 +493,11 @@ export class ClientSession {
     window.clearInterval(this.pinger);
     this.onEnd?.(reason);
     setTimeout(() => this.peer.destroy(), 300);
+  }
+
+  sendChat(text: string): void {
+    const t = text.trim();
+    if (t && !this.ended && this.conn.open) this.conn.send({ t: 'chat', text: t.slice(0, 200) } satisfies ClientMsg);
   }
 
   /** Latches one-shot actions so a quick key press between packets is not lost. */

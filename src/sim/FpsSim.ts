@@ -159,6 +159,11 @@ export class FpsSim {
   /** Objective point bots move to when they are not fighting (king of the hill). */
   rally: Rally | null = null;
   /** Capture points shown in the world (domination). */
+  /**
+   * Online fillers move like machines (no strafing, crouching, sprinting or
+   * hops; they stop to turn) so nobody mistakes them for the people in the room.
+   */
+  roboticBots = false;
   objectives: { label: string; x: number; z: number; r: number; owner: number; progress: number; carried?: boolean }[] = [];
   /** Per-agent objective (domination), takes precedence over `rally`. */
   rallyFor: ((a: Agent) => Rally | null) | null = null;
@@ -228,6 +233,12 @@ export class FpsSim {
     fresh.style = a.style;
     fresh.tier = a.tier;
     fresh.tierKills = a.tierKills;
+    fresh.damageDealt = a.damageDealt;
+    fresh.damageTaken = a.damageTaken;
+    fresh.shots = a.shots;
+    fresh.hits = a.hits;
+    fresh.headshots = a.headshots;
+    fresh.bestStreak = a.bestStreak;
     fresh.brain.aggression = this.rng.next();
     fresh.lastSeenX = x;
     fresh.lastSeenZ = z;
@@ -387,7 +398,7 @@ export class FpsSim {
       let speed = a.sprinting ? SOLDIER.sprintSpeed : f < -0.1 ? SOLDIER.backSpeed + 0.6 : SOLDIER.walkSpeed + 0.6;
       if (a.aiming) speed *= 0.6;
       if (a.crouching) speed *= 0.5;
-      speed *= w.move;
+      speed *= w.move * a.speedMul;
       const mx = forwardX(a.yaw) * f + rightX(a.yaw) * r;
       const mz = forwardZ(a.yaw) * f + rightZ(a.yaw) * r;
       this.accelerate(a, mx * speed, mz * speed, dt);
@@ -489,6 +500,16 @@ export class FpsSim {
     }
     if (this.time - a.lastShotT > 0.3) a.recoilIdx = 0;
     const w = weaponOf(a);
+    if (a.burstQueue > 0 && a.fireCd <= 0) {
+      const human = isHuman(a);
+      const fired = this.tryFire(
+        a,
+        a.yaw + (human ? a.recoilYaw : a.aimErrYaw),
+        a.pitch + (human ? a.recoil : a.aimErrPitch),
+        (Math.hypot(a.vx, a.vz) > 0.6 ? w.spreadMoving : w.spreadStill) * (a.aiming ? w.adsSpread : 1)
+      );
+      if (!fired) a.burstQueue = 0;
+    }
     if (a.reloadT > 0) {
       a.reloadT -= dt;
       if (a.reloadT <= 0) {
@@ -510,6 +531,7 @@ export class FpsSim {
   switchWeapon(a: Agent, slot: number): void {
     if (slot === a.slot || slot < 0 || slot >= a.weapons.length) return;
     a.stash[a.slot] = a.ammo;
+    a.burstQueue = 0;
     a.slot = slot;
     a.ammo = a.stash[slot];
     a.reloadT = 0;
@@ -523,6 +545,12 @@ export class FpsSim {
     const w = weaponOf(a);
     if (w.slot === 'melee' || a.fireCd > 0 || a.reloadT > 0 || a.switchT > 0 || a.ammo <= 0) return false;
     a.fireCd = w.interval;
+    if (w.burst) {
+      // A trigger pull queues the rest of the burst; weaponTick fires it.
+      if (a.burstQueue > 0) a.burstQueue--;
+      else a.burstQueue = w.burst - 1;
+      if (a.burstQueue > 0) a.fireCd = w.burstGap ?? 0.07;
+    }
     a.ammo--;
     a.shots++;
     a.lastShotT = this.time;
@@ -592,7 +620,10 @@ export class FpsSim {
                   ? 100
                   : 0
                 : w.damage[region] * falloff(w, bestT);
-        if (raw > 0) this.damage(victim, a, raw, region, dx, dy, dz, w.id);
+        if (raw > 0) {
+          if (region === 'head' && p === 0) a.headshots++;
+          this.damage(victim, a, raw, region, dx, dy, dz, w.id);
+        }
       }
     }
     if (hitAny) a.hits++;
@@ -797,6 +828,7 @@ export class FpsSim {
       if (attacker && attacker !== v) {
         attacker.kills++;
         attacker.streak++;
+        attacker.bestStreak = Math.max(attacker.bestStreak, attacker.streak);
         attacker.reward += 1;
       }
       v.reward -= 1;
@@ -979,7 +1011,7 @@ export class FpsSim {
       }
     }
     // Combat hops, by personality.
-    const rate = a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
+    const rate = this.roboticBots ? 0 : a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
     if (a.seesTarget && (name === 'strafe_left' || name === 'strafe_right' || name === 'advance') && this.rng.next() < rate * this.jumpMul) this.jump(a);
   }
 
@@ -1109,6 +1141,18 @@ export class FpsSim {
         break;
     }
     speed *= w.move * a.speedMul;
+    // Robotic bots (online fillers): stand still to shoot, never strafe, crouch or
+    // sprint, and stop to turn on the spot before walking a new way.
+    let robotFace: number | null = null;
+    if (this.roboticBots) {
+      crouch = false;
+      if (a.seesTarget && !override && !knife) mx = mz = 0;
+      speed = Math.min(speed, SOLDIER.walkSpeed);
+      if (mx || mz) {
+        robotFace = Math.atan2(mx, mz);
+        if (Math.abs(wrapAngle(robotFace - a.yaw)) > 0.35) mx = mz = 0;
+      }
+    }
     if (crouch) speed = Math.min(speed, SOLDIER.walkSpeed * 0.55);
     a.crouching = crouch;
     a.sprinting = !crouch && speed >= SOLDIER.sprintSpeed * 0.85 && (mx !== 0 || mz !== 0);
@@ -1139,13 +1183,15 @@ export class FpsSim {
     // Aim.
     let wantYaw = toYaw;
     let wantPitch = 0;
-    if (faceMove && (mx || mz)) {
+    if (robotFace !== null && !(a.seesTarget && t)) {
+      wantYaw = robotFace;
+    } else if (faceMove && (mx || mz)) {
       wantYaw = Math.atan2(mx, mz);
     } else if (t) {
       const aimY = a.seesTarget ? t.y + 1.25 * crouchScale(t) : 1.55;
       wantPitch = Math.atan2(aimY - (a.y + eyeHeight(a)), Math.max(0.5, Math.hypot(tx - a.x, tz - a.z)));
     }
-    const maxTurn = BOT_AIM.turnRate * dt;
+    const maxTurn = BOT_AIM.turnRate * dt * (this.roboticBots ? 0.7 : 1);
     a.yaw = wrapAngle(a.yaw + clamp(wrapAngle(wantYaw - a.yaw), -maxTurn, maxTurn));
     a.pitch += clamp(wantPitch - a.pitch, -maxTurn, maxTurn);
     a.aiming = mayFire && a.seesTarget;

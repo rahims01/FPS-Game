@@ -19,6 +19,15 @@ export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone';
 export type BotStyle = 'soldier' | 'rusher' | 'sniper' | 'flanker' | 'tactician';
 export const BOT_STYLES: BotStyle[] = ['soldier', 'rusher', 'sniper', 'flanker', 'tactician'];
 
+/** Guns each personality carries and its aim multiplier (lower = sharper). */
+export const STYLE_KIT: Record<BotStyle, { guns: WeaponId[]; aim: number }> = {
+  soldier: { guns: ['rifle', 'ak', 'smg', 'lmg', 'burst'], aim: 1 },
+  rusher: { guns: ['shotgun', 'smg', 'smg'], aim: 1.15 },
+  sniper: { guns: ['sniper', 'sniper', 'dmr', 'lmg'], aim: 0.75 },
+  flanker: { guns: ['smg', 'rifle', 'shotgun'], aim: 1 },
+  tactician: { guns: ['rifle', 'lmg', 'burst', 'dmr'], aim: 0.9 }
+};
+
 /** Humans: the local player and remote (online) players. */
 export const isHuman = (a: { control: Control }): boolean => a.control === 'player' || a.control === 'remote';
 
@@ -157,6 +166,10 @@ export interface Agent {
   damageTaken: number;
   shots: number;
   hits: number;
+  headshots: number;
+  bestStreak: number;
+  /** Rounds still to come in the current burst (burst weapons). */
+  burstQueue: number;
   /** Reward accumulated since the trainer last read it. */
   reward: number;
 }
@@ -248,5 +261,8 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   damageTaken: 0,
   shots: 0,
   hits: 0,
+  headshots: 0,
+  bestStreak: 0,
+  burstQueue: 0,
   reward: 0
 });
