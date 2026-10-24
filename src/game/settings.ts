@@ -18,7 +18,8 @@ export const KEY_ACTIONS = [
   ['weapon2', 'Secondary weapon'],
   ['swap', 'Swap weapon'],
   ['scores', 'Scoreboard'],
-  ['chat', 'Chat (online)']
+  ['chat', 'Chat (online)'],
+  ['cycle', 'Next gun (practice)']
 ] as const;
 export type KeyAction = (typeof KEY_ACTIONS)[number][0];
 export type KeyBinds = Record<KeyAction, string>;
@@ -38,7 +39,8 @@ export const DEFAULT_KEYS: KeyBinds = {
   weapon2: 'Digit2',
   swap: 'KeyQ',
   scores: 'Tab',
-  chat: 'KeyT'
+  chat: 'KeyT',
+  cycle: 'KeyB'
 };
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';

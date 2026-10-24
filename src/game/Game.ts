@@ -7,14 +7,15 @@ import { SoldierView } from '../render/SoldierView';
 import { Viewmodel } from '../render/Viewmodel';
 import { eyeHeight, weaponOf, type Agent, type DeathCause } from '../sim/Agent';
 import { grenadeMesh, weaponModels } from '../assets/weaponModels';
-import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, type WeaponId } from '../sim/weapons';
+import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, PRIMARIES, type WeaponId } from '../sim/weapons';
+import { setLoadout } from '../sim/Agent';
 import { MEDALS, levelOf, loadProfile, saveProfile, type Medal } from './progression';
 import { SKINS } from '../assets/skins';
 import { streakDef } from '../sim/killstreaks';
 import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
-import { Match, type MatchOptions, type ModeId } from '../sim/Match';
+import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { randomSkin } from '../assets/skins';
 import { wrapAngle, yawTo } from '../sim/math';
@@ -289,7 +290,9 @@ export class Game {
   private weaponKills: Record<string, number> = {};
   // Matchmade lobbies: people come and go, and everyone has a connection.
   private nextChurn = 60 + Math.random() * 80;
+  /** Bots holding a slot until a new player joins (at `at`, on their next death). */
   private joining: { id: number; at: number }[] = [];
+  private botCount = 0;
   private pings = new Map<number, number>();
   private pingT = 0;
   // Chat and touch.
@@ -336,8 +339,18 @@ export class Game {
       client.session.onEnd = (reason) => {
         this.netMessage = reason;
       };
+      client.session.onRename = (id, name) => {
+        const old = this.ids.names[id];
+        this.ids.names[id] = name;
+        client.start.humans = client.start.humans.filter((h) => h !== id);
+        this.callout(`${old} left · ${name} took over`);
+        this.refreshTag(id);
+      };
     } else if (net?.role === 'host') {
-      net.session.onClientLeft = (name) => this.callout(`${name} left the match`);
+      net.session.onClientLeft = (name, id, bot) => {
+        this.callout(bot ? `${name} left · ${bot} took over` : `${name} left the match`);
+        if (id >= 0) this.refreshTag(id);
+      };
     }
     sim.brains.heuristic = heuristicBrain;
     if (learned) {
@@ -370,6 +383,11 @@ export class Game {
     this.viewmodel = new Viewmodel(weaponModels(assets.rifle), flashTexture());
     this.viewmodel.skins = settings.skins;
     this.baseWeaponKills = { ...loadProfile().weaponKills };
+    try {
+      this.match.party.aimBest = Number(localStorage.getItem('fps-aim-best') ?? 0) || 0;
+    } catch {
+      /* no storage */
+    }
     this.scene.add(this.grenadeGroup);
 
     const p = this.match.player;
@@ -471,6 +489,23 @@ export class Game {
     if (action === 'swap') this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
   }
 
+  /** Practice modes: no medals, XP, camo progress or killcams. */
+  get practice(): boolean {
+    return PRACTICE_MODES.includes(this.match.mode);
+  }
+
+  /** Practice: swap the primary for the next gun in the list. */
+  private nextPracticeGun(): void {
+    const p = this.match.player;
+    if (!p.alive) return;
+    const i = PRIMARIES.indexOf(p.weapons[0]);
+    const next = PRIMARIES[(i + 1) % PRIMARIES.length];
+    setLoadout(p, [next, p.weapons[1] ?? 'pistol']);
+    p.switchT = 0.45;
+    this.callout(WEAPONS[next].name);
+    this.audio.weaponSwitch();
+  }
+
   /** Opens the chat box (online rooms only); game keys are ignored while typing. */
   openChat(): void {
     if (!this.net) return;
@@ -529,6 +564,7 @@ export class Game {
     if (e.code === k.reload) this.reloadQueued = true;
     if (e.code === k.melee) this.meleeQueued = true;
     if (e.code === k.grenade) this.grenadeQueued = true;
+    if (e.code === k.cycle && this.practice && this.net?.role !== 'client') this.nextPracticeGun();
     if (e.code === k.weapon1) this.switchQueued = 0;
     if (e.code === k.weapon2) this.switchQueued = 1;
     if (e.code === k.swap) this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
@@ -752,6 +788,7 @@ export class Game {
     this.ensureIdentity(id);
     const agents = this.match.sim.agents;
     if (this.match.mode === 'zombies' && agents[id]?.team === 1) return 'Zombie';
+    if (agents[id]?.dummy) return agents[id].dummy === 'strafe' ? 'Moving Target' : 'Target';
     // Survival waves are faceless: Enemy 1, Enemy 2, ...
     if (this.match.mode === 'survival' && agents[id]?.team === 1) return `Enemy ${agents.filter((a) => a.team === 1 && a.id <= id).length}`;
     return this.ids.names[id];
@@ -865,7 +902,7 @@ export class Game {
         v.setVisible(true);
         v.die(victim, this.physics, sim.time);
         if (e.attacker >= 0) this.effects.bloodPool(victim.x, victim.z);
-        if (victim === player && killer && killer !== victim && !this.spectator) {
+        if (victim === player && killer && killer !== victim && !this.spectator && !this.practice) {
           this.pendingKillcam = { at: sim.time + KILLCAM_DELAY, killer: killer.id, victim: victim.id, deathT: sim.time };
         }
         if (victim === player) {
@@ -881,7 +918,7 @@ export class Game {
             headshot: e.region === 'head'
           };
         }
-        if (killer === player && victim !== player && !this.spectator) this.awardKill(e, victim);
+        if (killer === player && victim !== player && !this.spectator && !this.practice) this.awardKill(e, victim);
         if (killer && !this.firstBlood) this.firstBlood = true;
         this.capRagdolls();
       } else if (e.type === 'explosion') {
@@ -918,6 +955,14 @@ export class Game {
 
   private myLevel = levelOf(loadProfile().xp).level;
 
+  /** Rebuilds a soldier's view so its nametag shows a new name. */
+  private refreshTag(id: number): void {
+    const v = this.views.get(id);
+    if (!v) return;
+    v.dispose();
+    this.views.delete(id);
+  }
+
   /** Feed line for something other than a kill. */
   private systemLine(text: string): void {
     const sim = this.match.sim;
@@ -945,18 +990,18 @@ export class Game {
     }
     for (let i = this.joining.length - 1; i >= 0; i--) {
       const j = this.joining[i];
-      if (sim.time < j.at) continue;
-      this.joining.splice(i, 1);
       const a = sim.agents[j.id];
-      if (!a || m.phase !== 'live') continue;
+      // A new player takes over from the bot when it next dies.
+      if (!a || sim.time < j.at || a.alive || m.phase !== 'live') continue;
+      this.joining.splice(i, 1);
+      const bot = this.ids.names[a.id];
       const name = randomUsername(this.ids.names);
       this.ids.names[a.id] = name;
       this.ids.skins[a.id] = Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]));
       this.pings.delete(a.id);
-      m.fillSlot(a);
-      this.views.get(a.id)?.dispose();
-      this.views.delete(a.id);
-      this.systemLine(`${name} joined`);
+      m.resetSlot(a);
+      a.robotic = false;
+      this.systemLine(`${name} joined · replaced ${bot}`);
     }
     if (!m.allowsChurn || sim.time < this.nextChurn) return;
     this.nextChurn = sim.time + 50 + Math.random() * 100;
@@ -967,9 +1012,15 @@ export class Game {
       this.nextChurn = sim.time + 5;
       return;
     }
-    m.setAway(q);
-    this.systemLine(`${this.nameOf(q.id)} left`);
-    this.joining.push({ id: q.id, at: sim.time + 4 + Math.random() * 10 });
+    // A labelled, robotic bot takes the slot straight away; sometimes a new player replaces it later.
+    const left = this.nameOf(q.id);
+    const bot = `Bot ${++this.botCount}`;
+    m.resetSlot(q);
+    q.robotic = true;
+    this.ids.names[q.id] = bot;
+    this.ids.skins[q.id] = null;
+    this.systemLine(`${left} left · ${bot} took over`);
+    if (Math.random() < 0.55) this.joining.push({ id: q.id, at: sim.time + 20 + Math.random() * 50 });
   }
 
   // ---------------------------------------------------------------- online
@@ -1374,7 +1425,17 @@ export class Game {
         }
       }
     }
-    if (m.phase === 'over' && !this.xpBanked && this.spectator) this.xpBanked = true;
+    if (m.phase === 'over' && !this.xpBanked && (this.spectator || this.practice)) {
+      this.xpBanked = true;
+      // Aim trainer: keep the best score.
+      if (m.mode === 'aimtrainer' && m.player.kills > m.party.aimBest) {
+        try {
+          localStorage.setItem('fps-aim-best', String(m.player.kills));
+        } catch {
+          /* no storage */
+        }
+      }
+    }
     if (m.phase === 'over' && !this.xpBanked) {
       this.xpBanked = true;
       this.medal(MEDALS.played);
@@ -1711,7 +1772,7 @@ export class Game {
     // During the killcam the HUD shows the killer's health, ammo and crosshair.
     const kcSnap = this.killcam ? this.snapAt(this.killcam.killer, this.killcam.clock) : null;
     const mvp = sim.agents.reduce((best, a) => (a.kills * 100 + a.damageDealt > best.kills * 100 + best.damageDealt ? a : best), sim.agents[0]);
-    const teamMode = m.def.teams && m.mode !== 'survival';
+    const teamMode = m.def.teams && m.mode !== 'survival' && !this.practice;
     const players: ScoreRow[] = sim.agents
       .map((a) => ({
         id: a.id,
@@ -1726,7 +1787,7 @@ export class Game {
         accuracy: a.shots > 0 ? Math.round((a.hits / a.shots) * 100) : -1,
         headshots: a.headshots,
         bestStreak: a.bestStreak,
-        bot: bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id),
+        bot: (bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id)) || a.robotic || !!a.dummy,
         level: a === p && !this.spectator ? this.myLevel : levelFor(this.nameOf(a.id)),
         ping: this.pings.get(a.id) ?? null
       }))
@@ -1815,14 +1876,14 @@ export class Game {
       killcamPending: !!this.pendingKillcam,
       fps: Math.round(this.fps),
       hardcore: m.mode === 'hardcore',
-      ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : (this.pings.get(p.id) ?? null),
+      ping: this.net?.role === 'client' ? this.net.session.ping : this.net ? 0 : this.practice ? null : (this.pings.get(p.id) ?? null),
       online: !!this.net,
       spectating: spec ? { name: this.nameOf(spec.id), color: cssColor(this.colorOf(spec.id)), weapon: weaponOf(spec).name } : null,
       spectator: this.spectator,
       chatOpen: this.chatOpen,
       mvp: mvp ? mvp.id : -1,
       jammed: sim.time < (m.party.jamUntil[p.team] ?? -1),
-      streaks: picks.map((s) => ({ name: s.name, kills: s.kills, earned: p.streak >= s.kills })),
+      streaks: this.practice ? [] : picks.map((s) => ({ name: s.name, kills: s.kills, earned: p.streak >= s.kills })),
       touch: this.touchMode,
       killcam: this.killcam
         ? { killer: this.nameOf(this.killcam.killer), color: cssColor(this.colorOf(this.killcam.killer)), weapon: WEAPONS[this.killcam.weapon].name }

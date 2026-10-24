@@ -8,7 +8,7 @@ import type { ChatLine } from './net/chat';
 import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
-import { DEFAULT_RULES, MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
+import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
 import { streakDef } from './sim/killstreaks';
 import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
 import { divisionOf, levelOf, loadProfile, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, type Division, type Profile } from './game/progression';
@@ -61,7 +61,7 @@ const LOBBY: { id: Difficulty; label: string }[] = [
 
 const audio = new GameAudio();
 
-const MODE_GROUPS = ['Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
+const MODE_GROUPS = ['Practice', 'Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
 
 let chatId = 0;
 
@@ -213,7 +213,8 @@ export const App = () => {
   const findMatch = () => {
     audio.unlock();
     setRanked(false);
-    setScreen({ kind: 'finding' });
+    // Practice needs no lobby: straight in.
+    setScreen({ kind: PRACTICE_MODES.includes(mode) ? 'playing' : 'finding' });
     setRound((r) => r + 1);
   };
   const playRanked = () => {
@@ -485,7 +486,7 @@ export const App = () => {
               {netError && <div className="net-error">{netError}</div>}
             </div>
             <button className="play" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
-              {!assets ? loadMsg : modeDef(mode).humansOnly ? 'ONLINE ONLY — HOST A GAME ABOVE' : 'FIND MATCH'}
+              {!assets ? loadMsg : modeDef(mode).humansOnly ? 'ONLINE ONLY — HOST A GAME ABOVE' : PRACTICE_MODES.includes(mode) ? 'START PRACTICE' : 'FIND MATCH'}
             </button>
             <div className="controls">
               <span>

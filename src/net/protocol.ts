@@ -97,6 +97,8 @@ export interface StartMsg {
 export type HostMsg =
   | LobbyMsg
   | { t: 'chat'; name: string; color: number; text: string; system?: boolean }
+  /** Someone left mid-match: a bot now plays their soldier under a new name. */
+  | { t: 'rename'; id: number; name: string }
   | { t: 'reject'; reason: string }
   | StartMsg
   | { t: 'snap'; snap: Snapshot }

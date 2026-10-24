@@ -1,7 +1,7 @@
 import Peer, { type DataConnection } from 'peerjs';
 import { setLoadout, type Agent } from '../sim/Agent';
 import type { PlayerInput, SimEvent } from '../sim/FpsSim';
-import { DEFAULT_RULES, modeDef, type Difficulty, type LobbyRules, type Match, type MatchNotice, type ModeId } from '../sim/Match';
+import { DEFAULT_RULES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type Match, type MatchNotice, type ModeId } from '../sim/Match';
 import { normalizeStreaks } from '../sim/killstreaks';
 import type { SkinChoice } from '../assets/skins';
 import { cleanChat } from './chat';
@@ -25,6 +25,8 @@ const makeCode = () => Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Mat
 
 /** People in a room, players and spectators together. */
 const ROOM_MAX = 8;
+/** A client that has been silent this long has gone (closed tab, lost connection, app switched away). */
+const SILENT_MS = 15000;
 
 /** Opens a PeerJS peer (free public signalling server; the game traffic itself is peer-to-peer). */
 const openPeer = (id?: string): Promise<Peer> =>
@@ -59,6 +61,8 @@ interface RemoteClient {
   input: PlayerInput;
   /** Latest reported body state, applied once per host tick. */
   state: { life: number; s: number[]; f: number; slide: number } | null;
+  /** When we last heard anything from them (clients ping every 2 s). */
+  lastSeen: number;
 }
 
 const blankInput = (): PlayerInput => ({
@@ -80,7 +84,7 @@ const blankInput = (): PlayerInput => ({
 /** How many people a mode can field; anyone beyond that spectates. */
 export const modeSlots = (mode: ModeId): number => {
   const def = modeDef(mode);
-  if (def.humansOnly) return ROOM_MAX;
+  if (def.humansOnly || PRACTICE_MODES.includes(mode)) return ROOM_MAX;
   if (mode === 'survival' || mode === 'zombies') return 4;
   return Math.min(ROOM_MAX, def.players);
 };
@@ -100,7 +104,11 @@ export class HostSession {
   /** The host plays (or only watches). */
   hostPlaying = true;
   onChange: (() => void) | null = null;
-  onClientLeft: ((name: string) => void) | null = null;
+  /** A player left: `newName` is the bot that took over their soldier (if a match is running). */
+  onClientLeft: ((name: string, agentId: number, newName: string | null) => void) | null = null;
+  /** The match's names (shared with the game), and how many "Bot N" names are in use. */
+  private names: string[] = [];
+  private botCount = 0;
   onChat: ((msg: ChatMsg) => void) | null = null;
 
   private constructor(
@@ -114,7 +122,25 @@ export class HostSession {
     this.code = code;
     this.lobby = { mode, difficulty, hostName, hostColor, rules: { ...DEFAULT_RULES } };
     peer.on('connection', (conn) => this.accept(conn));
+    // WebRTC can take a long time to report a closed tab; drop anyone who goes quiet.
+    this.watchdog = window.setInterval(() => {
+      const now = performance.now();
+      // In the lobby browsers may throttle a hidden tab's pings, so allow longer there.
+      for (const c of this.clients.slice()) {
+        if (now - c.lastSeen < (c.started ? this.silentMs : this.silentMs * 2)) continue;
+        try {
+          c.conn.send({ t: 'end', reason: 'Disconnected: no response from your game for a while.' } satisfies HostMsg);
+        } catch {
+          /* already gone */
+        }
+        this.drop(c);
+      }
+    }, 1000);
   }
+
+  private watchdog: number;
+  /** How long a client may be silent before it is dropped (tests raise it for throttled tabs). */
+  silentMs = SILENT_MS;
 
   static async create(mode: ModeId, difficulty: Difficulty, hostName: string, hostColor: number): Promise<HostSession> {
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -188,7 +214,7 @@ export class HostSession {
   }
 
   private accept(conn: DataConnection): void {
-    const client: RemoteClient = { conn, profile: null, playing: false, agentId: -1, started: false, input: blankInput(), state: null };
+    const client: RemoteClient = { conn, profile: null, playing: false, agentId: -1, started: false, input: blankInput(), state: null, lastSeen: performance.now() };
     conn.on('data', (raw) => this.receive(client, raw as ClientMsg));
     conn.on('close', () => this.drop(client));
     conn.on('error', () => this.drop(client));
@@ -199,21 +225,29 @@ export class HostSession {
     const i = this.clients.indexOf(client);
     if (i < 0) return;
     this.clients.splice(i, 1);
-    // A player who leaves mid-match is handed back to the computer.
+    // A player who leaves mid-match is replaced by a labelled, robotic bot.
+    let botName: string | null = null;
     if (this.match && client.agentId >= 0) {
       const a = this.match.sim.agents[client.agentId];
-      if (a) a.control = 'learned' in this.match.sim.brains ? 'learned' : 'heuristic';
+      if (a) {
+        a.control = 'learned' in this.match.sim.brains ? 'learned' : 'heuristic';
+        a.robotic = true;
+        botName = `Bot ${++this.botCount}`;
+        this.names[a.id] = botName;
+        for (const c of this.clients) if (c.started && c.conn.open) c.conn.send({ t: 'rename', id: a.id, name: botName } satisfies HostMsg);
+      }
       this.match.sim.remoteInputs.delete(client.agentId);
     }
     if (client.profile) {
-      this.onClientLeft?.(client.profile.name);
-      this.system(`${client.profile.name} left`);
+      this.onClientLeft?.(client.profile.name, client.agentId, botName);
+      this.system(botName ? `${client.profile.name} left · ${botName} took over` : `${client.profile.name} left`);
     }
     this.broadcastLobby();
     this.onChange?.();
   }
 
   private receive(client: RemoteClient, msg: ClientMsg): void {
+    client.lastSeen = performance.now();
     if (msg.t === 'hello') {
       if (msg.v !== PROTOCOL_VERSION) {
         client.conn.send({ t: 'reject', reason: 'Game version mismatch. Refresh the page.' } satisfies HostMsg);
@@ -296,6 +330,7 @@ export class HostSession {
    */
   begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[]): void {
     this.match = match;
+    this.names = names;
     const sim = match.sim;
     const def = match.def;
     const forced = match.mode === 'gungame' || match.mode === 'snipers' || match.mode === 'roulette' || match.mode === 'marksman' || match.mode === 'gunfight' || match.lobbyWeapon !== 'any';
@@ -309,9 +344,10 @@ export class HostSession {
     let slot = this.hostPlaying ? 1 : 0;
     for (const c of this.clients) {
       if (!c.profile || !c.playing) continue;
-      const wantTeam = !def.teams ? null : match.mode === 'survival' || match.mode === 'zombies' || match.mode === 'infected' || match.mode === 'hideseek' ? 0 : slot % 2;
+      const sameSide = ['survival', 'zombies', 'infected', 'hideseek', ...PRACTICE_MODES].includes(match.mode);
+      const wantTeam = !def.teams ? null : sameSide ? 0 : slot % 2;
       const free = (team: number | null) =>
-        sim.agents.find((a) => !taken.has(a.id) && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
+        sim.agents.find((a) => !taken.has(a.id) && !a.dummy && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
       let a: Agent | undefined = slot === 0 ? match.player : (free(wantTeam) ?? free(null));
       if (!a) {
         const p = match.player;
@@ -331,10 +367,9 @@ export class HostSession {
     }
     // Online fillers are openly bots.
     sim.roboticBots = true;
-    let bot = 1;
     for (const a of sim.agents) {
       if (a.control === 'player' || a.control === 'remote') continue;
-      names[a.id] = `Bot ${bot++}`;
+      names[a.id] = a.dummy ? 'Target' : `Bot ${++this.botCount}`;
       skins[a.id] = null;
     }
     const humans = [...(this.hostPlaying ? [match.player.id] : []), ...this.clients.filter((c) => c.agentId >= 0).map((c) => c.agentId)];
@@ -424,6 +459,7 @@ export class HostSession {
         /* already gone */
       }
     }
+    window.clearInterval(this.watchdog);
     setTimeout(() => this.peer.destroy(), 300);
     this.match = null;
   }
@@ -436,6 +472,7 @@ export class ClientSession {
   onSnap: ((snap: Snapshot) => void) | null = null;
   onEnd: ((reason: string) => void) | null = null;
   onChat: ((msg: ChatMsg) => void) | null = null;
+  onRename: ((id: number, name: string) => void) | null = null;
   private ended = false;
   /** Smoothed round-trip time to the host, in milliseconds. */
   ping = 0;
@@ -452,7 +489,11 @@ export class ClientSession {
     this.pinger = window.setInterval(() => {
       if (this.conn.open) this.conn.send({ t: 'ping', at: performance.now() } satisfies ClientMsg);
     }, 2000);
+    // Closing the tab says goodbye, so the host swaps in a bot right away.
+    window.addEventListener('pagehide', this.onPageHide);
   }
+
+  private onPageHide = () => this.leave();
 
   static async connect(code: string, profile: PlayerProfile): Promise<ClientSession> {
     const peer = await openPeer();
@@ -481,6 +522,7 @@ export class ClientSession {
     else if (msg.t === 'start') this.onStart?.(msg);
     else if (msg.t === 'snap') this.onSnap?.(msg.snap);
     else if (msg.t === 'chat') this.onChat?.(msg);
+    else if (msg.t === 'rename') this.onRename?.(msg.id, msg.name);
     else if (msg.t === 'pong') {
       const rtt = performance.now() - msg.at;
       this.ping = this.ping ? this.ping * 0.7 + rtt * 0.3 : rtt;
@@ -528,6 +570,7 @@ export class ClientSession {
   }
 
   leave(): void {
+    window.removeEventListener('pagehide', this.onPageHide);
     if (!this.ended && this.conn.open) this.conn.send({ t: 'bye' } satisfies ClientMsg);
     this.ended = true;
     window.clearInterval(this.pinger);

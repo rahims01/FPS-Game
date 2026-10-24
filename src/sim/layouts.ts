@@ -234,3 +234,32 @@ export const randomLayout = (seed: number, half = 55): ArenaLayout => {
   };
   return { name: `Random #${seed}`, half: H, boxes, spawns, teamSpawns: [team(-1), team(1)] };
 };
+
+/**
+ * Practice range, 70 m deep: a shooting line with a bench at the south end,
+ * four lanes split by low dividers, and a few crates at the far end for
+ * practising peeks. Targets stand at 10, 25 and 45 m from the line.
+ */
+export const RANGE_LINE_Z = -30;
+export const rangeLayout = (): ArenaLayout => ({
+  name: 'Training Range',
+  half: 35,
+  boxes: [
+    ...perimeter(35),
+    // The bench along the shooting line (gaps at each end to walk downrange).
+    box(0, -27.6, 40, 0.6, 0.78, 'crate'),
+    // Low lane dividers.
+    ...[-12, 0, 12].map((x) => box(x, 2, 0.4, 50, 0.7, 'wall')),
+    // Crates and a pillar downrange for peeking practice.
+    box(-24, 24, 2.4, 2.4, 1.4, 'crate'),
+    box(24, 24, 2.4, 2.4, 1.4, 'crate'),
+    box(0, 30, 6, 1, 3, 'wall'),
+    box(-6, 18, 1.4, 1.4, 3, 'pillar'),
+    box(6, 18, 1.4, 1.4, 3, 'pillar')
+  ],
+  spawns: [-16, -8, 0, 8, 16, -24, 24, 4].map((x) => ({ x, z: -28.5 })),
+  teamSpawns: [
+    [0, -8, 8, -16, 16, -4, 4, 12].map((x) => ({ x, z: -28.5 })),
+    [{ x: 0, z: 25 }]
+  ]
+});

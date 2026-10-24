@@ -21,6 +21,9 @@ npm run build      # type-check + production build
 
 | Group | Mode | Rules |
 | --- | --- | --- |
+| Practice | Training Range | A 70 m range with target dummies at 10, 25 and 45 m (the middle lanes strafe), a bench to shoot from and crates to practise peeks. Nobody shoots back; B swaps to the next gun. |
+| Practice | Aim Trainer | 60 seconds: three targets around the range, and each one you drop reappears somewhere else. Your best score is saved. |
+| Practice | Free Roam | A big random map with nobody hunting you. Explore, practise movement, try guns (B). Friends can join online. |
 | Team | Team Deathmatch | 5v5 with respawns on a random map. First team to 40 kills. |
 | Team | Kill Confirmed | 5v5. A kill only counts when someone grabs the dropped dog tag. Grabbing your own team's tag denies it. First to 30. |
 | Team | 1v1 Duel / 2v2 / 3v3 Gunfight | No respawns within a round. First to 5 rounds. Sides swap every round. |
@@ -78,6 +81,7 @@ Under **Play online**, click **Host game** to open a room. Send the 5-letter cod
 
 - **Who plays:** up to 8 people per room. If there are more people than the mode has slots (say 4 friends in a 1v1), the host picks who plays (themselves included) and everyone else spectates, watching through the players' eyes.
 - **Match rules:** the host can set health (half / normal / double), gravity, score to win, a weapon everyone must use, health regen, and whether empty slots get bots.
+- **Leavers are replaced by bots:** if someone leaves mid-match (or their game stops responding for 15 s), a robotic bot named "Bot N" takes over their soldier, and everyone sees the new name. Matchmade games do the same: a quitter's slot goes to a robotic "Bot N" at once, and sometimes a new player replaces the bot later.
 - **Bots are labelled:** in rooms with friends, the computer players are called Bot 1, Bot 2 and so on, and move like machines (no strafing, crouching or hopping; they stop to turn), so they are never mistaken for people.
 - **Chat:** in the lobby, and in the match with T. Only rooms with friends have chat. Messages are filtered for swearing and slurs (including l33t spellings and s p a c e d words).
 

@@ -2,7 +2,7 @@ import { BOT_STYLES, STYLE_KIT, isHuman, setLoadout, type Agent, type Control, t
 import type { ArenaLayout, Point } from './Arena';
 import { SIM } from './config';
 import { FpsSim, type DamageRule, type PlayerInput, type Rally } from './FpsSim';
-import { classicLayout, randomLayout } from './layouts';
+import { classicLayout, randomLayout, rangeLayout } from './layouts';
 import { yawTo } from './math';
 import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, PRIMARIES, SECONDARIES, WEAPONS, type WeaponId } from './weapons';
 import { DEFAULT_STREAKS, normalizeStreaks, streakDef, type StreakId } from './killstreaks';
@@ -46,7 +46,10 @@ export type ModeId =
   | 'roulette'
   | 'defender'
   | 'gunfight'
-  | 'marksman';
+  | 'marksman'
+  | 'training'
+  | 'aimtrainer'
+  | 'freeroam';
 
 export interface ModeDef {
   id: ModeId;
@@ -57,7 +60,7 @@ export interface ModeDef {
   /** Two fixed teams (everyone wears their team's colour). */
   teams: boolean;
   /** Menu grouping. */
-  group: 'Team' | 'Objective' | 'Free-for-all' | 'Party' | 'Special' | 'Online only';
+  group: 'Practice' | 'Team' | 'Objective' | 'Free-for-all' | 'Party' | 'Special' | 'Online only';
   /** Humans only: no computer players, so it needs friends online. */
   humansOnly?: boolean;
   /** Fewest humans needed to start (online-only modes). */
@@ -65,6 +68,9 @@ export interface ModeDef {
 }
 
 export const MODES: ModeDef[] = [
+  { id: 'training', name: 'Training Range', blurb: 'Target dummies at 10, 25 and 45 m, some strafing. Nobody shoots back. Press B to try the next gun.', players: 1, teams: true, group: 'Practice' },
+  { id: 'aimtrainer', name: 'Aim Trainer', blurb: '60 seconds: targets appear around the range, and each one you drop pops up somewhere else. Beat your best score.', players: 1, teams: true, group: 'Practice' },
+  { id: 'freeroam', name: 'Free Roam', blurb: 'A big random map with nobody hunting you. Explore, practise movement, try guns (B). Bring friends online.', players: 1, teams: true, group: 'Practice' },
   { id: 'tdm', name: 'Team Deathmatch', blurb: '5v5 with respawns. First team to 40 kills.', players: 10, teams: true, group: 'Team' },
   { id: 'kc', name: 'Kill Confirmed', blurb: "5v5. A kill only counts when someone grabs the dog tags. Grab your team's tags to deny. First to 30.", players: 10, teams: true, group: 'Team' },
   { id: '1v1', name: '1v1 Duel', blurb: 'Just you and one opponent. Rounds, first to 5.', players: 2, teams: true, group: 'Team' },
@@ -264,9 +270,17 @@ const RESPAWN_MODES: ModeId[] = [
   'cranked',
   'defender',
   'roulette',
-  'marksman'
+  'marksman',
+  'training',
+  'freeroam'
 ];
 const CRANK_TIME = 30;
+/** Calm modes with no opponents: no matchmaking, XP, camo progress or killcams. */
+export const PRACTICE_MODES: ModeId[] = ['training', 'aimtrainer', 'freeroam'];
+const AIM_TIME = 60;
+const AIM_COUNTDOWN = 3;
+/** The range's shooting line (targets are placed at distances from it). */
+const RANGE_Z = -30;
 /** Respawn modes where a matchmade lobby sees people leave and join. */
 const CHURN_MODES: ModeId[] = ['tdm', 'kc', 'dom', 'ctf', 'koth', 'ffa', 'headshot', 'instagib', 'snipers', 'sharp', 'lowgrav', 'bighead', 'hardcore', 'cranked', 'defender', 'roulette', 'marksman', 'knife'];
 /** Every gun but the knife, for roulette loadouts. */
@@ -362,7 +376,10 @@ export class Match {
     /** Team defender: the flag. */
     defender: { carrier: -1, x: 0, z: 0 },
     /** Counter-UAV: minimaps of this team are jammed until then, by team. */
-    jamUntil: {} as Record<number, number>
+    jamUntil: {} as Record<number, number>,
+    /** Aim trainer: when the run ends, and the best score so far (set by the game). */
+    aimEnd: 0,
+    aimBest: 0
   };
   /** Players who left mid-match (their slot is empty), by agent id. */
   private away = new Set<number>();
@@ -402,7 +419,11 @@ export class Match {
     const mode = opts.mode;
     const seed = opts.seed ?? (Math.random() * 1e9) | 0;
     const layout: ArenaLayout =
-      mode === 'br'
+      mode === 'training' || mode === 'aimtrainer'
+        ? rangeLayout()
+        : mode === 'freeroam'
+          ? randomLayout(seed, 70)
+          : mode === 'br'
         ? randomLayout(seed, BR_HALF)
         : ['tdm', 'kc', 'dom', 'ctf', 'infected', 'hideseek', 'friends_tdm', 'snd', 'freeze', 'vip', 'hardcore', 'cranked', 'defender'].includes(mode)
           ? randomLayout(seed, 42)
@@ -435,7 +456,12 @@ export class Match {
     const fill = !this.def.humansOnly && rules.bots;
     const humans = Math.max(1, opts.humans ?? 1);
     const lobby = this.def.humansOnly ? humans : fill ? this.def.players : Math.min(this.def.players, Math.max(2, humans));
-    if (mode === 'infected' || mode === 'hideseek') {
+    if (PRACTICE_MODES.includes(mode)) {
+      // Everyone (you and any friends) on the shooting line, on one team.
+      const spawns = sim.arena.teamSpawns[0];
+      this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, mode === 'freeroam' ? 0 : 0);
+      for (let i = 1; i < humans; i++) sim.spawn(0, opts.botControl, spawns[i % spawns.length].x, spawns[i % spawns.length].z, 0);
+    } else if (mode === 'infected' || mode === 'hideseek') {
       // Everyone starts on the same side, spread out; the first infected / seekers are picked later.
       const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
@@ -569,6 +595,28 @@ export class Match {
       }
       case 'gunfight':
         this.announce('Round 1 · same loadout for everyone');
+        break;
+      case 'training': {
+        sim.damageToPlayerScale = 0;
+        // Still targets in the outer lanes, strafing ones in the middle lanes.
+        for (const [x, dummy] of [[-18, 'still'], [-6, 'strafe'], [6, 'strafe'], [18, 'still']] as const) {
+          for (const d of [10, 25, 45]) this.addDummy(x, RANGE_Z + d, dummy);
+        }
+        this.announce('Training range');
+        break;
+      }
+      case 'aimtrainer':
+        sim.damageToPlayerScale = 0;
+        for (let i = 0; i < 3; i++) {
+          const p = this.aimSpot();
+          this.addDummy(p.x, p.z, 'still');
+        }
+        this.party.aimEnd = AIM_COUNTDOWN + AIM_TIME;
+        this.announce('Get ready…', AIM_COUNTDOWN);
+        break;
+      case 'freeroam':
+        sim.damageToPlayerScale = 0;
+        this.announce('Free roam');
         break;
       case 'roulette':
         this.announce('Every life, a new gun');
@@ -724,6 +772,13 @@ export class Match {
       case 'gunfight':
         this.rulesRounds();
         break;
+      case 'training':
+      case 'freeroam':
+        this.rulesPractice();
+        break;
+      case 'aimtrainer':
+        this.rulesAimTrainer();
+        break;
       case 'zombies':
         this.rulesZombies();
         break;
@@ -762,6 +817,13 @@ export class Match {
 
   /** Someone new takes the empty slot: fresh stats, new personality, and they spawn in. */
   fillSlot(a: Agent): void {
+    this.resetSlot(a);
+    this.away.delete(a.id);
+    this.respawnSafely(a);
+  }
+
+  /** A new occupant for `a`'s slot (a bot or a new player): fresh stats, personality and guns. */
+  resetSlot(a: Agent): void {
     const sim = this.sim;
     if (this.def.teams) this.bankedKills[a.team as 0 | 1] += a.kills;
     a.kills = 0;
@@ -784,8 +846,6 @@ export class Match {
       const kit = STYLE_KIT[a.style];
       setLoadout(a, [kit.guns[sim.rng.int(kit.guns.length)], sim.rng.next() < 0.25 ? 'revolver' : 'pistol']);
     }
-    this.away.delete(a.id);
-    this.respawnSafely(a);
   }
 
   /** The private lobby's forced weapon, if any. */
@@ -957,6 +1017,51 @@ export class Match {
     return c.team === a.team ? { x: c.x, z: c.z, r: 9, urgent: false } : null;
   };
 
+  // ---------------------------------------------------------------- practice
+
+  private addDummy(x: number, z: number, kind: 'still' | 'strafe'): Agent {
+    const a = this.sim.spawn(1, 'heuristic', x, z, Math.PI);
+    a.dummy = kind;
+    a.postX = x;
+    a.postZ = z;
+    a.grenades = 0;
+    setLoadout(a, ['rifle']);
+    return a;
+  }
+
+  /** A random open spot downrange for an aim-trainer target. */
+  private aimSpot(): Point {
+    const sim = this.sim;
+    for (let i = 0; i < 40; i++) {
+      const x = sim.rng.range(-20, 20);
+      const z = sim.rng.range(RANGE_Z + 7, RANGE_Z + 26);
+      if (!sim.arena.boxAt(x, 0.5, z) && !sim.agents.some((a) => a.dummy && a.alive && Math.hypot(a.x - x, a.z - z) < 3)) return { x, z };
+    }
+    return { x: 0, z: RANGE_Z + 20 };
+  }
+
+  private rulesPractice(): void {
+    // Grenades come back so they can be practised too.
+    for (const a of this.sim.agents) if (!a.dummy && a.alive && a.grenades < 2 && this.sim.tick % 300 === 0) a.grenades++;
+    this.autoRespawn();
+  }
+
+  private rulesAimTrainer(): void {
+    const sim = this.sim;
+    const left = this.party.aimEnd - sim.time;
+    // The countdown: targets are up but don't count yet.
+    if (left > AIM_TIME) {
+      for (const a of sim.agents) if (!a.dummy) a.kills = a.shots = a.hits = a.headshots = 0;
+    }
+    if (left <= 0) {
+      const score = this.player.kills;
+      this.finish(true, 0, this.player.team);
+      this.announce(`Score: ${score}${score > this.party.aimBest ? ' · new best!' : ''}`, 9999);
+      return;
+    }
+    this.autoRespawn();
+  }
+
   // ---------------------------------------------------------------- party modes
 
   private makeJugg(a: Agent): void {
@@ -1124,6 +1229,18 @@ export class Match {
           for (const b of sim.agents) if (b.alive && !sim.isFrozen(b)) active[b.team === me.team ? 0 : 1]++;
           return `${active[0]} v ${active[1]} unfrozen · stand next to frozen teammates to thaw them`;
         }
+      case 'training': {
+        const acc = me.shots ? Math.round((me.hits / me.shots) * 100) : 0;
+        return `${me.kills} targets down · ${me.headshots} headshots · ${acc}% accuracy · B: next gun`;
+      }
+      case 'freeroam':
+        return 'Free roam · nobody is hunting you · B: next gun';
+      case 'aimtrainer': {
+        const left = p.aimEnd - sim.time;
+        if (left > AIM_TIME) return `Starting in ${sec(left - AIM_TIME)}`;
+        const acc = me.shots ? Math.round((me.hits / me.shots) * 100) : 0;
+        return `Score ${me.kills} · ${sec(left)} left · ${acc}% accuracy · best ${p.aimBest}`;
+      }
       case 'cranked': {
         const until = p.cranked[me.id];
         return until !== undefined ? `CRANKED · ${sec(until - sim.time)} to get a kill!` : 'Get a kill to get cranked';
@@ -1253,7 +1370,7 @@ export class Match {
       }
     }
     // Killstreaks for humans.
-    if (killer && isHuman(killer) && this.phase === 'live') {
+    if (killer && isHuman(killer) && this.phase === 'live' && !PRACTICE_MODES.includes(this.mode)) {
       for (const id of this.streaksFor(killer)) {
         const s = streakDef(id);
         if (killer.streak === s.kills) this.callStreak(killer, id);
@@ -1622,7 +1739,7 @@ export class Match {
     for (const a of sim.agents) {
       if (a.alive || (a === this.player && a.control === 'player') || this.eliminated(a) || this.away.has(a.id)) continue;
       const at = this.respawnAt.get(a.id);
-      if (at === undefined) this.respawnAt.set(a.id, sim.time + (isHuman(a) ? 6 : 3));
+      if (at === undefined) this.respawnAt.set(a.id, sim.time + (isHuman(a) ? (PRACTICE_MODES.includes(this.mode) ? 1.5 : 6) : a.dummy ? (this.mode === 'aimtrainer' ? 0.05 : 1.2) : 3));
       else if (sim.time >= at) {
         this.respawnAt.delete(a.id);
         this.respawnSafely(a);
@@ -1897,6 +2014,21 @@ export class Match {
   /** Respawns at the spawn point farthest from every living enemy (own side in team modes). */
   private respawnSafely(a: Agent): void {
     const sim = this.sim;
+    if (a.dummy) {
+      if (this.mode === 'aimtrainer') {
+        const p = this.aimSpot();
+        a.postX = p.x;
+        a.postZ = p.z;
+      }
+      sim.respawn(a, a.postX, a.postZ, Math.PI);
+      a.protectedUntil = 0;
+      return;
+    }
+    if (PRACTICE_MODES.includes(this.mode)) {
+      const p = sim.arena.teamSpawns[0][sim.rng.int(sim.arena.teamSpawns[0].length)];
+      sim.respawn(a, p.x, p.z, 0);
+      return;
+    }
     const pool = this.def.teams && this.mode !== 'infected' ? sim.arena.teamSpawns[a.team] : sim.arena.spawns;
     let best = pool[0];
     let bestD = -1;

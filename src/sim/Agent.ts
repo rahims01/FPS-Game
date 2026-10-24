@@ -164,6 +164,12 @@ export interface Agent {
   glanceYaw: number;
   nextGlance: number;
   afkUntil: number;
+  /** A labelled bot ("Bot 1") that moves like a machine (fills a slot someone left). */
+  robotic: boolean;
+  /** Practice target: stands still or strafes around its post and never shoots. */
+  dummy: '' | 'still' | 'strafe';
+  postX: number;
+  postZ: number;
 
   // Stats and RL.
   kills: number;
@@ -266,6 +272,10 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   glanceYaw: 0,
   nextGlance: 0,
   afkUntil: 0,
+  robotic: false,
+  dummy: '',
+  postX: 0,
+  postZ: 0,
   kills: 0,
   deaths: 0,
   damageDealt: 0,

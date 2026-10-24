@@ -271,7 +271,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           {hud.uav && <b className="uav">UAV</b>}
           {hud.jammed && <b className="jammed">JAMMED</b>}
           <span className="streak-picks">
-            Streak {hud.streak}
+            {hud.streaks.length > 0 && `Streak ${hud.streak}`}
             {hud.streaks.map((s) => (
               <i key={s.name} className={s.earned ? 'earned' : hud.nextStreak?.name === s.name ? 'next' : ''} title={`${s.name} at ${s.kills} kills`}>
                 {s.name} <em>{s.kills}</em>

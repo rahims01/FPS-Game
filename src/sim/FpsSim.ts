@@ -164,6 +164,11 @@ export class FpsSim {
    * hops; they stop to turn) so nobody mistakes them for the people in the room.
    */
   roboticBots = false;
+
+  /** Moves like a machine: every bot in an online room, or a bot filling a slot someone left. */
+  robotic(a: Agent): boolean {
+    return this.roboticBots || a.robotic;
+  }
   objectives: { label: string; x: number; z: number; r: number; owner: number; progress: number; carried?: boolean }[] = [];
   /** Per-agent objective (domination), takes precedence over `rally`. */
   rallyFor: ((a: Agent) => Rally | null) | null = null;
@@ -239,6 +244,10 @@ export class FpsSim {
     fresh.hits = a.hits;
     fresh.headshots = a.headshots;
     fresh.bestStreak = a.bestStreak;
+    fresh.robotic = a.robotic;
+    fresh.dummy = a.dummy;
+    fresh.postX = a.postX;
+    fresh.postZ = a.postZ;
     fresh.brain.aggression = this.rng.next();
     fresh.lastSeenX = x;
     fresh.lastSeenZ = z;
@@ -830,7 +839,7 @@ export class FpsSim {
         attacker.streak++;
         attacker.bestStreak = Math.max(attacker.bestStreak, attacker.streak);
         // Some players can't resist crouching on the body (only bots, never online fillers).
-        if (!isHuman(attacker) && !this.roboticBots && this.rng.next() < 0.18) attacker.tbagUntil = this.time + 0.9 + this.rng.next() * 1.1;
+        if (!isHuman(attacker) && !this.robotic(attacker) && this.rng.next() < 0.18) attacker.tbagUntil = this.time + 0.9 + this.rng.next() * 1.1;
         attacker.reward += 1;
       }
       v.reward -= 1;
@@ -1013,10 +1022,25 @@ export class FpsSim {
       }
     }
     // Combat hops, by personality.
-    const rate = this.roboticBots ? 0 : a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
+    const rate = this.robotic(a) ? 0 : a.style === 'rusher' ? 0.012 : a.style === 'flanker' ? 0.006 : a.style === 'soldier' ? 0.004 : a.style === 'tactician' ? 0.002 : 0;
     if (a.seesTarget && (name === 'strafe_left' || name === 'strafe_right' || name === 'advance') && this.rng.next() < rate * this.jumpMul) this.jump(a);
     // Bunny hops while running between fights, like plenty of real players.
-    else if (!this.roboticBots && !a.seesTarget && speed >= SOLDIER.sprintSpeed * 0.85 && this.rng.next() < rate * 0.5) this.jump(a);
+    else if (!this.robotic(a) && !a.seesTarget && speed >= SOLDIER.sprintSpeed * 0.85 && this.rng.next() < rate * 0.5) this.jump(a);
+  }
+
+  /** Practice targets: hold the post (facing the shooting line) or strafe across it. Never shoot. */
+  private driveDummy(a: Agent, dt: number): void {
+    a.yaw = Math.PI;
+    a.pitch = 0;
+    a.aiming = false;
+    a.sprinting = false;
+    if (a.dummy === 'strafe') {
+      // Back and forth 4 m either side of the post, with a pause at each end.
+      const phase = (this.time * 0.22 + a.id * 0.37) % 1;
+      const goal = a.postX + (phase < 0.5 ? 4 : -4);
+      const dx = goal - a.x;
+      this.accelerate(a, Math.abs(dx) > 0.3 ? Math.sign(dx) * SOLDIER.walkSpeed : 0, (a.postZ - a.z) * 2, dt);
+    } else this.accelerate(a, (a.postX - a.x) * 2, (a.postZ - a.z) * 2, dt);
   }
 
   private followPath(a: Agent, gx: number, gz: number): { x: number; z: number } {
@@ -1042,8 +1066,12 @@ export class FpsSim {
       this.accelerate(a, 0, 0, dt);
       return;
     }
+    if (a.dummy) {
+      this.driveDummy(a, dt);
+      return;
+    }
     // Still loading in at the start of the match (until shot at).
-    if (!this.roboticBots && this.time < a.afkUntil && a.lastHitT <= 0) {
+    if (!this.robotic(a) && this.time < a.afkUntil && a.lastHitT <= 0) {
       this.accelerate(a, 0, 0, dt);
       return;
     }
@@ -1073,7 +1101,7 @@ export class FpsSim {
     const known = this.knowsTarget(a);
     const dTarget = Math.hypot(tx - a.x, tz - a.z);
     let crouch = false;
-    const tbag = !this.roboticBots && this.time < a.tbagUntil && !a.seesTarget && !override;
+    const tbag = !this.robotic(a) && this.time < a.tbagUntil && !a.seesTarget && !override;
     // Standing objectives (planting, defusing): hold still once there.
     if (r && r.hold && !farFromRally && (!a.seesTarget || r.urgent)) name = 'hold';
     if (!override) {
@@ -1158,7 +1186,7 @@ export class FpsSim {
     // Robotic bots (online fillers): stand still to shoot, never strafe, crouch or
     // sprint, and stop to turn on the spot before walking a new way.
     let robotFace: number | null = null;
-    if (this.roboticBots) {
+    if (this.robotic(a)) {
       crouch = false;
       if (a.seesTarget && !override && !knife) mx = mz = 0;
       speed = Math.min(speed, SOLDIER.walkSpeed);
@@ -1206,7 +1234,7 @@ export class FpsSim {
       wantPitch = Math.atan2(aimY - (a.y + eyeHeight(a)), Math.max(0.5, Math.hypot(tx - a.x, tz - a.z)));
     }
     // Humans check corners: a quick look to one side every few seconds when nobody is in view.
-    if (!this.roboticBots && !a.seesTarget) {
+    if (!this.robotic(a) && !a.seesTarget) {
       if (this.time >= a.nextGlance) {
         a.nextGlance = this.time + 2 + this.rng.next() * 4;
         a.glanceUntil = this.time + 0.35 + this.rng.next() * 0.45;
@@ -1214,7 +1242,7 @@ export class FpsSim {
       }
       if (this.time < a.glanceUntil) wantYaw += a.glanceYaw;
     }
-    const maxTurn = BOT_AIM.turnRate * dt * (this.roboticBots ? 0.7 : 1);
+    const maxTurn = BOT_AIM.turnRate * dt * (this.robotic(a) ? 0.7 : 1);
     a.yaw = wrapAngle(a.yaw + clamp(wrapAngle(wantYaw - a.yaw), -maxTurn, maxTurn));
     a.pitch += clamp(wantPitch - a.pitch, -maxTurn, maxTurn);
     a.aiming = mayFire && a.seesTarget;
