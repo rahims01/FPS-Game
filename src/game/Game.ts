@@ -143,6 +143,8 @@ interface Snap {
   weapon: WeaponId;
   lastShotT: number;
   alive: boolean;
+  /** Aiming down sights (bots aim whenever they have a target in view). */
+  aiming: boolean;
 }
 
 const KILLCAM_BEFORE = 3.5;
@@ -810,7 +812,8 @@ export class Game {
         reloadT: a.reloadT,
         weapon: a.weapons[a.slot] ?? 'rifle',
         lastShotT: a.lastShotT,
-        alive: a.alive
+        alive: a.alive,
+        aiming: a.aiming
       }))
     });
     const keep = sim.time - (KILLCAM_BEFORE + KILLCAM_AFTER + KILLCAM_DELAY + 1);
@@ -907,8 +910,11 @@ export class Game {
     const eye = eyeHeight(killer);
     this.camera.position.set(killer.x, killer.y + eye, killer.z);
     this.camera.rotation.set(killer.pitch, killer.yaw + Math.PI, 0);
-    if (this.camera.fov !== this.settings.fov) {
-      this.camera.fov = this.settings.fov;
+    const kw = WEAPONS[killer.weapon];
+    const zoom = kw.scope ? Math.max(0, this.settings.fov - 20) : kw.adsFov;
+    const kcFov = this.settings.fov - this.viewmodel.adsAmount * zoom;
+    if (Math.abs(this.camera.fov - kcFov) > 0.01) {
+      this.camera.fov = kcFov;
       this.camera.updateProjectionMatrix();
     }
     if (killer.weapon !== this.lastWeapon) {
@@ -935,7 +941,7 @@ export class Game {
     }
     this.viewmodel.update(dt, {
       speed: Math.hypot(killer.vx, killer.vz),
-      aiming: false,
+      aiming: killer.aiming,
       sprinting: killer.sprinting,
       reload: 0,
       switching: 0,
@@ -943,7 +949,7 @@ export class Game {
       lookDX: 0,
       lookDY: 0,
       visible: true,
-      scope: false
+      scope: kw.scope
     });
     return true;
   }
@@ -1329,7 +1335,7 @@ export class Game {
       weaponId: w.id,
       loadout: p.weapons.map((id, i) => ({ id, name: WEAPONS[id].tag, active: i === p.slot })),
       grenades: p.grenades,
-      scoped: this.viewmodel.scoped && p.alive,
+      scoped: this.viewmodel.scoped && (p.alive || !!this.killcam),
       crouching: p.crouching || p.slideT > 0,
       protected: sim.time < p.protectedUntil,
       streak: p.streak,
