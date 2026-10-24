@@ -17,7 +17,6 @@ import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
-import { randomSkin } from '../assets/skins';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
 import { touchEnabled, type GameSettings } from './settings';
@@ -289,9 +288,9 @@ export class Game {
   private baseWeaponKills: Record<string, number> = {};
   private weaponKills: Record<string, number> = {};
   // Matchmade lobbies: people come and go, and everyone has a connection.
-  private nextChurn = 60 + Math.random() * 80;
-  /** Bots holding a slot until a new player joins (at `at`, on their next death). */
-  private joining: { id: number; at: number }[] = [];
+  private nextChurn = 30;
+  /** Rage quits so far this match (at most two). */
+  private quits = 0;
   private botCount = 0;
   private pings = new Map<number, number>();
   private pingT = 0;
@@ -988,39 +987,39 @@ export class Game {
         this.pings.set(a.id, Math.max(8, Math.round(prev + (base - prev) * 0.5 + (Math.random() - 0.5) * 8 + spike)));
       }
     }
-    for (let i = this.joining.length - 1; i >= 0; i--) {
-      const j = this.joining[i];
-      const a = sim.agents[j.id];
-      // A new player takes over from the bot when it next dies.
-      if (!a || sim.time < j.at || a.alive || m.phase !== 'live') continue;
-      this.joining.splice(i, 1);
-      const bot = this.ids.names[a.id];
-      const name = randomUsername(this.ids.names);
-      this.ids.names[a.id] = name;
-      this.ids.skins[a.id] = Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]));
-      this.pings.delete(a.id);
-      m.resetSlot(a);
-      a.robotic = false;
-      this.systemLine(`${name} joined · replaced ${bot}`);
-    }
-    if (!m.allowsChurn || sim.time < this.nextChurn) return;
-    this.nextChurn = sim.time + 50 + Math.random() * 100;
-    // Rage quits happen right after dying.
-    const quitters = sim.agents.filter((a) => a !== m.player && !a.alive && sim.time - a.deathT < 3 && !this.joining.some((j) => j.id === a.id));
+    if (!m.allowsChurn || sim.time < this.nextChurn || this.quits >= 2) return;
+    this.nextChurn = sim.time + 20;
+    // Rage quits are rare: only someone whose side is getting crushed, right after dying.
+    const quitters = sim.agents.filter((a) => a !== m.player && !a.robotic && !a.alive && sim.time - a.deathT < 3 && this.hopeless(a));
     const q = quitters[Math.floor(Math.random() * quitters.length)];
-    if (!q) {
-      this.nextChurn = sim.time + 5;
-      return;
-    }
-    // A labelled, robotic bot takes the slot straight away; sometimes a new player replaces it later.
+    if (!q || Math.random() > 0.2) return;
+    // Nobody joins mid-match: a labelled, robotic bot takes the slot for the rest of the game.
     const left = this.nameOf(q.id);
     const bot = `Bot ${++this.botCount}`;
     m.resetSlot(q);
     q.robotic = true;
     this.ids.names[q.id] = bot;
     this.ids.skins[q.id] = null;
+    this.quits++;
     this.systemLine(`${left} left · ${bot} took over`);
-    if (Math.random() < 0.55) this.joining.push({ id: q.id, at: sim.time + 20 + Math.random() * 50 });
+  }
+
+  /**
+   * Losing so badly that a comeback is close to impossible: in team modes the
+   * other team is well on the way to winning and far ahead; in free-for-all the
+   * leader is close to winning and this player is near the bottom.
+   */
+  private hopeless(a: Agent): boolean {
+    const m = this.match;
+    const goal = m.goal(m.mode);
+    if (!goal) return false;
+    if (m.def.teams) {
+      const mine = m.scores[a.team as 0 | 1];
+      const theirs = m.scores[a.team === 0 ? 1 : 0];
+      return theirs >= goal * 0.6 && theirs - mine >= goal * 0.45;
+    }
+    const leader = Math.max(...m.sim.agents.filter((b) => b !== a).map((b) => b.kills));
+    return leader >= goal * 0.6 && a.kills <= leader * 0.25 && a.deaths >= a.kills + 6;
   }
 
   // ---------------------------------------------------------------- online
