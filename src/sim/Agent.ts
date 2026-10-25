@@ -1,6 +1,7 @@
 import { SOLDIER, type HitRegion } from './config';
 import { WEAPONS, type WeaponId } from './weapons';
 import type { Point } from './Arena';
+import type { PerkId, ThrowableId } from './gear';
 
 /** Discrete action space shared by the heuristic bots, the PPO trainer and the in-browser policy. */
 export const ACTIONS = ['hold', 'advance', 'strafe_left', 'strafe_right', 'retreat', 'sprint', 'take_cover', 'reload'] as const;
@@ -10,7 +11,7 @@ export const A: Record<ActionName, number> = Object.fromEntries(ACTIONS.map((n, 
 /** Who chooses a bot's actions. 'external' means the caller sets agent.action (training). */
 export type Control = 'player' | 'remote' | 'heuristic' | 'learned' | 'external';
 
-export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone';
+export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone' | 'molotov' | 'tknife' | 'spear';
 
 /**
  * Bot personalities. They share the learned tactics but differ in how they
@@ -21,11 +22,11 @@ export const BOT_STYLES: BotStyle[] = ['soldier', 'rusher', 'sniper', 'flanker',
 
 /** Guns each personality carries and its aim multiplier (lower = sharper). */
 export const STYLE_KIT: Record<BotStyle, { guns: WeaponId[]; aim: number }> = {
-  soldier: { guns: ['rifle', 'ak', 'smg', 'lmg', 'burst'], aim: 1 },
-  rusher: { guns: ['shotgun', 'smg', 'smg'], aim: 1.15 },
-  sniper: { guns: ['sniper', 'sniper', 'dmr', 'lmg'], aim: 0.75 },
-  flanker: { guns: ['smg', 'rifle', 'shotgun'], aim: 1 },
-  tactician: { guns: ['rifle', 'lmg', 'burst', 'dmr'], aim: 0.9 }
+  soldier: { guns: ['rifle', 'ak', 'smg', 'lmg', 'burst', 'scar'], aim: 1 },
+  rusher: { guns: ['shotgun', 'smg', 'uzi', 'autoshotgun'], aim: 1.15 },
+  sniper: { guns: ['sniper', 'sniper', 'dmr', 'barrett'], aim: 0.75 },
+  flanker: { guns: ['smg', 'rifle', 'shotgun', 'uzi'], aim: 1 },
+  tactician: { guns: ['rifle', 'lmg', 'burst', 'dmr', 'scar'], aim: 0.9 }
 };
 
 /** Humans: the local player and remote (online) players. */
@@ -45,7 +46,7 @@ export const setLoadout = (a: Agent, weapons: WeaponId[]): void => {
 };
 
 /** Eye height above the feet (lower when crouching or sliding). */
-export const eyeHeight = (a: { crouching: boolean; slideT: number }): number => (a.crouching || a.slideT > 0 ? SOLDIER.eye * 0.68 : SOLDIER.eye);
+export const eyeHeight = (a: { crouching: boolean; slideT: number; scale?: number }): number => (a.crouching || a.slideT > 0 ? SOLDIER.eye * 0.68 : SOLDIER.eye) * (a.scale ?? 1);
 
 export interface Agent {
   id: number;
@@ -78,7 +79,24 @@ export interface Agent {
   /** Semi-automatic weapons need the trigger released between shots. */
   triggerHeld: boolean;
   meleeCd: number;
+  /** Lethal throwables left (frag, molotov, throwing knife or spear: see `lethal`). */
   grenades: number;
+  lethal: ThrowableId;
+  tactical: ThrowableId;
+  tacticals: number;
+  perks: PerkId[];
+  /** Flashbanged until then. */
+  blindUntil: number;
+  /** Body size (the boss is bigger: hitbox, view and eye height scale with it). */
+  scale: number;
+  /** A strong player on a fresh, low-level account. */
+  smurf: boolean;
+  /** Fully AFK (doesn't react even when shot). */
+  afkDeep: boolean;
+  /** Length of the current reload (perks change it), for the reload bar. */
+  reloadDur: number;
+  /** Bot squad (matchmade parties of bots that stick together), or -1. */
+  squad: number;
   grenadeCd: number;
   crouching: boolean;
   /** Time left in a slide (sprint + crouch). */
@@ -210,6 +228,16 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   triggerHeld: false,
   meleeCd: 0,
   grenades: 2,
+  lethal: 'frag',
+  tactical: 'flash',
+  tacticals: 2,
+  perks: [],
+  blindUntil: 0,
+  scale: 1,
+  smurf: false,
+  afkDeep: false,
+  reloadDur: 1,
+  squad: -1,
   grenadeCd: 0,
   crouching: false,
   slideT: 0,

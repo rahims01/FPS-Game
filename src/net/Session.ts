@@ -3,6 +3,8 @@ import { setLoadout, type Agent } from '../sim/Agent';
 import type { PlayerInput, SimEvent } from '../sim/FpsSim';
 import { DEFAULT_RULES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type Match, type MatchNotice, type ModeId } from '../sim/Match';
 import { normalizeStreaks } from '../sim/killstreaks';
+import { normalizePerks, THROWABLES } from '../sim/gear';
+import type { Cosmetics } from '../game/cosmetics';
 import type { SkinChoice } from '../assets/skins';
 import { cleanChat } from './chat';
 import {
@@ -78,6 +80,7 @@ const blankInput = (): PlayerInput => ({
   crouch: false,
   melee: false,
   grenade: false,
+  tactical: false,
   switchSlot: -1
 });
 
@@ -103,6 +106,8 @@ export class HostSession {
   lobby: { mode: ModeId; difficulty: Difficulty; hostName: string; hostColor: number; rules: LobbyRules };
   /** The host plays (or only watches). */
   hostPlaying = true;
+  /** A party: friends queue into a normal matchmade game together (bots look like real players). */
+  party = false;
   onChange: (() => void) | null = null;
   /** A player left: `newName` is the bot that took over their soldier (if a match is running). */
   onClientLeft: ((name: string, agentId: number, newName: string | null) => void) | null = null;
@@ -142,12 +147,14 @@ export class HostSession {
   /** How long a client may be silent before it is dropped (tests raise it for throttled tabs). */
   silentMs = SILENT_MS;
 
-  static async create(mode: ModeId, difficulty: Difficulty, hostName: string, hostColor: number): Promise<HostSession> {
+  static async create(mode: ModeId, difficulty: Difficulty, hostName: string, hostColor: number, party = false): Promise<HostSession> {
     for (let attempt = 0; attempt < 4; attempt++) {
       const code = makeCode();
       try {
         const peer = await openPeer(PEER_PREFIX + code);
-        return new HostSession(peer, code, mode, difficulty, hostName, hostColor);
+        const s = new HostSession(peer, code, mode, difficulty, hostName, hostColor);
+        s.party = party;
+        return s;
       } catch (e) {
         if ((e as { type?: string }).type !== 'unavailable-id') throw e;
       }
@@ -261,7 +268,7 @@ export class HostSession {
         client.conn.send({ t: 'reject', reason: 'That room is full.' } satisfies HostMsg);
         return;
       }
-      client.profile = { ...msg.profile, name: cleanChat(msg.profile.name.slice(0, 16)) || 'Player', streaks: normalizeStreaks(msg.profile.streaks) };
+      client.profile = { ...msg.profile, name: cleanChat(msg.profile.name.slice(0, 16)) || 'Player', streaks: normalizeStreaks(msg.profile.streaks), perks: normalizePerks(msg.profile.perks) };
       // Late joiners spectate once the mode is full; the host can swap people around.
       client.playing = this.playingCount < this.slots;
       this.system(`${client.profile.name} joined`);
@@ -280,6 +287,7 @@ export class HostSession {
       inp.reload ||= b.reload;
       inp.melee ||= b.melee;
       inp.grenade ||= b.grenade;
+      inp.tactical ||= b.tactical;
       if (b.switchSlot >= 0) inp.switchSlot = b.switchSlot;
       client.state = { life: msg.life, s: msg.s, f: msg.f, slide: msg.slide };
     } else if (msg.t === 'chat') {
@@ -313,7 +321,7 @@ export class HostSession {
   }
 
   private lobbyMsg(): LobbyMsg {
-    return { t: 'lobby', mode: this.lobby.mode, difficulty: this.lobby.difficulty, players: this.players, max: this.maxPlayers, slots: this.slots, rules: this.lobby.rules };
+    return { t: 'lobby', mode: this.lobby.mode, difficulty: this.lobby.difficulty, players: this.players, max: this.maxPlayers, slots: this.slots, rules: this.lobby.rules, party: this.party };
   }
 
   private broadcastLobby(): void {
@@ -328,7 +336,7 @@ export class HostSession {
    * Everyone else spectates. The remaining computer players are labelled as
    * bots ("Bot 1", "Bot 2"...) and move like machines.
    */
-  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[]): void {
+  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[], cosmetics: (Cosmetics | null)[] = []): void {
     this.match = match;
     this.names = names;
     const sim = match.sim;
@@ -344,8 +352,12 @@ export class HostSession {
     let slot = this.hostPlaying ? 1 : 0;
     for (const c of this.clients) {
       if (!c.profile || !c.playing) continue;
-      const sameSide = ['survival', 'zombies', 'infected', 'hideseek', ...PRACTICE_MODES].includes(match.mode);
-      const wantTeam = !def.teams ? null : sameSide ? 0 : slot % 2;
+      const sameSide = ['survival', 'zombies', 'infected', 'hideseek', 'boss', ...PRACTICE_MODES].includes(match.mode);
+      // A party sticks together on the host's team (overflow goes to the other side).
+      const partyTeam = this.party && def.teams ? (sim.agents.some((b) => b.team === 0 && !taken.has(b.id) && !b.dummy && b.control !== 'player' && b.control !== 'remote') ? 0 : 1) : null;
+      // Battle-royale squads: friends share the host's squad while it has room.
+      const squadTeam = match.player.squad >= 0 ? match.player.team : null;
+      const wantTeam = squadTeam !== null && sim.agents.some((b) => b.team === squadTeam && !taken.has(b.id) && b.control !== 'player' && b.control !== 'remote') ? squadTeam : partyTeam !== null ? partyTeam : !def.teams ? null : sameSide ? 0 : slot % 2;
       const free = (team: number | null) =>
         sim.agents.find((a) => !taken.has(a.id) && !a.dummy && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
       let a: Agent | undefined = slot === 0 ? match.player : (free(wantTeam) ?? free(null));
@@ -360,17 +372,26 @@ export class HostSession {
       a.style = 'soldier';
       if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [c.profile.primary, c.profile.secondary ?? 'pistol']);
       match.streakChoices[a.id] = c.profile.streaks;
+      a.perks = c.profile.perks ?? a.perks;
+      a.lethal = c.profile.lethal ?? a.lethal;
+      a.tactical = c.profile.tactical ?? a.tactical;
+      if (a.grenades > 0) a.grenades = THROWABLES[a.lethal].count;
+      if (a.tacticals > 0) a.tacticals = THROWABLES[a.tactical].count;
+      cosmetics[a.id] = c.profile.cosmetics ?? null;
       c.agentId = a.id;
       names[a.id] = c.profile.name;
       skins[a.id] = c.profile.skins ?? {};
       if (!teamColors) colors[a.id] = c.profile.color;
     }
-    // Online fillers are openly bots.
-    sim.roboticBots = true;
-    for (const a of sim.agents) {
-      if (a.control === 'player' || a.control === 'remote') continue;
-      names[a.id] = a.dummy ? 'Target' : `Bot ${++this.botCount}`;
-      skins[a.id] = null;
+    // Rooms with friends: fillers are openly bots. Parties play a normal matchmade game instead.
+    if (!this.party) {
+      sim.roboticBots = true;
+      for (const a of sim.agents) {
+        if (a.control === 'player' || a.control === 'remote') continue;
+        names[a.id] = a.dummy ? 'Target' : `Bot ${++this.botCount}`;
+        skins[a.id] = null;
+        cosmetics[a.id] = null;
+      }
     }
     const humans = [...(this.hostPlaying ? [match.player.id] : []), ...this.clients.filter((c) => c.agentId >= 0).map((c) => c.agentId)];
     for (const c of this.clients) {
@@ -388,10 +409,30 @@ export class HostSession {
         humans,
         spectate: c.agentId < 0,
         skins,
-        rules: this.lobby.rules
+        rules: this.lobby.rules,
+        cosmetics,
+        party: this.party,
+        night: !!match.opts.night
       };
       c.conn.send(start);
     }
+  }
+
+  /** After a match: everyone goes back to the room for another game. */
+  returnToLobby(): void {
+    this.match = null;
+    this.events = [];
+    this.notices = [];
+    this.botCount = 0;
+    for (const c of this.clients) {
+      c.agentId = -1;
+      c.started = false;
+      c.state = null;
+      c.input = blankInput();
+      if (c.conn.open) c.conn.send({ t: 'toLobby' } satisfies HostMsg);
+    }
+    this.broadcastLobby();
+    this.onChange?.();
   }
 
   /** Feeds the latest client inputs and positions into the simulation. Call before each host tick. */
@@ -428,6 +469,7 @@ export class HostSession {
       c.input.reload = false;
       c.input.melee = false;
       c.input.grenade = false;
+      c.input.tactical = false;
       c.input.switchSlot = -1;
     }
   }
@@ -473,11 +515,12 @@ export class ClientSession {
   onEnd: ((reason: string) => void) | null = null;
   onChat: ((msg: ChatMsg) => void) | null = null;
   onRename: ((id: number, name: string) => void) | null = null;
+  onToLobby: (() => void) | null = null;
   private ended = false;
   /** Smoothed round-trip time to the host, in milliseconds. */
   ping = 0;
   private pinger: number;
-  private buttons: NetButtons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, switchSlot: -1 };
+  private buttons: NetButtons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
 
   private constructor(
     private peer: Peer,
@@ -523,6 +566,7 @@ export class ClientSession {
     else if (msg.t === 'snap') this.onSnap?.(msg.snap);
     else if (msg.t === 'chat') this.onChat?.(msg);
     else if (msg.t === 'rename') this.onRename?.(msg.id, msg.name);
+    else if (msg.t === 'toLobby') this.onToLobby?.();
     else if (msg.t === 'pong') {
       const rtt = performance.now() - msg.at;
       this.ping = this.ping ? this.ping * 0.7 + rtt * 0.3 : rtt;
@@ -548,6 +592,7 @@ export class ClientSession {
     b.reload ||= input.reload;
     b.melee ||= input.melee;
     b.grenade ||= input.grenade;
+    b.tactical ||= input.tactical;
     if (input.switchSlot >= 0) b.switchSlot = input.switchSlot;
     // A quick semi-auto click between packets still counts as a shot.
     b.fire ||= input.fire;
@@ -566,7 +611,7 @@ export class ClientSession {
       b: { ...b, fire: b.fire || input.fire, aim: input.aim, sprint: input.sprint, crouch: input.crouch }
     };
     this.conn.send(msg);
-    this.buttons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, switchSlot: -1 };
+    this.buttons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
   }
 
   leave(): void {

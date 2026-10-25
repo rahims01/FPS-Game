@@ -122,6 +122,108 @@ export class Effects {
 
   /** Fraction of particles actually spawned (graphics setting). */
   density = 1;
+  /** Accessibility: dimmer explosions and flashes. */
+  reduceFlash = false;
+
+  private paintMats = new Map<number, THREE.MeshBasicMaterial>();
+
+  /** Paintball hit: a splash of the shooter's colour and a splat on the surface. */
+  paint(p: THREE.Vector3, n: THREE.Vector3, color: number): void {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < 14; i++) {
+      this.emit(p.x, p.y, p.z, n.x * 2 + (Math.random() - 0.5) * 4, n.y * 2 + Math.random() * 3, n.z * 2 + (Math.random() - 0.5) * 4, c.r, c.g, c.b, 0.35 + Math.random() * 0.3, 10);
+    }
+    let mat = this.paintMats.get(color);
+    if (!mat) {
+      mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
+      this.paintMats.set(color, mat);
+    }
+    this.decal(p, n, mat, 2.2 + Math.random() * 1.6);
+  }
+
+  /** A flashbang going off: a blinding white burst and a sharp light. */
+  flashBurst(p: THREE.Vector3): void {
+    const f = this.fireballs[this.fireNext];
+    this.fireNext = (this.fireNext + 1) % this.fireballs.length;
+    f.sprite.position.copy(p);
+    f.size = this.reduceFlash ? 1.5 : 4;
+    f.life = 0.25;
+    f.sprite.visible = true;
+    const l = this.lights[this.lightNext];
+    this.lightNext = (this.lightNext + 1) % this.lights.length;
+    l.light.position.copy(p);
+    l.light.intensity = this.reduceFlash ? 20 : 90;
+    l.light.distance = 20;
+    l.life = 0.12;
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.emit(p.x, p.y, p.z, Math.cos(a) * 6, Math.random() * 5, Math.sin(a) * 6, 1, 1, 0.9, 0.3, 6);
+    }
+  }
+
+  /** Glass and a puff when a molotov or smoke can goes off. */
+  shatter(p: THREE.Vector3, molotov: boolean): void {
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 3;
+      if (molotov) this.emit(p.x, p.y + 0.1, p.z, Math.cos(a) * s, 1 + Math.random() * 4, Math.sin(a) * s, 1, 0.55, 0.15, 0.4 + Math.random() * 0.4, 6);
+      else this.emit(p.x, p.y + 0.1, p.z, Math.cos(a) * s * 0.5, 1 + Math.random() * 2, Math.sin(a) * s * 0.5, 0.8, 0.8, 0.8, 0.6, 2);
+    }
+  }
+
+  // Persistent ground effects (smoke clouds, fire), driven by the simulation's fields.
+  private fieldSprites: { sprite: THREE.Sprite; kind: 'fire' | 'smoke' }[] = [];
+  private smokeMat = new THREE.SpriteMaterial({ map: dotTexture(), color: 0xb9bcbf, transparent: true, depthWrite: false, opacity: 0.85 });
+  private fireMat = new THREE.SpriteMaterial({ map: flashTexture(), color: 0xff8a2a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+
+  /** Draws smoke clouds and fires where the simulation says they are. */
+  syncFields(fields: { kind: 'fire' | 'smoke'; x: number; z: number; r: number; until: number }[], time: number): void {
+    // Smoke: a dense ball of overlapping puffs; fire: flickering flames over the ground.
+    const wanted: { kind: 'fire' | 'smoke'; x: number; y: number; z: number; s: number; o: number }[] = [];
+    let seed = 1;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (const f of fields) {
+      const left = f.until - time;
+      const fade = Math.min(1, left / 2);
+      if (f.kind === 'smoke') {
+        for (let i = 0; i < 22; i++) {
+          const a = rnd() * Math.PI * 2;
+          const r = Math.sqrt(rnd()) * f.r * 0.8;
+          wanted.push({ kind: 'smoke', x: f.x + Math.cos(a) * r + Math.sin(time * 0.3 + i) * 0.3, y: 0.6 + rnd() * 3.2, z: f.z + Math.sin(a) * r, s: 3.5 + rnd() * 2.5, o: 0.9 * fade });
+        }
+      } else {
+        for (let i = 0; i < 12; i++) {
+          const a = rnd() * Math.PI * 2;
+          const r = Math.sqrt(rnd()) * f.r;
+          const flick = 0.7 + 0.3 * Math.sin(time * 14 + i * 3);
+          wanted.push({ kind: 'fire', x: f.x + Math.cos(a) * r, y: 0.35 + rnd() * 0.3, z: f.z + Math.sin(a) * r, s: (0.9 + rnd() * 0.8) * flick, o: fade });
+        }
+      }
+    }
+    while (this.fieldSprites.length < wanted.length) {
+      const kind = wanted[this.fieldSprites.length].kind;
+      const sprite = new THREE.Sprite((kind === 'smoke' ? this.smokeMat : this.fireMat).clone());
+      this.group.add(sprite);
+      this.fieldSprites.push({ sprite, kind });
+    }
+    this.fieldSprites.forEach((fs, i) => {
+      const w = wanted[i];
+      fs.sprite.visible = !!w;
+      if (!w) return;
+      if (fs.kind !== w.kind) {
+        fs.sprite.material = (w.kind === 'smoke' ? this.smokeMat : this.fireMat).clone();
+        fs.kind = w.kind;
+      }
+      fs.sprite.position.set(w.x, w.y, w.z);
+      fs.sprite.scale.setScalar(w.s);
+      fs.sprite.material.opacity = w.o;
+    });
+    // Embers rising off the fires.
+    for (const f of fields) if (f.kind === 'fire' && Math.random() < 0.5) this.emit(f.x + (Math.random() - 0.5) * f.r, 0.3, f.z + (Math.random() - 0.5) * f.r, 0, 1.5 + Math.random() * 2, 0, 1, 0.5, 0.1, 0.6, -1);
+  }
 
   private emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, r: number, g: number, b: number, life: number, grav: number): void {
     if (this.density < 1 && Math.random() > this.density) return;
@@ -196,7 +298,7 @@ export class Effects {
     const l = this.lights[this.lightNext];
     this.lightNext = (this.lightNext + 1) % this.lights.length;
     l.light.position.copy(p).setY(p.y + 1);
-    l.light.intensity = 60 * k;
+    l.light.intensity = 60 * k * (this.reduceFlash ? 0.3 : 1);
     l.light.distance = 18 * k;
     l.life = 0.18;
     for (let i = 0; i < 40 * k; i++) {

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_KEYS, KEY_ACTIONS, keyLabel, QUALITY_PRESETS, type GameSettings, type Graphics, type KeyAction, type Quality } from '../game/settings';
 
-type Tab = 'gameplay' | 'graphics' | 'controls' | 'crosshair' | 'audio';
+type Tab = 'gameplay' | 'graphics' | 'controls' | 'controller' | 'crosshair' | 'access' | 'audio';
 const TABS: [Tab, string][] = [
   ['gameplay', 'Gameplay'],
   ['graphics', 'Graphics'],
-  ['controls', 'Controls'],
+  ['controls', 'Keys'],
+  ['controller', 'Controller'],
   ['crosshair', 'Crosshair'],
+  ['access', 'Accessibility'],
   ['audio', 'Audio']
 ];
 
@@ -145,6 +147,25 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             />
             <Slider label="View distance" value={settings.graphics.viewDistance} min={0.4} max={1.6} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setGfx({ viewDistance: v })} />
             <Slider label="Ragdolls at once" value={settings.graphics.maxRagdolls} min={2} max={24} step={1} onChange={(v) => setGfx({ maxRagdolls: v })} />
+            <Choice
+              label="Frame rate limit"
+              value={String(settings.fpsLimit)}
+              options={[
+                ['30', '30'],
+                ['60', '60'],
+                ['90', '90'],
+                ['120', '120'],
+                ['144', '144'],
+                ['0', 'Display']
+              ]}
+              onChange={(v) => set({ fpsLimit: Number(v) })}
+            />
+            <Toggle
+              label="V-sync"
+              hint="Off draws frames as fast as possible: a little less input lag, more power and heat. Browsers still show at most your display's refresh rate."
+              value={settings.vsync}
+              onChange={(v) => set({ vsync: v })}
+            />
             <Toggle label="Anti-aliasing" hint="Applies from the next match" value={settings.graphics.antialias} onChange={(v) => setGfx({ antialias: v })} />
           </>
         )}
@@ -190,6 +211,36 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             <Slider label="Thickness" value={c.thickness} min={1} max={5} step={1} onChange={(v) => set({ crosshair: { ...c, thickness: v } })} />
             <Toggle label="Centre dot" value={c.dot} onChange={(v) => set({ crosshair: { ...c, dot: v } })} />
             <Toggle label="Dynamic" hint="Opens up with weapon spread" value={c.dynamic} onChange={(v) => set({ crosshair: { ...c, dynamic: v } })} />
+          </>
+        )}
+        {tab === 'controller' && (
+          <>
+            <p className="set-hint">Plug in or pair an Xbox, PlayStation or other standard controller and press any button. Left stick move (click: sprint), right stick look (click: knife), RT fire, LT aim, A jump, B crouch/slide, X reload, Y swap, RB lethal, LB tactical, Start pause, Back scoreboard. In menus: D-pad or stick to move, A to select.</p>
+            <Slider label="Look sensitivity" value={settings.pad.sensitivity} min={0.3} max={3} step={0.05} fmt={(v) => v.toFixed(2)} onChange={(v) => set({ pad: { ...settings.pad, sensitivity: v } })} />
+            <Slider label="Stick deadzone" value={settings.pad.deadzone} min={0.03} max={0.35} step={0.01} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ pad: { ...settings.pad, deadzone: v } })} />
+            <Toggle label="Aim assist" hint="Slows your aim over enemies and follows them slightly while you steer" value={settings.pad.aimAssist} onChange={(v) => set({ pad: { ...settings.pad, aimAssist: v } })} />
+            <Toggle label="Invert look Y" value={settings.pad.invertY} onChange={(v) => set({ pad: { ...settings.pad, invertY: v } })} />
+          </>
+        )}
+        {tab === 'access' && (
+          <>
+            <Choice
+              label="Colourblind mode"
+              value={settings.access.colorblind}
+              options={[
+                ['off', 'Off'],
+                ['protanopia', 'Protanopia'],
+                ['deuteranopia', 'Deuteranopia'],
+                ['tritanopia', 'Tritanopia']
+              ]}
+              onChange={(v) => set({ access: { ...settings.access, colorblind: v } })}
+            />
+            <p className="set-hint">Team colours and enemy markers switch to pairs that stay easy to tell apart.</p>
+            <Slider label="Text and HUD size" value={settings.access.uiScale} min={0.85} max={1.4} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ access: { ...settings.access, uiScale: v } })} />
+            <Toggle label="Reduce motion" hint="No screen shake, weapon bob or camera tilt" value={settings.access.reduceMotion} onChange={(v) => set({ access: { ...settings.access, reduceMotion: v } })} />
+            <Toggle label="Reduce flashing" hint="Dimmer flashbangs and explosions" value={settings.access.reduceFlash} onChange={(v) => set({ access: { ...settings.access, reduceFlash: v } })} />
+            <Toggle label="Visualise sound" hint="Arrows around the crosshair for nearby gunfire, explosions and enemy footsteps" value={settings.access.visualSound} onChange={(v) => set({ access: { ...settings.access, visualSound: v } })} />
+            <Toggle label="High-contrast HUD" hint="Solid backgrounds behind HUD text" value={settings.access.highContrast} onChange={(v) => set({ access: { ...settings.access, highContrast: v } })} />
           </>
         )}
         {tab === 'audio' && <Slider label="Master volume" value={settings.volume} min={0} max={1} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ volume: v })} />}

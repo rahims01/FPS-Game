@@ -1,3 +1,5 @@
+import type { StatKey } from './cosmetics';
+
 /**
  * Persistent player progression: XP, levels and ranks, saved in this browser.
  * Medals award XP during a match; the total is banked when the match ends.
@@ -18,13 +20,15 @@ export interface Profile {
   bestSr: number;
   rankedMatches: number;
   rankedWins: number;
+  /** Lifetime stats that badges are earned from. */
+  stats: Partial<Record<StatKey, number>>;
 }
 
 export const loadProfile = (): Profile => {
-  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0, weaponKills: {}, sr: 1000, bestSr: 1000, rankedMatches: 0, rankedWins: 0 };
+  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0, weaponKills: {}, sr: 1000, bestSr: 1000, rankedMatches: 0, rankedWins: 0, stats: {} };
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
-    return { ...base, ...raw, weaponKills: { ...(raw.weaponKills ?? {}) } };
+    return { ...base, ...raw, weaponKills: { ...(raw.weaponKills ?? {}) }, stats: { ...(raw.stats ?? {}) } };
   } catch {
     return base;
   }

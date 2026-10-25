@@ -116,6 +116,7 @@ export const TouchControls = ({ game, onPause, onScores }: { game: Game; onPause
         {hold('crouch', 'CROUCH', 'crouch', true)}
         {tap('reload', 'R', 'reload')}
         {tap('grenade', 'G', 'grenade')}
+        {tap('tactical', 'H', 'tactical')}
         {tap('melee', 'KNIFE', 'melee')}
         {tap('swap', 'SWAP', 'swap')}
       </div>

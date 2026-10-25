@@ -49,6 +49,9 @@ npm run build      # type-check + production build
 | Special | Zombies | Endless co-op waves of melee zombies that get faster and tougher. Fallen players return next wave. |
 | Special | Battle Royale | 24 players on a random 250 × 250 m map. One life, medkits, and a zone that shrinks in 6 phases. |
 | Special | Survival | Endless waves. Later waves bring better guns. One life. |
+| Special | Battle Royale Duos / Trios | 24 players in 12 pairs or 8 squads of three, landing apart on the 250 m map. Squadmates regroup; the last squad standing wins. |
+| Friends only | Paintball | Two teams of friends, one paint hit and you're out until you respawn. Shots splat the shooter's colour. First to 30. |
+| Friends only | Boss Fight | Co-op against a 2.3× size armoured boss with an LMG. At two thirds health it calls airstrikes, at one third it calls minions. Three lives each. |
 | Team | Cranked | 5v5. A kill makes you faster for 30 s; fail to get another kill in time and you explode. First team to 40. |
 | Team | Gunfight Roulette | 2v2, no respawns. Every round everyone gets the same random loadout. First to 5 rounds. |
 | Objective | Team Defender | 5v5. Grab the flag and keep it: kills by the team holding it count double. First to 60 points. |
@@ -58,16 +61,27 @@ npm run build      # type-check + production build
 
 ## Combat features
 
-- **Weapons:** M16, AK-47 (harder hitting, harder kick), M4 Burst (3-round bursts, red dot), Vector SMG, pump shotgun (pellets), Marksman DMR (semi-auto, ring sight), bolt-action sniper (scope overlay), M60 LMG; pistol or Magnum revolver as a secondary; and a knife. Each has its own damage, fire rate, magazine, reload, spread, damage falloff, recoil and movement speed. Pick them in **Edit loadout**; you always carry a knife (V) and 2 frag grenades (G).
-- **Camos:** 10 per weapon (Woodland, Desert, Arctic, Digital, Tiger, Carbon, Crimson, Neon, Gold, Diamond), unlocked by kills with that weapon (5 up to 250). Shown on your gun and to everyone else; other players sometimes carry camos too.
+- **Weapons:** 12 primaries (M16, AK-47, SCAR-H, M4 Burst, Vector, Uzi, pump shotgun, Saiga auto shotgun, Marksman DMR, bolt-action sniper, .50 cal, M60 LMG) and 4 secondaries (pistol, Magnum, Desert Eagle, machine pistol), plus a knife. The loadout screen shows a turning 3D preview with your camo and a stats screen (damage, fire rate, range, accuracy, control, mobility, time to kill) compared with your equipped gun. Each has its own damage, fire rate, magazine, reload, spread, damage falloff, recoil and movement speed. Pick them in **Edit loadout**; you always carry a knife (V) and 2 frag grenades (G).
+- **Camos:** 22 per weapon (Woodland, Cherry Blossom, Zebra, Hex, Ocean, Glacier, Rainbow, Toxic, Lava, Dragon Scale, Galaxy, Bloodstone, Spectral, Gold, Diamond and more), unlocked by kills with that weapon (5 up to 400). Plus **weapon charms** hanging off your gun. Everyone sees them.
+- **Throwables:** pick a lethal (frag, molotov, throwing knife, spear) and a tactical (flashbang, smoke). Knives and spears stick in whoever they hit, even through the ragdoll. Molotovs leave fire on the ground; smoke blocks sight; flashbangs white out anyone looking at them.
+- **Perks:** pick 3 of 11: Ghost, Quick Hands, Marathon, Ninja, Lightweight, Scavenger, Hardline, Cold-Blooded, Flak Jacket, Steady Aim, Tactical Mask.
+- **Hit reactions:** soldiers flinch away from the side they were hit on, head shots snap the head back, leg shots buckle the knees, and bigger guns hit harder.
+- **Night maps:** some matches are at night: a dark sky, a flashlight on your gun and visible beams from everyone else's.
 - **Movement:** sprint, jump, crouch (C or Ctrl) for a smaller hitbox and tighter spread, and a slide (crouch while sprinting).
 - **Killstreaks:** pick any 3 in **Edit loadout**, earned by kills without dying: Adrenaline (2: full health and faster movement), UAV (3: enemies on your minimap for 30 s), Supply Drop (4: health, ammo and grenades), Counter-UAV (4: jams enemy minimaps), Airstrike (5), Cluster Strike (7: three airstrikes), Juggernaut (8: takes 45% damage) and Tactical Nuke (20: every enemy dies and your side wins).
 - **Medals and XP:** headshot, double / triple / multi kill, killing spree, first blood, revenge, longshot, point blank, frag, knife, afterlife, comeback, buzzkill, captures, confirms and denies. XP is saved in your browser, with 55 levels and ranks from Recruit to Legend.
 - **Feedback:** hit marker ticks and floating damage numbers (both can be turned off; headshots in yellow, kills in red), a "killed by" card (weapon, distance, the killer's remaining HP), spawn protection, positional footsteps (crouching is silent), synthesised per-weapon gunshots, explosions with smoke, scorch marks and screen shake, and ragdolls thrown by blasts.
 - **Lobby feel:** about 850 hand-picked gamer tags (recently seen names are avoided, so lobbies don't repeat), generated and real-name style tags, the odd `Player####` who never changed their name and rare players from abroad (other languages and scripts), a matchmaking screen where you watch the lobby fill (with each player's level and ping), a live players-online count, coloured nametags, and colours you pick for free-for-all modes.
-- **Public-server life:** in matchmade games, pings drift on the scoreboard, a player or two is still loading in at the start, and, rarely, someone on a side that is getting crushed rage-quits after dying; a robotic "Bot N" plays their slot for the rest of the match (nobody joins mid-match). Players also teabag, check corners, and bunny-hop between fights. (Online rooms with friends turn all of this off: bots there are labelled and robotic.)
+- **Public-server life:** in matchmade games, pings drift on the scoreboard, a player or two is still loading in at the start, and, rarely, someone on a side that is getting crushed rage-quits after dying; a robotic "Bot N" plays their slot for the rest of the match (nobody joins mid-match). Players also teabag, check corners, and bunny-hop between fights. Now and then a smurf (a low level who plays like a pro) or a squad of friends with a shared clan tag turns up, and late in a long match someone may go AFK for a bit. (Online rooms with friends turn all of this off: bots there are labelled and robotic.)
 - **Spectating:** when you are out (no-respawn modes, out of lives), you watch your teammates through their eyes; click or Space for the next player.
 - **Post-match screen:** result, XP, your kills, deaths, damage, accuracy, headshots and best streak, the MVP, and a full scoreboard with all of those for everyone.
+
+## Profile
+
+- **Calling card and emblem:** shown on the killcam's "killed by" card, the end screen MVP and your profile. 21 cards and 24 emblems, unlocked by levels and badges.
+- **Badges:** 28 to earn (First Blood, Headhunter, Knife Master, Bullseye, Firestarter, Tactical Nuke, Flawless, Champion, Giant Slayer, Clutch, Diamond Hands...), with progress bars.
+- **Weapon mastery:** Bronze, Silver, Gold and Diamond per gun (25, 75, 200, 500 kills); your best shows by your name on the scoreboard.
+- **Stats:** lifetime kills, headshots, best streak, throwing kills and more.
 
 ## Ranked
 
@@ -79,6 +93,8 @@ Controls: WASD move, mouse aim, LMB fire, RMB aim down sights, Shift sprint, Spa
 
 Under **Play online**, click **Host game** to open a room. Send the 5-letter code to friends, who type it in and press **Join**. The host picks the mode and presses **Start**, and any empty slots are filled by computer players. In 1v1 the first friend is your opponent; in team modes friends alternate between teams.
 
+- **Parties:** "Create party" lets friends queue into normal matchmade games together, on the same team. The leader picks the mode and the rest of the lobby is filled like any other match.
+- **Back to the lobby:** after an online match the host can take everyone back to the room for another game.
 - **Who plays:** up to 8 people per room. If there are more people than the mode has slots (say 4 friends in a 1v1), the host picks who plays (themselves included) and everyone else spectates, watching through the players' eyes.
 - **Match rules:** the host can set health (half / normal / double), gravity, score to win, a weapon everyone must use, health regen, and whether empty slots get bots.
 - **Leavers are replaced by bots:** if someone leaves mid-match (or their game stops responding for 15 s), a robotic bot named "Bot N" takes over their soldier, and everyone sees the new name. Matchmade games do the same: a quitter's slot goes to a robotic "Bot N" for the rest of the match.
@@ -108,6 +124,9 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 - **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
 - **HUD:** optional FPS counter and online ping, damage numbers and hit marker sound.
+- **Controllers:** Xbox, PlayStation and other standard gamepads, with aim assist, adjustable sensitivity and deadzone, and D-pad navigation in the menus.
+- **Display:** a frame-rate limit (30 to 144, or the display's rate) and a V-sync toggle.
+- **Accessibility:** colourblind modes (protanopia, deuteranopia, tritanopia), text and HUD size, reduce motion, reduce flashing, high-contrast HUD, and visualised sound (arrows for nearby gunfire, explosions and enemy footsteps).
 - **Touch controls:** on phones and tablets (automatic, or forced on or off): a floating stick, drag to look, and buttons for fire (also turns the view), aim, jump, crouch, reload, grenade, knife, swap, pause and scores.
 
 ## How the bots work

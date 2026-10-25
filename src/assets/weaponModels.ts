@@ -208,6 +208,82 @@ const revolver = (): WeaponModel => {
   return { object: g, length: 0.22, bore: 0.055, sightZ: 0.086, sightY: -0.02 };
 };
 
+const scar = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.055, 0.34, 0.08, 0.07, 0.06, tan); // receiver
+  tube(g, 0.013, 0.24, 0.66, 0.075, metal); // barrel
+  box(g, 0.06, 0.26, 0.07, 0.34, 0.07, tan); // handguard
+  box(g, 0.012, 0.42, 0.012, 0.12, 0.12, metal); // top rail
+  box(g, 0.035, 0.05, 0.12, 0.13, -0.04, metal, -0.1); // magazine
+  box(g, 0.035, 0.05, 0.1, -0.06, -0.03, polymer, 0.3); // grip
+  box(g, 0.05, 0.28, 0.09, -0.24, 0.04, tan, -0.04); // stock
+  box(g, 0.012, 0.03, 0.03, 0.5, 0.135, steel); // front sight
+  box(g, 0.025, 0.03, 0.02, -0.02, 0.135, steel); // rear sight
+  return { object: g, length: 0.66, bore: 0.075, sightZ: 0.142, sightY: -0.02 };
+};
+
+const uzi = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.05, 0.26, 0.07, 0.05, 0.05, metal); // body
+  tube(g, 0.011, 0.18, 0.26, 0.055, metal); // barrel
+  box(g, 0.035, 0.05, 0.16, 0.0, -0.06, polymer, 0.05); // grip + magazine
+  box(g, 0.015, 0.18, 0.015, -0.14, 0.06, metal); // folding stock
+  box(g, 0.01, 0.02, 0.02, 0.15, 0.095, steel); // front sight
+  box(g, 0.025, 0.02, 0.015, -0.05, 0.093, steel); // rear sight
+  return { object: g, length: 0.26, bore: 0.055, sightZ: 0.1, sightY: -0.05 };
+};
+
+const autoshotgun = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.055, 0.3, 0.08, 0.06, 0.06, polymer); // receiver
+  tube(g, 0.018, 0.2, 0.6, 0.075, metal); // barrel
+  box(g, 0.06, 0.2, 0.06, 0.32, 0.065, polymer); // handguard
+  box(g, 0.05, 0.1, 0.13, 0.13, -0.04, polymer); // box magazine
+  box(g, 0.035, 0.05, 0.1, -0.06, -0.03, polymer, 0.3); // grip
+  box(g, 0.05, 0.28, 0.08, -0.24, 0.04, polymer, -0.05); // stock
+  box(g, 0.01, 0.015, 0.015, 0.58, 0.1, steel); // bead
+  return { object: g, length: 0.6, bore: 0.075, sightZ: 0.108, sightY: 0.04 };
+};
+
+const barrett = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.065, 0.4, 0.09, 0.08, 0.06, tan); // receiver
+  tube(g, 0.016, 0.28, 0.95, 0.07, metal); // heavy barrel
+  box(g, 0.05, 0.06, 0.04, 0.95, 0.07, metal); // muzzle brake
+  tube(g, 0.026, -0.02, 0.3, 0.145, polymer); // scope
+  tube(g, 0.032, 0.24, 0.31, 0.145, polymer);
+  const lens = tube(g, 0.028, 0.308, 0.312, 0.145, glass);
+  lens.castShadow = false;
+  box(g, 0.02, 0.03, 0.05, 0.04, 0.105, metal);
+  box(g, 0.02, 0.03, 0.05, 0.22, 0.105, metal);
+  box(g, 0.05, 0.1, 0.12, 0.16, -0.04, metal); // magazine
+  box(g, 0.035, 0.05, 0.11, -0.06, -0.03, polymer, 0.3); // grip
+  box(g, 0.06, 0.34, 0.1, -0.28, 0.04, tan, -0.04); // stock
+  box(g, 0.015, 0.16, 0.012, 0.6, 0.01, metal, 0.7); // bipod
+  return { object: g, length: 0.98, bore: 0.07, sightZ: 0.145, sightY: -0.02 };
+};
+
+const deagle = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.034, 0.23, 0.045, 0.085, 0.055, steel); // slide
+  box(g, 0.03, 0.16, 0.025, 0.07, 0.025, metal); // frame
+  box(g, 0.034, 0.05, 0.11, -0.005, -0.03, polymer, 0.25); // grip
+  box(g, 0.008, 0.012, 0.014, 0.19, 0.083, metal); // front sight
+  box(g, 0.022, 0.012, 0.012, -0.02, 0.083, metal); // rear sight
+  return { object: g, length: 0.2, bore: 0.055, sightZ: 0.089, sightY: -0.02 };
+};
+
+const mpistol = (): WeaponModel => {
+  const g = new THREE.Group();
+  box(g, 0.032, 0.2, 0.04, 0.07, 0.05, polymer); // slide
+  box(g, 0.03, 0.16, 0.022, 0.06, 0.025, polymer); // frame
+  box(g, 0.03, 0.045, 0.14, -0.005, -0.05, polymer, 0.2); // grip + long magazine
+  box(g, 0.012, 0.05, 0.05, 0.16, -0.0, polymer); // foregrip
+  box(g, 0.008, 0.012, 0.012, 0.16, 0.076, steel);
+  box(g, 0.022, 0.012, 0.012, -0.01, 0.076, steel);
+  return { object: g, length: 0.18, bore: 0.05, sightZ: 0.082, sightY: -0.01 };
+};
+
 const knife = (): WeaponModel => {
   const g = new THREE.Group();
   tube(g, 0.016, -0.1, 0.02, 0, polymer); // handle
@@ -233,7 +309,13 @@ export const weaponModels = (rifle: PropTemplate): Record<WeaponId, WeaponModel>
     ak: ak(),
     burst: burst(),
     dmr: dmr(),
-    revolver: revolver()
+    revolver: revolver(),
+    scar: scar(),
+    uzi: uzi(),
+    autoshotgun: autoshotgun(),
+    barrett: barrett(),
+    deagle: deagle(),
+    mpistol: mpistol()
   };
   return cache!;
 };

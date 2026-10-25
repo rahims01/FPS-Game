@@ -3,6 +3,7 @@ import { Arena, type ArenaLayout, type Point } from './Arena';
 import { BOT_AIM, HITBOX, RIFLE, SIM, SOLDIER, type HitRegion } from './config';
 import { classicLayout } from './layouts';
 import { clamp, forwardX, forwardZ, rightX, rightZ, Rng, wrapAngle, yawTo } from './math';
+import { hasPerk, THROWABLES, type ThrowableId } from './gear';
 import { falloff, WEAPONS, type WeaponId } from './weapons';
 
 export interface PlayerInput {
@@ -19,6 +20,8 @@ export interface PlayerInput {
   crouch: boolean;
   melee: boolean;
   grenade: boolean;
+  /** Throw the tactical (flashbang or smoke). */
+  tactical: boolean;
   /** Weapon slot to switch to, or -1. */
   switchSlot: number;
 }
@@ -50,7 +53,11 @@ export type SimEvent =
   | { type: 'reload'; agent: number }
   | { type: 'switch'; agent: number }
   | { type: 'melee'; agent: number; hit: number }
-  | { type: 'grenade'; agent: number }
+  | { type: 'grenade'; agent: number; kind: ThrowableId }
+  /** A throwing knife or spear struck someone (target) or a wall (target -1), and stays stuck in it. */
+  | { type: 'stick'; target: number; kind: ThrowableId; region: HitRegion; x: number; y: number; z: number; dx: number; dy: number; dz: number }
+  | { type: 'flash'; x: number; y: number; z: number }
+  | { type: 'shatter'; x: number; y: number; z: number; kind: ThrowableId }
   | { type: 'explosion'; x: number; y: number; z: number; owner: number; kind: 'grenade' | 'airstrike' }
   | { type: 'airstrike'; owner: number }
   | { type: 'pickup'; agent: number; pickup: number; kind: PickupKind };
@@ -78,6 +85,17 @@ export interface Grenade {
   vy: number;
   vz: number;
   fuse: number;
+  kind: ThrowableId;
+}
+
+/** Ground effects: a molotov's fire or a smoke cloud. */
+export interface Field {
+  kind: 'fire' | 'smoke';
+  x: number;
+  z: number;
+  r: number;
+  until: number;
+  owner: number;
 }
 
 /** Battle-royale safe zone. Outside it, soldiers take damage every second. */
@@ -143,6 +161,7 @@ const NO_INPUT: PlayerInput = {
   crouch: false,
   melee: false,
   grenade: false,
+  tactical: false,
   switchSlot: -1
 };
 
@@ -154,6 +173,8 @@ export class FpsSim {
   events: SimEvent[] = [];
   pickups: Pickup[] = [];
   grenades: Grenade[] = [];
+  fields: Field[] = [];
+  private fireTick = 0;
   strikes: { x: number; z: number; t: number; owner: number; target: number; jx: number; jz: number }[] = [];
   zone: Zone | null = null;
   /** Objective point bots move to when they are not fighting (king of the hill). */
@@ -245,6 +266,14 @@ export class FpsSim {
     fresh.headshots = a.headshots;
     fresh.bestStreak = a.bestStreak;
     fresh.robotic = a.robotic;
+    fresh.perks = a.perks;
+    fresh.lethal = a.lethal;
+    fresh.tactical = a.tactical;
+    fresh.grenades = THROWABLES[a.lethal].count;
+    fresh.tacticals = THROWABLES[a.tactical].count;
+    fresh.scale = a.scale;
+    fresh.smurf = a.smurf;
+    fresh.squad = a.squad;
     fresh.dummy = a.dummy;
     fresh.postX = a.postX;
     fresh.postZ = a.postZ;
@@ -297,7 +326,7 @@ export class FpsSim {
       }
       this.integrate(a, dt);
       this.weaponTick(a, dt);
-      if (this.regen && this.time - a.lastHitT > SOLDIER.regenDelay) a.hp = Math.min(SOLDIER.hp, a.hp + SOLDIER.regenRate * dt);
+      if (this.regen && a.scale <= 1 && this.time - a.lastHitT > SOLDIER.regenDelay) a.hp = Math.min(SOLDIER.hp, a.hp + SOLDIER.regenRate * dt);
       this.collectPickups(a);
       if (this.zone && this.tick % 30 === 0 && this.outsideZone(a, 0)) this.damage(a, null, this.zone.dps * 0.5, 'torso', 0, 0, 0, 'zone');
     }
@@ -407,7 +436,7 @@ export class FpsSim {
       let speed = a.sprinting ? SOLDIER.sprintSpeed : f < -0.1 ? SOLDIER.backSpeed + 0.6 : SOLDIER.walkSpeed + 0.6;
       if (a.aiming) speed *= 0.6;
       if (a.crouching) speed *= 0.5;
-      speed *= w.move * a.speedMul;
+      speed *= w.move * a.speedMul * this.perkSpeed(a);
       const mx = forwardX(a.yaw) * f + rightX(a.yaw) * r;
       const mz = forwardZ(a.yaw) * f + rightZ(a.yaw) * r;
       this.accelerate(a, mx * speed, mz * speed, dt);
@@ -420,7 +449,8 @@ export class FpsSim {
     if (input.switchSlot >= 0) this.switchWeapon(a, input.switchSlot);
     if (input.reload) this.startReload(a);
     if (input.melee) this.melee(a);
-    if (input.grenade) this.throwGrenade(a, a.yaw, a.pitch + 0.12, 17);
+    if (input.grenade) this.throwItem(a, 'lethal', a.yaw, a.pitch);
+    if (input.tactical) this.throwItem(a, 'tactical', a.yaw, a.pitch);
     const pressed = input.fire && !a.triggerHeld;
     a.triggerHeld = input.fire;
     if (w.slot === 'melee') {
@@ -429,6 +459,7 @@ export class FpsSim {
       const moving = Math.hypot(a.vx, a.vz) > 0.6;
       let spread = !a.onGround ? w.spreadAir : moving ? w.spreadMoving : w.spreadStill;
       if (a.aiming) spread *= w.adsSpread;
+      else if (hasPerk(a, 'steadyaim')) spread *= 0.65;
       if (a.crouching) spread *= 0.75;
       this.tryFire(a, a.yaw + a.recoilYaw, a.pitch + a.recoil, spread);
     }
@@ -532,7 +563,8 @@ export class FpsSim {
   startReload(a: Agent): void {
     const w = weaponOf(a);
     if (this.noReload || a.reloadT > 0 || a.ammo >= w.magazine || a.switchT > 0) return;
-    a.reloadT = w.reload;
+    a.reloadT = w.reload * (hasPerk(a, 'quickhands') ? 0.65 : 1);
+    a.reloadDur = a.reloadT;
     a.aiming = false;
     this.emit({ type: 'reload', agent: a.id });
   }
@@ -544,7 +576,7 @@ export class FpsSim {
     a.slot = slot;
     a.ammo = a.stash[slot];
     a.reloadT = 0;
-    a.switchT = 0.45;
+    a.switchT = hasPerk(a, 'quickhands') ? 0.27 : 0.45;
     a.aiming = false;
     this.emit({ type: 'switch', agent: a.id });
   }
@@ -680,47 +712,178 @@ export class FpsSim {
     }
   }
 
+  /** Bots' lobbed lethal (the old grenade API). */
   throwGrenade(a: Agent, yaw: number, pitch: number, speed: number): void {
-    if (this.puppet || a.grenades <= 0 || a.grenadeCd > 0 || a.switchT > 0) return;
-    a.grenades--;
-    a.grenadeCd = 1;
+    this.throwItem(a, 'lethal', yaw, pitch - 0.12, speed);
+  }
+
+  /**
+   * Throws the lethal or tactical. Grenades are lobbed with a slight lift;
+   * knives fly flat and fast, spears in a long arc.
+   */
+  throwItem(a: Agent, slot: 'lethal' | 'tactical', yaw: number, pitch: number, speed?: number): boolean {
+    if (this.puppet || a.grenadeCd > 0 || a.switchT > 0) return false;
+    const kind = slot === 'lethal' ? a.lethal : a.tactical;
+    if (slot === 'lethal' ? a.grenades <= 0 : a.tacticals <= 0) return false;
+    if (slot === 'lethal') a.grenades--;
+    else a.tacticals--;
+    a.grenadeCd = kind === 'tknife' ? 0.5 : 1;
     a.protectedUntil = 0;
-    const cp = Math.cos(pitch);
+    const def = THROWABLES[kind];
+    const v = speed ?? def.speed;
+    const lift = kind === 'tknife' ? 0.02 : kind === 'spear' ? 0.06 : 0.12;
+    const p = pitch + lift;
+    const cp = Math.cos(p);
     const ey = a.y + eyeHeight(a) - 0.1;
     this.grenades.push({
       owner: a.id,
       x: a.x + Math.sin(yaw) * 0.4,
       y: ey,
       z: a.z + Math.cos(yaw) * 0.4,
-      vx: Math.sin(yaw) * cp * speed + a.vx * 0.5,
-      vy: Math.sin(pitch) * speed + 1.5,
-      vz: Math.cos(yaw) * cp * speed + a.vz * 0.5,
-      fuse: GRENADE_FUSE
+      vx: Math.sin(yaw) * cp * v + a.vx * 0.5,
+      vy: Math.sin(p) * v + (kind === 'tknife' || kind === 'spear' ? 0.6 : 1.5),
+      vz: Math.cos(yaw) * cp * v + a.vz * 0.5,
+      fuse: kind === 'frag' ? GRENADE_FUSE : kind === 'flash' ? 1.5 : kind === 'smoke' ? 1.6 : 4,
+      kind
     });
-    this.emit({ type: 'grenade', agent: a.id });
+    this.emit({ type: 'grenade', agent: a.id, kind });
+    return true;
+  }
+
+  /** A knife or spear in flight: did it hit someone between two positions? */
+  private projectileHit(g: Grenade, px: number, py: number, pz: number): boolean {
+    const dx = g.x - px;
+    const dy = g.y - py;
+    const dz = g.z - pz;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return false;
+    const ux = dx / len;
+    const uy = dy / len;
+    const uz = dz / len;
+    const owner = this.agents[g.owner];
+    let best = len;
+    let victim: Agent | null = null;
+    let region: HitRegion = 'torso';
+    for (const b of this.agents) {
+      if (!b.alive || b.id === g.owner || (owner && b.team === owner.team) || this.isFrozen(b)) continue;
+      const hit = rayHitAgent(px, py, pz, ux, uy, uz, b, this.headScale);
+      if (hit && hit.t < best) {
+        best = hit.t;
+        victim = b;
+        region = hit.region;
+      }
+    }
+    const wall = this.arena.raycast(px, py, pz, ux, uy, uz, len);
+    if (victim && best <= wall) {
+      const hx = px + ux * best;
+      const hy = py + uy * best;
+      const hz = pz + uz * best;
+      this.emit({ type: 'stick', target: victim.id, kind: g.kind, region, x: hx, y: hy, z: hz, dx: ux, dy: uy, dz: uz });
+      const dmg = this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' && region !== 'head' ? 0 : g.kind === 'spear' ? 260 : 160;
+      if (owner && dmg > 0) {
+        if (region === 'head') owner.headshots++;
+        owner.hits++;
+        this.damage(victim, owner, dmg, region, ux, uy, uz, g.kind as DeathCause);
+      }
+      return true;
+    }
+    if (wall < len || g.y <= 0.08) {
+      const t = Math.min(wall, len);
+      this.emit({ type: 'stick', target: -1, kind: g.kind, region: 'torso', x: px + ux * t, y: Math.max(0.05, py + uy * t), z: pz + uz * t, dx: ux, dy: uy, dz: uz });
+      return true;
+    }
+    return false;
+  }
+
+  /** Flashbang: everyone with a line of sight is blinded, worst for those looking at it. */
+  private flashbang(x: number, y: number, z: number): void {
+    this.emit({ type: 'flash', x, y, z });
+    for (const b of this.agents) {
+      if (!b.alive) continue;
+      const ey = b.y + eyeHeight(b);
+      const d = Math.hypot(b.x - x, ey - y, b.z - z);
+      if (d > 20 || !this.arena.lineOfSight(x, y + 0.2, z, b.x, ey, b.z)) continue;
+      const fx = Math.sin(b.yaw);
+      const fz = Math.cos(b.yaw);
+      const facing = Math.max(0, ((x - b.x) * fx + (z - b.z) * fz) / Math.max(d, 0.5));
+      let t = (0.6 + 3.4 * (0.3 + 0.7 * facing)) * (1 - d / 24);
+      if (hasPerk(b, 'tacmask')) t *= 0.25;
+      if (t > 0.2) b.blindUntil = Math.max(b.blindUntil, this.time + t);
+      // A blinded bot loses track of where it was looking.
+      if (t > 0.2 && !isHuman(b)) b.trackT = 0;
+    }
+  }
+
+  /** Is the line between two points hidden by smoke? */
+  smokeBlocks(ax: number, az: number, bx: number, bz: number): boolean {
+    for (const f of this.fields) {
+      if (f.kind !== 'smoke') continue;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const len2 = dx * dx + dz * dz;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((f.x - ax) * dx + (f.z - az) * dz) / len2)) : 0;
+      if (Math.hypot(ax + dx * t - f.x, az + dz * t - f.z) < f.r * 0.85) return true;
+    }
+    return false;
+  }
+
+  /** Fire burns whoever stands in it, a quarter-second at a time. */
+  private stepFields(): void {
+    if (this.fields.length === 0) return;
+    this.fields = this.fields.filter((f) => f.until > this.time);
+    if (this.time < this.fireTick) return;
+    this.fireTick = this.time + 0.25;
+    for (const f of this.fields) {
+      if (f.kind !== 'fire') continue;
+      const owner = this.agents[f.owner] ?? null;
+      for (const b of this.agents) {
+        if (!b.alive || b.y > 1.2 || Math.hypot(b.x - f.x, b.z - f.z) > f.r) continue;
+        if (owner && b !== owner && b.team === owner.team) continue;
+        const dmg = 9 * (hasPerk(b, 'flakjacket') ? 0.45 : 1) * (b === owner ? 0.5 : 1);
+        this.damage(b, owner, dmg, 'legs', 0, 0.5, 0, 'molotov');
+      }
+    }
+  }
+
+  /** Movement multiplier from perks. */
+  perkSpeed(a: Agent): number {
+    let k = 1;
+    if (hasPerk(a, 'lightweight')) k *= 1.07;
+    if (a.sprinting && hasPerk(a, 'marathon')) k *= 1.1;
+    return k;
   }
 
   private stepGrenades(dt: number): void {
+    this.stepFields();
     for (let i = this.grenades.length - 1; i >= 0; i--) {
       const g = this.grenades[i];
       const sub = 2;
       const h = dt / sub;
-      for (let s = 0; s < sub; s++) {
-        g.vy -= this.gravity * h;
+      let done = false;
+      let bounced = false;
+      for (let s = 0; s < sub && !done; s++) {
+        g.vy -= this.gravity * h * (g.kind === 'tknife' ? 0.5 : 1);
         const px = g.x;
         const py = g.y;
         const pz = g.z;
         g.x += g.vx * h;
         g.y += g.vy * h;
         g.z += g.vz * h;
+        // Knives and spears fly until they hit something, and stick in it.
+        if (g.kind === 'tknife' || g.kind === 'spear') {
+          done = this.projectileHit(g, px, py, pz);
+          continue;
+        }
         if (g.y < 0.07) {
           g.y = 0.07;
           if (g.vy < 0) g.vy = -g.vy * 0.3;
           g.vx *= 0.6;
           g.vz *= 0.6;
+          bounced = true;
         }
         const b = this.arena.boxAt(g.x, g.y, g.z);
         if (b) {
+          bounced = true;
           // Bounce off whichever face it came through.
           if (px <= b.minX || px >= b.maxX) {
             g.x = px;
@@ -742,10 +905,30 @@ export class FpsSim {
         }
       }
       g.fuse -= dt;
-      if (g.fuse <= 0) {
+      if (done || (g.kind !== 'tknife' && g.kind !== 'spear' && g.fuse <= 0) || ((g.kind === 'tknife' || g.kind === 'spear') && g.fuse <= 0)) {
         this.grenades.splice(i, 1);
-        this.explode(g.x, g.y, g.z, g.owner, 'grenade');
+        if (!done) this.detonate(g);
+        continue;
       }
+      // A molotov shatters on the first thing it touches.
+      if (g.kind === 'molotov' && bounced) {
+        this.grenades.splice(i, 1);
+        this.detonate(g);
+      }
+    }
+  }
+
+  private detonate(g: Grenade): void {
+    if (g.kind === 'frag') this.explode(g.x, g.y, g.z, g.owner, 'grenade');
+    else if (g.kind === 'flash') this.flashbang(g.x, g.y, g.z);
+    else if (g.kind === 'smoke') {
+      this.fields.push({ kind: 'smoke', x: g.x, z: g.z, r: 5.5, until: this.time + 14, owner: g.owner });
+      this.emit({ type: 'shatter', x: g.x, y: g.y, z: g.z, kind: 'smoke' });
+    } else if (g.kind === 'molotov') {
+      this.fields.push({ kind: 'fire', x: g.x, z: g.z, r: 3.2, until: this.time + 7, owner: g.owner });
+      this.emit({ type: 'shatter', x: g.x, y: g.y, z: g.z, kind: 'molotov' });
+      const owner = this.agents[g.owner];
+      if (owner) this.alertByNoise(owner, this.hearingRange * 0.8);
     }
   }
 
@@ -787,6 +970,7 @@ export class FpsSim {
       if (!this.arena.lineOfSight(x, y + 0.4, z, b.x, cy, b.z) && !this.arena.lineOfSight(x, y + 0.4, z, b.x, b.y + HITBOX.headY, b.z)) continue;
       let dmg = max * Math.pow(1 - d / R, 0.8);
       if (b === owner) dmg *= 0.5;
+      if (hasPerk(b, 'flakjacket')) dmg *= 0.45;
       const len = Math.max(d, 0.3);
       this.damage(b, owner, dmg, 'torso', (b.x - x) / len, 0.6, (b.z - z) / len, kind);
     }
@@ -799,6 +983,8 @@ export class FpsSim {
     let amount = v.control === 'player' ? raw * this.damageToPlayerScale : raw;
     amount *= v.armor;
     if (attacker) amount *= this.damageMul;
+    // The boss hits less hard per bullet than its size suggests, so a squad has a chance.
+    if (attacker && attacker.scale > 1) amount *= 0.55;
     const dealt = Math.min(amount, v.hp);
     v.hp -= amount;
     v.lastHitT = this.time;
@@ -838,6 +1024,10 @@ export class FpsSim {
         attacker.kills++;
         attacker.streak++;
         attacker.bestStreak = Math.max(attacker.bestStreak, attacker.streak);
+        if (hasPerk(attacker, 'scavenger') && attacker.alive) {
+          attacker.weapons.forEach((w, i) => (attacker.stash[i] = WEAPONS[w].magazine));
+          attacker.grenades = Math.min(THROWABLES[attacker.lethal].count, attacker.grenades + 1);
+        }
         // Some players can't resist crouching on the body (only bots, never online fillers).
         if (!isHuman(attacker) && !this.robotic(attacker) && this.rng.next() < 0.18) attacker.tbagUntil = this.time + 0.9 + this.rng.next() * 1.1;
         attacker.reward += 1;
@@ -853,6 +1043,8 @@ export class FpsSim {
 
   /** Can `a` see `b` right now? Vision cone + line of sight to head or chest. */
   canSee(a: Agent, b: Agent): boolean {
+    if (this.time < a.blindUntil) return false;
+    if (this.fields.length && this.smokeBlocks(a.x, a.z, b.x, b.z)) return false;
     const dx = b.x - a.x;
     const dz = b.z - a.z;
     const d = Math.hypot(dx, dz);
@@ -925,7 +1117,7 @@ export class FpsSim {
       if (wasSeeing && a.style === 'sniper') a.holdUntil = this.time + 5 + this.rng.next() * 4;
       // Footsteps: sprinting is loud, walking is quieter, crouching is silent.
       for (const b of this.agents) {
-        if (!b.alive || b.team === a.team || b.crouching || b.slideT > 0) continue;
+        if (!b.alive || b.team === a.team || b.crouching || b.slideT > 0 || hasPerk(b, 'ninja')) continue;
         const speed = Math.hypot(b.vx, b.vz);
         const range = b.sprinting ? 16 : speed > 0.8 ? 8 : 0;
         if (range && Math.hypot(b.x - a.x, b.z - a.z) < range) {
@@ -1071,7 +1263,7 @@ export class FpsSim {
       return;
     }
     // Still loading in at the start of the match (until shot at).
-    if (!this.robotic(a) && this.time < a.afkUntil && a.lastHitT <= 0) {
+    if (!this.robotic(a) && this.time < a.afkUntil && (a.lastHitT <= 0 || a.afkDeep)) {
       this.accelerate(a, 0, 0, dt);
       return;
     }
@@ -1096,7 +1288,22 @@ export class FpsSim {
     const farFromRally = !!r && Math.hypot(a.x - r.x, a.z - r.z) > r.r * 0.6;
     const urgent = r && r.urgent && farFromRally ? r : null;
     const rallyGoal = !zoneGoal && !tag && !medkit && !a.seesTarget && farFromRally ? r : null;
-    const override = urgent ?? (knife && t && (a.seesTarget || this.knowsTarget(a)) ? { x: tx, z: tz } : (zoneGoal ?? tag ?? medkit ?? rallyGoal));
+    // Squadmates (queued together) regroup when they drift apart and nobody is in view.
+    let squadGoal: { x: number; z: number } | null = null;
+    if (a.squad >= 0 && !a.seesTarget && !zoneGoal && !rallyGoal) {
+      let best = Infinity;
+      for (const m of this.agents) {
+        if (m === a || !m.alive || m.squad !== a.squad || m.team !== a.team) continue;
+        const d = Math.hypot(m.x - a.x, m.z - a.z);
+        if (d < best) {
+          best = d;
+          squadGoal = { x: m.x, z: m.z };
+        }
+      }
+      // Close enough already, or too far to bother crossing the map for.
+      if (best < 9 || best > 45) squadGoal = null;
+    }
+    const override = urgent ?? (knife && t && (a.seesTarget || this.knowsTarget(a)) ? { x: tx, z: tz } : (zoneGoal ?? tag ?? medkit ?? rallyGoal ?? squadGoal));
     const style = a.style;
     const known = this.knowsTarget(a);
     const dTarget = Math.hypot(tx - a.x, tz - a.z);
@@ -1178,7 +1385,7 @@ export class FpsSim {
         mayFire = false;
         break;
     }
-    speed *= w.move * a.speedMul;
+    speed *= w.move * a.speedMul * this.perkSpeed(a);
     if (tbag) {
       mx = mz = 0;
       crouch = Math.floor(this.time * 7) % 2 === 0;
@@ -1210,9 +1417,25 @@ export class FpsSim {
       return;
     }
 
+    // Knives and spears go straight at someone in view at mid range.
+    const lobbed = a.lethal === 'frag' || a.lethal === 'molotov';
+    if (t && !lobbed && a.grenades > 0 && a.seesTarget && dTarget > 5 && dTarget < 18 && a.trackT > 0.4 && this.rng.next() < 0.01) {
+      const pitch = Math.atan2(t.y + 1.2 - (a.y + eyeHeight(a)), dTarget) + (a.lethal === 'spear' ? dTarget * 0.012 : dTarget * 0.004);
+      this.throwItem(a, 'lethal', toYaw + this.rng.gauss() * 0.03, pitch);
+    }
+    // Tacticals: flash a room someone is hiding in; smoke to cover a retreat when hurt.
+    if (t && a.tacticals > 0 && !this.robotic(a)) {
+      if (a.tactical === 'flash' && !a.seesTarget && this.knowsTarget(a) && dTarget > 6 && dTarget < 20 && this.rng.next() < 0.004) {
+        const th = 0.5;
+        const v = Math.sqrt((dTarget * this.gravity) / Math.sin(2 * th));
+        this.throwItem(a, 'tactical', toYaw, th - 0.12, Math.min(20, v * 0.92));
+      } else if (a.tactical === 'smoke' && a.seesTarget && a.hp < 45 && this.rng.next() < 0.01) {
+        this.throwItem(a, 'tactical', toYaw, -0.3, 7);
+      }
+    }
     // Grenade at a target that is known but hiding.
     const nadeRate = style === 'tactician' ? 0.012 : style === 'rusher' ? 0.006 : style === 'sniper' ? 0.002 : 0.004;
-    if (t && a.grenades > 0 && !a.seesTarget && this.knowsTarget(a) && this.rng.next() < nadeRate) {
+    if (t && lobbed && a.grenades > 0 && !a.seesTarget && this.knowsTarget(a) && this.rng.next() < nadeRate) {
       const d = Math.hypot(tx - a.x, tz - a.z);
       if (d > 8 && d < 26) {
         // Flat-ground ballistic speed for a 35 degree throw.
@@ -1260,7 +1483,7 @@ export class FpsSim {
 
     if (!t || !a.seesTarget || !mayFire) return;
     // Snipers take longer to line up a shot.
-    const aimTime = SOLDIER.reactionTime * a.skill + (w.scope ? 0.45 : 0);
+    const aimTime = SOLDIER.reactionTime * a.skill + (w.scope ? 0.45 : 0) + (hasPerk(t, 'coldblooded') ? 0.35 : 0);
     if (a.trackT < aimTime) return;
     if (Math.abs(wrapAngle(wantYaw - a.yaw)) > BOT_AIM.fireCone) return;
     // Bursts: a few rounds, then a short pause to re-aim.
@@ -1292,7 +1515,8 @@ export const rayHitAgent = (
   b: Agent,
   headScale = 1
 ): { t: number; region: HitRegion } | null => {
-  const k = crouchScale(b);
+  const sc = b.scale;
+  const k = crouchScale(b) * sc;
   let best = Infinity;
   let region: HitRegion = 'torso';
   // Head sphere.
@@ -1303,7 +1527,7 @@ export const rayHitAgent = (
     const tc = cx * dx + cy * dy + cz * dz;
     if (tc > 0) {
       const d2 = cx * cx + cy * cy + cz * cz - tc * tc;
-      const r2 = (HITBOX.headR * headScale) ** 2;
+      const r2 = (HITBOX.headR * headScale * sc) ** 2;
       if (d2 < r2) {
         const t = tc - Math.sqrt(r2 - d2);
         if (t < best) {
@@ -1333,7 +1557,7 @@ export const rayHitAgent = (
       }
     }
   };
-  cyl(HITBOX.torsoR, HITBOX.torsoMinY * k, HITBOX.torsoMaxY * k, 'torso');
-  cyl(HITBOX.legsR, 0, HITBOX.torsoMinY * k, 'legs');
+  cyl(HITBOX.torsoR * sc, HITBOX.torsoMinY * k, HITBOX.torsoMaxY * k, 'torso');
+  cyl(HITBOX.legsR * sc, 0, HITBOX.torsoMinY * k, 'legs');
   return best < Infinity ? { t: best, region } : null;
 };

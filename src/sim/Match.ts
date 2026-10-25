@@ -6,6 +6,7 @@ import { classicLayout, randomLayout, rangeLayout } from './layouts';
 import { yawTo } from './math';
 import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, PRIMARIES, SECONDARIES, WEAPONS, type WeaponId } from './weapons';
 import { DEFAULT_STREAKS, normalizeStreaks, streakDef, type StreakId } from './killstreaks';
+import { hasPerk, LETHALS, normalizePerks, PERKS, TACTICALS, THROWABLES, type PerkId, type ThrowableId } from './gear';
 
 const WEAPONS_NAME = (w: WeaponId) => WEAPONS[w].name;
 
@@ -49,7 +50,11 @@ export type ModeId =
   | 'marksman'
   | 'training'
   | 'aimtrainer'
-  | 'freeroam';
+  | 'freeroam'
+  | 'br_duos'
+  | 'br_trios'
+  | 'paintball'
+  | 'boss';
 
 export interface ModeDef {
   id: ModeId;
@@ -107,6 +112,10 @@ export const MODES: ModeDef[] = [
   { id: 'lms', name: 'Last Man Standing', blurb: '8 players, normal loadouts, 3 lives each. Last one standing wins.', players: 8, teams: false, group: 'Free-for-all' },
   { id: 'zombies', name: 'Zombies', blurb: 'Waves of zombies that get faster and tougher every round. Play co-op online with friends. Survive as long as you can.', players: 1, teams: true, group: 'Special' },
   { id: 'br', name: 'Battle Royale', blurb: 'Huge random 250 m map, 24 players, one life. Grab medkits and stay inside the shrinking zone.', players: 24, teams: false, group: 'Special' },
+  { id: 'br_duos', name: 'Battle Royale Duos', blurb: '24 players in 12 pairs on a huge random map. Stick with your partner; the last pair standing wins.', players: 24, teams: false, group: 'Special' },
+  { id: 'br_trios', name: 'Battle Royale Trios', blurb: '24 players in 8 squads of three. The last squad standing wins.', players: 24, teams: false, group: 'Special' },
+  { id: 'paintball', name: 'Paintball', blurb: 'Friends only. Two teams, one paint hit and you are out until you respawn. First team to 30 splats.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'boss', name: 'Boss Fight', blurb: 'Friends only, co-op. Take down a giant armoured boss with an LMG, airstrikes and minions. Three lives each.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
   { id: 'survival', name: 'Survival', blurb: 'Hold out against endless waves. One life, health refills between waves.', players: 1, teams: true, group: 'Special' }
 ];
 
@@ -132,13 +141,18 @@ export interface LobbyRules {
   /** Fill empty slots with computer players. */
   bots: boolean;
   regen: boolean;
+  time: 'day' | 'night' | 'random';
 }
 
-export const DEFAULT_RULES: LobbyRules = { health: 1, gravity: 'normal', score: 1, weapon: 'any', bots: true, regen: true };
+export const DEFAULT_RULES: LobbyRules = { health: 1, gravity: 'normal', score: 1, weapon: 'any', bots: true, regen: true, time: 'random' };
 
 export interface MatchOptions {
   mode: ModeId;
   difficulty: Difficulty;
+  /** The player's throwables and perks. */
+  lethal?: ThrowableId;
+  tactical?: ThrowableId;
+  perks?: PerkId[];
   /** Exact opponent difficulty (ranked), overriding `difficulty`. */
   skill?: { skill: number; damageToPlayer: number };
   /** The player's secondary weapon. */
@@ -147,6 +161,8 @@ export interface MatchOptions {
   streaks?: StreakId[];
   /** Private-lobby rules (online). */
   rules?: LobbyRules;
+  /** Night map: dark, with flashlights (decided by the host or at random). */
+  night?: boolean;
   /** How the other players choose actions: the trained policy, or the hand-written baseline. */
   botControl: Control;
   /** The player's primary weapon. */
@@ -163,6 +179,7 @@ export type MatchNotice =
   | { kind: 'streak'; id: StreakId; name: string; kills: number; agent: number }
   | { kind: 'cranked'; agent: number; event: 'cranked' | 'exploded' }
   | { kind: 'defender'; event: 'taken' | 'dropped'; agent: number; team: number }
+  | { kind: 'boss'; event: 'phase' | 'minions' | 'down'; phase: number }
   | { kind: 'capture'; flag: string; team: number; on: number[] }
   | { kind: 'tag'; confirmed: boolean; by: number }
   | { kind: 'promote'; weapon: WeaponId; agent: number }
@@ -240,7 +257,8 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   defender: 60,
   gunfight: ROUND_TARGET,
   roulette: 20,
-  marksman: 20
+  marksman: 20,
+  paintball: 30
 };
 const FFA_MODES: ModeId[] = ['ffa', 'headshot', 'instagib', 'snipers', 'gungame', 'jugg', 'oitc', 'sharp', 'knife', 'lowgrav', 'bighead', 'friends_ffa', 'potato', 'lms', 'roulette', 'marksman'];
 const RESPAWN_MODES: ModeId[] = [
@@ -272,12 +290,18 @@ const RESPAWN_MODES: ModeId[] = [
   'roulette',
   'marksman',
   'training',
-  'freeroam'
+  'freeroam',
+  'paintball',
+  'boss'
 ];
 const CRANK_TIME = 30;
 /** Calm modes with no opponents: no matchmaking, XP, camo progress or killcams. */
 export const PRACTICE_MODES: ModeId[] = ['training', 'aimtrainer', 'freeroam'];
 const AIM_TIME = 60;
+/** Battle-royale squad sizes. */
+const SQUAD_SIZE: Partial<Record<ModeId, number>> = { br_duos: 2, br_trios: 3 };
+export const isBrMode = (m: ModeId): boolean => m === 'br' || m === 'br_duos' || m === 'br_trios';
+const BOSS_LIVES = 3;
 const AIM_COUNTDOWN = 3;
 /** The range's shooting line (targets are placed at distances from it). */
 const RANGE_Z = -30;
@@ -324,7 +348,7 @@ export class Match {
   readonly mode: ModeId;
   readonly def: ModeDef;
   /** The local player (on an online client, the agent this browser controls). */
-  player: Agent;
+  player!: Agent;
   phase: MatchPhase = 'live';
   /** Rounds won, team kills, confirms, flag points or hill points, by team. */
   scores: [number, number] = [0, 0];
@@ -379,7 +403,10 @@ export class Match {
     jamUntil: {} as Record<number, number>,
     /** Aim trainer: when the run ends, and the best score so far (set by the game). */
     aimEnd: 0,
-    aimBest: 0
+    aimBest: 0,
+    /** Boss fight: the boss, its phase (0..2) and its armour per point of health. */
+    bossId: -1,
+    bossPhase: 0
   };
   /** Players who left mid-match (their slot is empty), by agent id. */
   private away = new Set<number>();
@@ -423,7 +450,11 @@ export class Match {
         ? rangeLayout()
         : mode === 'freeroam'
           ? randomLayout(seed, 70)
-          : mode === 'br'
+          : mode === 'boss'
+            ? randomLayout(seed, 34)
+            : mode === 'paintball'
+              ? randomLayout(seed, 36)
+          : isBrMode(mode)
         ? randomLayout(seed, BR_HALF)
         : ['tdm', 'kc', 'dom', 'ctf', 'infected', 'hideseek', 'friends_tdm', 'snd', 'freeze', 'vip', 'hardcore', 'cranked', 'defender'].includes(mode)
           ? randomLayout(seed, 42)
@@ -441,7 +472,7 @@ export class Match {
       regen: mode !== 'br' && mode !== 'hardcore' && rules.regen,
       hunt: mode !== 'br',
       damageRule,
-      ...(mode === 'br' ? { viewRange: 40, hearingRange: 30 } : {})
+      ...(isBrMode(mode) ? { viewRange: 40, hearingRange: 30 } : {})
     });
     const sim = this.sim;
     this.startTime = 0;
@@ -456,7 +487,42 @@ export class Match {
     const fill = !this.def.humansOnly && rules.bots;
     const humans = Math.max(1, opts.humans ?? 1);
     const lobby = this.def.humansOnly ? humans : fill ? this.def.players : Math.min(this.def.players, Math.max(2, humans));
-    if (PRACTICE_MODES.includes(mode)) {
+    if (SQUAD_SIZE[mode]) {
+      // Squads land together: one spawn point per squad, members a couple of metres apart.
+      const size = SQUAD_SIZE[mode]!;
+      const count = fill ? BR_PLAYERS : Math.max(2, humans);
+      const squads = Math.ceil(count / size);
+      // Landing spots spread across the map, as far apart as we can find.
+      const H = sim.arena.half;
+      const spots: Point[] = [];
+      for (let s = 0; s < squads; s++) {
+        let best: Point | null = null;
+        let bestD = -1;
+        for (let k = 0; k < 40; k++) {
+          const p = sim.arena.randomFreePoint(() => sim.rng.next(), 0, 0, H * 0.92);
+          if (!p) continue;
+          const d = Math.min(Infinity, ...spots.map((q) => Math.hypot(q.x - p.x, q.z - p.z)));
+          if (d > bestD) {
+            bestD = d;
+            best = p;
+          }
+        }
+        spots.push(best ?? { x: 0, z: 0 });
+      }
+      for (let i = 0; i < count; i++) {
+        const team = Math.floor(i / size);
+        const k = i % size;
+        const base = spots[team];
+        const p = sim.arena.randomFreePoint(() => sim.rng.next(), base.x + (k - 1) * 2, base.z, 2) ?? base;
+        if (i === 0) this.player = sim.spawn(team, 'player', p.x, p.z, 0);
+        else other(team, p).squad = team;
+      }
+      this.player.squad = 0;
+    } else if (mode === 'boss') {
+      const spawns = sim.arena.teamSpawns[0];
+      this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, 0);
+      for (let i = 1; i < humans; i++) sim.spawn(0, opts.botControl, spawns[i % spawns.length].x, spawns[i % spawns.length].z, 0);
+    } else if (PRACTICE_MODES.includes(mode)) {
       // Everyone (you and any friends) on the shooting line, on one team.
       const spawns = sim.arena.teamSpawns[0];
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, mode === 'freeroam' ? 0 : 0);
@@ -481,7 +547,7 @@ export class Match {
       // Free-for-all styles and battle royale: everyone on their own team.
       const spawns = shuffle(sim.arena.spawns.slice(), () => sim.rng.next());
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, yawTo(spawns[0].x, spawns[0].z, 0, 0));
-      const count = mode === 'br' ? (fill ? BR_PLAYERS : Math.max(2, humans)) : lobby;
+      const count = isBrMode(mode) ? (fill ? BR_PLAYERS : Math.max(2, humans)) : lobby;
       for (let i = 1; i < count; i++) {
         const p = spawns[i % spawns.length];
         other(i, { x: p.x + (i >= spawns.length ? 2 : 0), z: p.z });
@@ -511,6 +577,30 @@ export class Match {
       }
     }
     if (mode === 'gunfight') this.gunfightLoadout();
+    // Throwables and perks: yours from the loadout, everyone else's picked at random.
+    for (const a of sim.agents) {
+      if (a === this.player) {
+        a.lethal = opts.lethal ?? 'frag';
+        a.tactical = opts.tactical ?? 'flash';
+        a.perks = normalizePerks(opts.perks);
+      } else this.randomGear(a);
+      const noThrows = mode === 'knife' || mode === 'oitc' || mode === 'potato' || mode === 'hideseek' || mode === 'paintball';
+      a.grenades = noThrows ? 0 : THROWABLES[a.lethal].count;
+      a.tacticals = noThrows ? 0 : THROWABLES[a.tactical].count;
+    }
+    // Matchmade lobbies (not online rooms): the odd smurf, and now and then a squad of friends queued together.
+    if (!opts.rules && !this.def.humansOnly && !PRACTICE_MODES.includes(mode)) {
+      for (const a of sim.agents) {
+        if (a === this.player || sim.rng.next() > 0.04) continue;
+        a.smurf = true;
+        a.skill *= 0.5;
+      }
+      if (this.def.teams && this.def.players >= 8 && sim.rng.next() < 0.15) {
+        const team = sim.rng.next() < 0.5 ? 0 : 1;
+        const mates = sim.agents.filter((a) => a !== this.player && a.team === team).slice(0, 2 + sim.rng.int(2));
+        for (const a of mates) a.squad = 100;
+      }
+    }
     // Private-lobby rules.
     if (rules.health !== 1) sim.damageMul /= rules.health;
     if (rules.gravity === 'low') {
@@ -523,7 +613,7 @@ export class Match {
     this.streakChoices[this.player.id] = normalizeStreaks(opts.streaks ?? DEFAULT_STREAKS);
     sim.onKill = (v, k, cause) => this.onKill(v, k, cause);
     // A player or two is still loading in when the match starts.
-    if (RESPAWN_MODES.includes(mode) || mode === 'br') {
+    if (RESPAWN_MODES.includes(mode) || isBrMode(mode)) {
       for (const a of sim.agents) if (a !== this.player && sim.rng.next() < 0.12) a.afkUntil = 2 + sim.rng.next() * 7;
     }
 
@@ -618,10 +708,20 @@ export class Match {
         sim.damageToPlayerScale = 0;
         this.announce('Free roam');
         break;
+      case 'paintball':
+        sim.damageRule = 'instagib';
+        this.announce('Paintball! One hit and you are out');
+        break;
+      case 'boss':
+        this.spawnBoss(humans);
+        this.announce('Take down the boss!', 3);
+        break;
       case 'roulette':
         this.announce('Every life, a new gun');
         break;
-      case 'br': {
+      case 'br':
+      case 'br_duos':
+      case 'br_trios': {
         const H = sim.arena.half;
         sim.zone = { x: 0, z: 0, r: H * 1.45, dps: 1 };
         this.zoneTo = { x: 0, z: 0, r: H * 1.45 };
@@ -736,6 +836,8 @@ export class Match {
         this.rulesSurvival();
         break;
       case 'br':
+      case 'br_duos':
+      case 'br_trios':
         this.rulesBr();
         break;
       case 'jugg':
@@ -778,6 +880,12 @@ export class Match {
         break;
       case 'aimtrainer':
         this.rulesAimTrainer();
+        break;
+      case 'paintball':
+        this.rulesTdm();
+        break;
+      case 'boss':
+        this.rulesBoss();
         break;
       case 'zombies':
         this.rulesZombies();
@@ -856,6 +964,95 @@ export class Match {
   /** The killstreaks `a` has picked. */
   streaksFor(a: Agent): StreakId[] {
     return this.streakChoices[a.id] ?? DEFAULT_STREAKS;
+  }
+
+  /** A random throwable pair and three perks for a computer player. */
+  private randomGear(a: Agent): void {
+    const rng = this.sim.rng;
+    const r = rng.next();
+    a.lethal = r < 0.6 ? 'frag' : r < 0.75 ? 'molotov' : r < 0.9 ? 'tknife' : 'spear';
+    if (a.style === 'rusher' && rng.next() < 0.4) a.lethal = 'tknife';
+    a.tactical = TACTICALS[rng.int(TACTICALS.length)];
+    const pool = PERKS.map((p) => p.id).sort(() => rng.next() - 0.5);
+    a.perks = pool.slice(0, 3);
+    void LETHALS;
+  }
+
+  // ---------------------------------------------------------------- boss fight
+
+  private spawnBoss(humans: number): void {
+    const sim = this.sim;
+    const p = sim.arena.teamSpawns[1][0];
+    const boss = sim.spawn(1, this.opts.botControl, p.x, p.z, Math.PI);
+    boss.scale = 2.3;
+    boss.style = 'soldier';
+    boss.skill = 1.15;
+    // Tougher with more players: roughly 110 rifle body shots for two players.
+    boss.armor = 0.06 / Math.max(1, humans);
+    boss.speedMul = 0.75;
+    boss.meleeDamage = 70;
+    boss.perks = ['flakjacket', 'tacmask', 'coldblooded'];
+    setLoadout(boss, ['lmg', 'pistol']);
+    boss.grenades = 3;
+    boss.tacticals = 0;
+    this.party.bossId = boss.id;
+    this.party.bossPhase = 0;
+  }
+
+  /** Boss health 0..1 (the HUD shows it as a bar). */
+  bossHealth(): number {
+    const b = this.sim.agents[this.party.bossId];
+    return b ? Math.max(0, b.hp / 100) : 0;
+  }
+
+  private rulesBoss(): void {
+    const sim = this.sim;
+    const boss = sim.agents[this.party.bossId];
+    if (!boss) return;
+    if (!boss.alive) {
+      this.notices.push({ kind: 'boss', event: 'down', phase: this.party.bossPhase });
+      this.finish(true, 0, 0);
+      return;
+    }
+    // Everyone (bots included) goes for the players.
+    const heroes = sim.agents.filter((a) => a.team === 0);
+    if (heroes.every((a) => !a.alive && a.deaths >= BOSS_LIVES)) {
+      this.finish(false, 0, 1);
+      return;
+    }
+    // Phases at two thirds and one third health: airstrikes, then minions.
+    const hp = boss.hp / 100;
+    const phase = hp < 0.34 ? 2 : hp < 0.67 ? 1 : 0;
+    if (phase > this.party.bossPhase) {
+      this.party.bossPhase = phase;
+      this.notices.push({ kind: 'boss', event: 'phase', phase });
+      if (phase === 1) {
+        sim.callAirstrike(boss);
+        boss.speedMul = 0.9;
+      } else {
+        const n = Math.min(6, 2 * heroes.length);
+        for (let i = 0; i < n; i++) {
+          const m = sim.spawn(1, this.opts.botControl, boss.x + sim.rng.range(-4, 4), boss.z + sim.rng.range(-4, 4), Math.PI);
+          m.style = 'rusher';
+          m.skill = 1.6;
+          setLoadout(m, ['smg', 'pistol']);
+          m.grenades = 0;
+        }
+        this.notices.push({ kind: 'boss', event: 'minions', phase });
+      }
+    }
+    // Every 20 s in the last phase it calls another strike.
+    if (phase >= 1 && sim.tick % (60 * 20) === 0) sim.callAirstrike(boss);
+    // Players come back with lives left; minions don't.
+    for (const a of heroes) {
+      if (a.alive || a.deaths >= BOSS_LIVES) continue;
+      const at = this.respawnAt.get(a.id);
+      if (at === undefined) this.respawnAt.set(a.id, sim.time + 5);
+      else if (sim.time >= at) {
+        this.respawnAt.delete(a.id);
+        this.respawnSafely(a);
+      }
+    }
   }
 
   /** Whether a dead `a` will come back this match (respawn modes, lives left). */
@@ -1229,6 +1426,16 @@ export class Match {
           for (const b of sim.agents) if (b.alive && !sim.isFrozen(b)) active[b.team === me.team ? 0 : 1]++;
           return `${active[0]} v ${active[1]} unfrozen · stand next to frozen teammates to thaw them`;
         }
+      case 'boss': {
+        const lives = Math.max(0, BOSS_LIVES - me.deaths);
+        return `Boss ${Math.ceil(this.bossHealth() * 100)}% · phase ${p.bossPhase + 1} of 3 · your lives: ${lives}`;
+      }
+      case 'br_duos':
+      case 'br_trios': {
+        const squads = new Set(sim.agents.filter((a) => a.alive).map((a) => a.team)).size;
+        const mates = sim.agents.filter((a) => a.team === me.team && a !== me && a.alive).length;
+        return `${squads} squads left · ${mates} squadmate${mates === 1 ? '' : 's'} alive`;
+      }
       case 'training': {
         const acc = me.shots ? Math.round((me.hits / me.shots) * 100) : 0;
         return `${me.kills} targets down · ${me.headshots} headshots · ${acc}% accuracy · B: next gun`;
@@ -1373,7 +1580,7 @@ export class Match {
     if (killer && isHuman(killer) && this.phase === 'live' && !PRACTICE_MODES.includes(this.mode)) {
       for (const id of this.streaksFor(killer)) {
         const s = streakDef(id);
-        if (killer.streak === s.kills) this.callStreak(killer, id);
+        if (killer.streak === s.kills - (hasPerk(killer, 'hardline') ? 1 : 0)) this.callStreak(killer, id);
       }
     }
   }
@@ -2166,11 +2373,13 @@ export class Match {
       if (sim.pickups.filter((m) => m.active && m.kind === 'medkit').length < 40) this.dropMedkit();
     }
     const alive = sim.agents.filter((a) => a.alive);
-    if (!this.player.alive) {
-      this.finish(false, alive.length + 1);
+    // Squads: you are out when your whole squad is; placement counts squads.
+    const squadsLeft = new Set(alive.map((a) => a.team));
+    if (!alive.some((a) => a.team === this.player.team)) {
+      this.finish(false, squadsLeft.size + 1);
       return;
     }
-    if (alive.length === 1) this.finish(alive[0] === this.player, 1, alive[0].team);
+    if (squadsLeft.size === 1) this.finish(true, 1, this.player.team);
   }
 
   private finish(win: boolean, placement = 0, winTeam = -1): void {
@@ -2180,7 +2389,7 @@ export class Match {
     this.result = win ? 'win' : 'lose';
     this.placement = placement;
     const text =
-      this.mode === 'br'
+      isBrMode(this.mode)
         ? win
           ? 'Winner winner!'
           : `Eliminated — #${placement}`

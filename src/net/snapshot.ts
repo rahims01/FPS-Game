@@ -3,6 +3,9 @@ import type { HitRegion } from '../sim/config';
 import type { Match, MatchNotice } from '../sim/Match';
 import type { SimEvent } from '../sim/FpsSim';
 import type { WeaponId } from '../sim/weapons';
+import type { ThrowableId } from '../sim/gear';
+
+const KINDS: ThrowableId[] = ['frag', 'molotov', 'tknife', 'spear', 'flash', 'smoke'];
 import { packAgent, type AgentNet, type Snapshot } from './protocol';
 
 /** Host side: everything a client needs to draw this moment of the match. */
@@ -40,7 +43,8 @@ export const buildSnapshot = (m: Match, ev: SimEvent[], no: MatchNotice[]): Snap
     zone: sim.zone,
     rally: sim.rally,
     obj: sim.objectives,
-    gr: sim.grenades.map((g) => [g.x, g.y, g.z]),
+    gr: sim.grenades.map((g) => [g.x, g.y, g.z, KINDS.indexOf(g.kind), g.vx, g.vy, g.vz]),
+    fx: sim.fields.map((f) => [f.kind === 'fire' ? 0 : 1, f.x, f.z, f.r, f.until - sim.time]),
     pk: sim.pickups.map((p) => [p.id, p.kind === 'medkit' ? 0 : 1, p.x, p.z, p.active ? 1 : 0, p.team]),
     ev,
     no
@@ -99,7 +103,8 @@ export const applySnapshot = (m: Match, snap: Snapshot, meId: number, targets: M
   sim.zone = snap.zone;
   sim.rally = snap.rally;
   sim.objectives = snap.obj;
-  sim.grenades = snap.gr.map(([x, y, z]) => ({ owner: -1, x, y, z, vx: 0, vy: 0, vz: 0, fuse: 99 }));
+  sim.grenades = snap.gr.map(([x, y, z, k, vx, vy, vz]) => ({ owner: -1, x, y, z, vx: vx ?? 0, vy: vy ?? 0, vz: vz ?? 0, fuse: 99, kind: KINDS[k] ?? 'frag' }));
+  sim.fields = (snap.fx ?? []).map(([k, x, z, r, left]) => ({ kind: k === 0 ? 'fire' : 'smoke', x, z, r, until: sim.time + left, owner: -1 }));
   sim.pickups = snap.pk.map(([id, kind, x, z, active, team]) => ({
     id,
     kind: kind === 0 ? 'medkit' : 'tag',
@@ -145,6 +150,13 @@ const applyAgent = (a: Agent, r: AgentNet, me: boolean, targets: Map<number, Net
   a.damageDealt = num(r[38] ?? 0);
   a.headshots = num(r[39] ?? 0);
   a.bestStreak = num(r[40] ?? 0);
+  a.speedMul = num(r[41] ?? 1);
+  a.blindUntil = num(r[42] ?? 0);
+  a.scale = num(r[43] ?? 1);
+  a.tacticals = num(r[44] ?? 0);
+  a.lethal = (r[45] as ThrowableId) ?? 'frag';
+  a.tactical = (r[46] as ThrowableId) ?? 'flash';
+  a.reloadDur = num(r[47] ?? 1);
   const pos = { x: num(r[1]), y: num(r[2]), z: num(r[3]), yaw: num(r[7]), pitch: num(r[8]) };
   if (me) {
     // Our own movement is simulated locally; only take the host's position on respawn.

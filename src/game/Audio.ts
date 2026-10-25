@@ -11,7 +11,13 @@ const GUN_TONE: Record<string, { bright: number; length: number; pitch: number; 
   ak: { bright: 0.85, length: 1.15, pitch: 0.8, gain: 1.15 },
   burst: { bright: 1.05, length: 0.9, pitch: 1.1, gain: 0.95 },
   dmr: { bright: 0.95, length: 1.7, pitch: 0.75, gain: 1.25 },
-  revolver: { bright: 0.9, length: 1.6, pitch: 0.75, gain: 1.3 }
+  revolver: { bright: 0.9, length: 1.6, pitch: 0.75, gain: 1.3 },
+  scar: { bright: 0.85, length: 1.35, pitch: 0.75, gain: 1.2 },
+  uzi: { bright: 1.25, length: 0.6, pitch: 1.45, gain: 0.75 },
+  autoshotgun: { bright: 0.75, length: 1.5, pitch: 0.75, gain: 1.25 },
+  barrett: { bright: 0.75, length: 3, pitch: 0.5, gain: 1.6 },
+  deagle: { bright: 0.95, length: 1.5, pitch: 0.8, gain: 1.3 },
+  mpistol: { bright: 1.3, length: 0.6, pitch: 1.5, gain: 0.75 }
 };
 
 /**

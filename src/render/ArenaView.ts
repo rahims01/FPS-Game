@@ -89,6 +89,15 @@ export class ArenaView {
   private tagMatAlly = new THREE.MeshStandardMaterial({ color: 0x4fa8ff, emissive: 0x1a4a88, metalness: 0.6, roughness: 0.3 });
   private tagMatEnemy = new THREE.MeshStandardMaterial({ color: 0xffc04d, emissive: 0x885a10, metalness: 0.6, roughness: 0.3 });
   readonly sun: THREE.DirectionalLight;
+  private hemi!: THREE.HemisphereLight;
+
+  /** Night: a dim, cold moon and almost no sky light (flashlights and muzzle flashes do the rest). */
+  setNight(on: boolean): void {
+    this.hemi.intensity = on ? 0.16 : 1.4;
+    this.hemi.color.set(on ? 0x5a6a9a : 0xcfe3ff);
+    this.sun.intensity = on ? 0.35 : 2.6;
+    this.sun.color.set(on ? 0x8fa8ff : 0xfff1d6);
+  }
 
   constructor(private sim: FpsSim) {
     const arena = sim.arena;
@@ -97,6 +106,7 @@ export class ArenaView {
 
     // Sky and light.
     const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x4a4535, 1.4);
+    this.hemi = hemi;
     g.add(hemi);
     this.sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
     this.sun.position.set(SUN_OFFSET.x, SUN_OFFSET.y, SUN_OFFSET.z);

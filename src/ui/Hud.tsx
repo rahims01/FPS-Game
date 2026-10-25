@@ -2,6 +2,8 @@ import type { RefObject } from 'react';
 import type { HudState, ScoreRow } from '../game/Game';
 import type { GameSettings } from '../game/settings';
 import { isDark } from '../game/identity';
+import { THROWABLES } from '../sim/gear';
+import { CallingCard } from './ProfilePanel';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -54,6 +56,20 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
       {hpLow && hud.alive && <div className="vignette" style={{ opacity: (35 - hud.hp) / 35 }} />}
       {hud.outsideZone && <div className="zone-tint" />}
       {hud.time - hud.pickupAt < 0.4 && <div className="heal-flash" />}
+      {hud.flashed > 0 && <div className="flashbang" style={{ opacity: hud.flashed }} />}
+      {hud.sounds.map((c, i) => (
+        <div key={`${c.at}-${i}`} className={`sound-cue ${c.kind}`} style={{ transform: `translate(-50%, -50%) rotate(${-c.angle}rad)`, opacity: 1 - (hud.time - c.at) / 1.2 }}>
+          <i />
+        </div>
+      ))}
+      {hud.boss && (
+        <div className="boss-bar">
+          <span>BOSS · phase {hud.boss.phase + 1}</span>
+          <div>
+            <i style={{ width: `${hud.boss.hp * 100}%` }} />
+          </div>
+        </div>
+      )}
 
       <div className="top">
         <div className="mode-name">{hud.modeName}</div>
@@ -127,7 +143,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
             </span>
           </div>
         )}
-        {hud.mode === 'br' && (
+        {hud.mode.startsWith('br') && (
           <div className="score">
             <span>{hud.aliveTotal} alive</span>
             {hud.zone && (
@@ -192,7 +208,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           {hud.killedBy && (
             <div className="killed-by">
               <span>Killed by</span>
-              <b style={{ color: hud.killedBy.color }}>{hud.killedBy.name}</b>
+              <CallingCard card={hud.killedBy.card} emblem={hud.killedBy.emblem} name={hud.killedBy.name} level={hud.killedBy.level} />
               <small>
                 {hud.killedBy.weapon}
                 {hud.killedBy.headshot ? ' · headshot' : ''}
@@ -203,7 +219,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           )}
           {hud.canRespawn ? (
             <p>Click or press Space to respawn</p>
-          ) : hud.mode === 'br' || hud.mode === 'survival' ? null : hud.mode.startsWith('1') || hud.mode.startsWith('2') || hud.mode.startsWith('3') ? (
+          ) : hud.mode.startsWith('br') || hud.mode === 'survival' ? null : hud.mode.startsWith('1') || hud.mode.startsWith('2') || hud.mode.startsWith('3') ? (
             <p>Spectating — waiting for the round to end</p>
           ) : (
             <p>Respawning…</p>
@@ -314,7 +330,12 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
               {i + 1} {w.name}
             </span>
           ))}
-          <span className="nades">G ×{hud.grenades}</span>
+          <span className="nades" title="Lethal">
+            {THROWABLES[hud.throwables.lethal].name} ×{hud.throwables.lethals}
+          </span>
+          <span className="nades" title="Tactical">
+            {THROWABLES[hud.throwables.tactical].name} ×{hud.throwables.tacticals}
+          </span>
         </div>
         <div className="kd">
           {hud.kills} K · {hud.deaths} D · {hud.xp} XP · Tab scores
@@ -347,6 +368,12 @@ const Scoreboard = ({ hud }: { hud: HudState }) => {
             <div key={p.id} className={`sb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'}`}>
               <span className="sb-name">
                 <i className="lvl">{p.level}</i>
+                {p.emblem && (
+                  <em className="emblem" style={{ color: p.emblem.color }}>
+                    {p.emblem.glyph}
+                  </em>
+                )}
+                {p.mastery && <em className="mastery-dot" style={{ background: p.mastery }} title="Weapon mastery" />}
                 <Name row={p} />
               </span>
               <span>{p.kills}</span>

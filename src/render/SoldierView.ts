@@ -10,6 +10,8 @@ import { wrapAngle } from '../sim/math';
 import type { WeaponId } from '../sim/weapons';
 import { weaponModels } from '../assets/weaponModels';
 import { skinned, type SkinChoice, type SkinId } from '../assets/skins';
+import { charmDef } from '../game/cosmetics';
+import { thrownModel } from './thrown';
 
 const DEG = Math.PI / 180;
 
@@ -26,6 +28,15 @@ const DEATH_PUSH: Record<string, number> = {
   burst: 2.2,
   dmr: 3,
   revolver: 2.6,
+  scar: 2.6,
+  uzi: 1.7,
+  autoshotgun: 3.2,
+  barrett: 4,
+  deagle: 2.4,
+  mpistol: 1.6,
+  molotov: 1.5,
+  tknife: 2.2,
+  spear: 3.4,
   grenade: 4.5,
   airstrike: 5.5,
   zone: 0
@@ -113,12 +124,13 @@ const THIRD_PERSON_SCALE = 1.35;
  * Other players carry slightly oversized, lifted-brightness copies of their
  * weapons: real-scale dark guns all but vanish against the walls at range.
  */
-const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none'): THREE.Object3D => {
-  if (skin !== 'none') {
-    const key = `${id}:${skin}`;
+const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none', charm = 'none'): THREE.Object3D => {
+  if (skin !== 'none' || charm !== 'none') {
+    const key = `${id}:${skin}:${charm}`;
     let s = weaponCache.get(key);
     if (!s) {
-      s = skinned(thirdPersonWeapon(assets, id), skin);
+      const c = charmDef(charm);
+      s = skinned(thirdPersonWeapon(assets, id), skin, { shape: c.shape, color: c.color, at: weaponModels(assets.rifle)[id].length * 0.45 });
       weaponCache.set(key, s);
     }
     return s;
@@ -182,7 +194,8 @@ export class SoldierView {
     assets: LoadedAssets,
     agent: Agent,
     color: THREE.ColorRepresentation,
-    private skins: SkinChoice = {}
+    private skins: SkinChoice = {},
+    private charm = 'none'
   ) {
     this.life = agent.life;
     this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
@@ -269,7 +282,7 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none').clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm).clone(true));
     this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
   }
 
@@ -326,10 +339,46 @@ export class SoldierView {
     this.tag.scale.set(1.6 * k, 0.3 * k, 1);
   }
 
-  hit(fromSide: number): void {
-    this.flinch = 1;
+  /**
+   * A hit: the body twists away from the side it was hit on; a head shot
+   * snaps the head back, a leg shot buckles the knees. Bigger hits flinch more.
+   */
+  hit(fromSide: number, region: 'head' | 'torso' | 'legs' = 'torso', strength = 1): void {
+    this.flinch = Math.min(1.5, Math.max(this.flinch, strength));
     this.flinchSide = fromSide;
+    this.flinchRegion = region;
   }
+
+  private flinchRegion: 'head' | 'torso' | 'legs' = 'torso';
+
+  /** A throwing knife or spear stuck in the body at a world point, pointing along `dir`. Stays through the ragdoll. */
+  stick(kind: 'tknife' | 'spear', at: THREE.Vector3, dir: THREE.Vector3): void {
+    const names = ['Head', 'Neck', 'Spine2', 'Spine1', 'Spine', 'Hips', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm'];
+    let best: THREE.Object3D | null = null;
+    let bestD = Infinity;
+    const tmp = new THREE.Vector3();
+    for (const n of names) {
+      const b = this.bones[n];
+      if (!b) continue;
+      const d = b.getWorldPosition(tmp).distanceTo(at);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    if (!best) return;
+    const mesh = thrownModel(kind);
+    // Buried a little way in: the handle (or shaft) sticks out behind the hit point.
+    const sink = kind === 'spear' ? 0.25 : 0.06;
+    mesh.position.copy(at).addScaledVector(dir, sink);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    this.root.parent?.add(mesh);
+    mesh.updateMatrixWorld(true);
+    best.attach(mesh);
+    this.stuck.push(mesh);
+  }
+
+  private stuck: THREE.Object3D[] = [];
 
   /** Poses the soldier for this frame. (x, y, z) is the interpolated position. */
   update(agent: Agent, x: number, y: number, z: number, dt: number, time: number): void {
@@ -339,6 +388,9 @@ export class SoldierView {
       return;
     }
     this.root.position.set(x, y, z);
+    if (this.root.scale.x !== agent.scale) this.root.scale.setScalar(agent.scale);
+    // Leg hits buckle the knees for a moment.
+    if (this.flinch > 0 && this.flinchRegion === 'legs') this.root.position.y -= this.flinch * 0.07;
 
     const speed = Math.hypot(agent.vx, agent.vz);
     // The whole body faces the aim; walking backwards plays the cycle in reverse.
@@ -387,6 +439,12 @@ export class SoldierView {
       if (!b) continue;
       rotateBoneWorld(b, pitchAxis, ((agent.pitch * u) / 3) * 0.6);
       if (this.flinch > 0) rotateBoneWorld(b, aimRight, (this.flinch * 0.25 * this.flinchSide) / 3);
+      // Torso hits also rock the upper body back a little.
+      if (this.flinch > 0 && this.flinchRegion === 'torso') rotateBoneWorld(b, pitchAxis, (-this.flinch * 0.12) / 3);
+    }
+    if (this.flinch > 0 && this.flinchRegion === 'head') {
+      if (this.bones.Neck) rotateBoneWorld(this.bones.Neck, pitchAxis, -this.flinch * 0.45);
+      if (this.bones.Head) rotateBoneWorld(this.bones.Head, aimRight, this.flinch * 0.25 * this.flinchSide);
     }
     if (agent.reloadT > 0 && this.bones.Spine1) rotateBoneWorld(this.bones.Spine1, pitchAxis, -0.12);
     this.aimArms(agent, u, kick, time);

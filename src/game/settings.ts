@@ -1,6 +1,8 @@
 import type { WeaponId } from '../sim/weapons';
 import type { SkinChoice } from '../assets/skins';
 import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstreaks';
+import { DEFAULT_PERKS, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
+import { DEFAULT_COSMETICS, type Cosmetics } from './cosmetics';
 
 /** Rebindable actions (mouse buttons stay fire / aim). */
 export const KEY_ACTIONS = [
@@ -13,7 +15,8 @@ export const KEY_ACTIONS = [
   ['crouch', 'Crouch / slide'],
   ['reload', 'Reload'],
   ['melee', 'Knife'],
-  ['grenade', 'Grenade'],
+  ['grenade', 'Lethal (grenade, knife…)'],
+  ['tactical', 'Tactical (flash, smoke)'],
   ['weapon1', 'Primary weapon'],
   ['weapon2', 'Secondary weapon'],
   ['swap', 'Swap weapon'],
@@ -35,6 +38,7 @@ export const DEFAULT_KEYS: KeyBinds = {
   reload: 'KeyR',
   melee: 'KeyV',
   grenade: 'KeyG',
+  tactical: 'KeyH',
   weapon1: 'Digit1',
   weapon2: 'Digit2',
   swap: 'KeyQ',
@@ -65,6 +69,30 @@ export const QUALITY_PRESETS: Record<Exclude<Quality, 'custom'>, Graphics> = {
   high: { renderScale: 1, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1, maxRagdolls: 14 },
   ultra: { renderScale: 1.25, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1.4, maxRagdolls: 20 }
 };
+
+export type Colorblind = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+
+export interface Accessibility {
+  colorblind: Colorblind;
+  /** HUD and menu text size, 0.85 .. 1.4. */
+  uiScale: number;
+  /** No screen shake, weapon bob or camera tilt. */
+  reduceMotion: boolean;
+  /** Arrows on screen for nearby gunfire and footsteps. */
+  visualSound: boolean;
+  /** Dimmer flashbangs and explosions. */
+  reduceFlash: boolean;
+  /** Solid backgrounds behind HUD text. */
+  highContrast: boolean;
+}
+
+export interface PadSettings {
+  sensitivity: number;
+  /** Slows your aim over enemies and nudges it along with them. */
+  aimAssist: boolean;
+  invertY: boolean;
+  deadzone: number;
+}
 
 export interface Crosshair {
   color: string;
@@ -103,6 +131,16 @@ export interface GameSettings {
   hitSounds: boolean;
   /** On-screen touch controls: automatic on touch screens, or forced on / off. */
   touchControls: 'auto' | 'on' | 'off';
+  lethal: ThrowableId;
+  tactical: ThrowableId;
+  perks: PerkId[];
+  cosmetics: Cosmetics;
+  access: Accessibility;
+  pad: PadSettings;
+  /** Frame cap (0 = match the display). */
+  fpsLimit: number;
+  /** Off: draw frames as fast as possible (lower input lag, more power). */
+  vsync: boolean;
   keys: KeyBinds;
   quality: Quality;
   graphics: Graphics;
@@ -130,6 +168,14 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   damageNumbers: true,
   hitSounds: true,
   touchControls: 'auto',
+  lethal: 'frag',
+  tactical: 'flash',
+  perks: DEFAULT_PERKS.slice(),
+  cosmetics: { ...DEFAULT_COSMETICS },
+  access: { colorblind: 'off', uiScale: 1, reduceMotion: false, visualSound: false, reduceFlash: false, highContrast: false },
+  pad: { sensitivity: 1, aimAssist: true, invertY: false, deadzone: 0.15 },
+  fpsLimit: 0,
+  vsync: true,
   keys: { ...DEFAULT_KEYS },
   quality: 'high',
   graphics: { ...QUALITY_PRESETS.high },
@@ -150,7 +196,11 @@ export const loadSettings = (name: string, color: number): GameSettings => {
       graphics: { ...base.graphics, ...(raw.graphics ?? {}) },
       crosshair: { ...base.crosshair, ...(raw.crosshair ?? {}) },
       skins: { ...(raw.skins ?? {}) },
-      streaks: normalizeStreaks(raw.streaks)
+      streaks: normalizeStreaks(raw.streaks),
+      perks: normalizePerks(raw.perks),
+      cosmetics: { ...base.cosmetics, ...(raw.cosmetics ?? {}) },
+      access: { ...base.access, ...(raw.access ?? {}) },
+      pad: { ...base.pad, ...(raw.pad ?? {}) }
     };
   } catch {
     return base;

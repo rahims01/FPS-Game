@@ -3,6 +3,8 @@ import type { SimEvent } from '../sim/FpsSim';
 import type { Difficulty, LobbyRules, Match, MatchNotice, ModeId } from '../sim/Match';
 import type { SkinChoice } from '../assets/skins';
 import type { StreakId } from '../sim/killstreaks';
+import type { PerkId, ThrowableId } from '../sim/gear';
+import type { Cosmetics } from '../game/cosmetics';
 import type { WeaponId } from '../sim/weapons';
 
 /**
@@ -12,7 +14,7 @@ import type { WeaponId } from '../sim/weapons';
  * instant), send their position and button state, and draw everything else
  * from the host's snapshots.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const PEER_PREFIX = 'fpsgame-v1-';
 export const SNAPSHOT_HZ = 20;
 
@@ -23,6 +25,10 @@ export interface PlayerProfile {
   secondary: WeaponId;
   skins: SkinChoice;
   streaks: StreakId[];
+  perks: PerkId[];
+  lethal: ThrowableId;
+  tactical: ThrowableId;
+  cosmetics: Cosmetics;
 }
 
 export interface LobbyPlayer {
@@ -44,6 +50,8 @@ export interface LobbyMsg {
   /** Players the mode can take; the rest spectate. */
   slots: number;
   rules: LobbyRules;
+  /** A party: friends queue together into a normal matchmade game. */
+  party: boolean;
 }
 
 /** Buttons sent by a client each input packet. One-shot actions are latched until sent. */
@@ -55,6 +63,7 @@ export interface NetButtons {
   reload: boolean;
   melee: boolean;
   grenade: boolean;
+  tactical: boolean;
   switchSlot: number;
 }
 
@@ -92,6 +101,11 @@ export interface StartMsg {
   /** Weapon skins by agent id. */
   skins: (SkinChoice | null)[];
   rules: LobbyRules;
+  /** Calling cards and emblems by agent id. */
+  cosmetics: (Cosmetics | null)[];
+  party: boolean;
+  /** Night map. */
+  night: boolean;
 }
 
 export type HostMsg =
@@ -99,6 +113,8 @@ export type HostMsg =
   | { t: 'chat'; name: string; color: number; text: string; system?: boolean }
   /** Someone left mid-match: a bot now plays their soldier under a new name. */
   | { t: 'rename'; id: number; name: string }
+  /** The match is over and the host has taken everyone back to the room. */
+  | { t: 'toLobby' }
   | { t: 'reject'; reason: string }
   | StartMsg
   | { t: 'snap'; snap: Snapshot }
@@ -115,8 +131,10 @@ export interface Snapshot {
   zone: { x: number; z: number; r: number; dps: number } | null;
   rally: { x: number; z: number; r: number } | null;
   obj: { label: string; x: number; z: number; r: number; owner: number; progress: number; carried?: boolean }[];
-  /** Grenades in flight: x, y, z. */
+  /** Throwables in flight: x, y, z, kind index, vx, vy, vz. */
   gr: number[][];
+  /** Fire and smoke: kind (0 fire, 1 smoke), x, z, r, seconds left. */
+  fx: number[][];
   /** Pickups: id, kind (0 medkit, 1 tag), x, z, active, team. */
   pk: number[][];
   ev: SimEvent[];
@@ -196,5 +214,12 @@ export const packAgent = (a: Agent): AgentNet => [
   a.hits,
   Math.round(a.damageDealt),
   a.headshots,
-  a.bestStreak
+  a.bestStreak,
+  r3(a.speedMul),
+  r3(a.blindUntil),
+  a.scale,
+  a.tacticals,
+  a.lethal,
+  a.tactical,
+  r3(a.reloadDur)
 ];

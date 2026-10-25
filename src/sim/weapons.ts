@@ -1,6 +1,6 @@
 import type { HitRegion } from './config';
 
-export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife' | 'burst' | 'dmr' | 'ak' | 'revolver';
+export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife' | 'burst' | 'dmr' | 'ak' | 'revolver' | 'scar' | 'uzi' | 'autoshotgun' | 'barrett' | 'deagle' | 'mpistol';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -280,6 +280,140 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsFov: 10,
     preferredRange: 14
   }),
+  scar: gun({
+    id: 'scar',
+    name: 'SCAR-H Battle Rifle',
+    tag: 'SCAR',
+    slot: 'primary',
+    damage: { head: 120, torso: 45, legs: 32 },
+    interval: 0.16,
+    auto: true,
+    magazine: 20,
+    reload: 2.5,
+    spreadStill: 0.004,
+    spreadMoving: 0.028,
+    falloffStart: 40,
+    falloffEnd: 90,
+    minMul: 0.8,
+    recoil: 0.019,
+    move: 0.94,
+    adsFov: 20,
+    preferredRange: 24,
+    pattern: [[1, 0], [1.3, 0.2], [1.5, -0.1], [1.5, -0.4], [1.3, 0.3], [1.2, 0.6], [1.1, 0.1], [1, -0.5]]
+  }),
+  uzi: gun({
+    id: 'uzi',
+    name: 'Uzi',
+    tag: 'UZI',
+    slot: 'primary',
+    damage: { head: 48, torso: 20, legs: 14 },
+    interval: 0.055,
+    auto: true,
+    magazine: 32,
+    reload: 1.6,
+    spreadStill: 0.014,
+    spreadMoving: 0.02,
+    falloffStart: 10,
+    falloffEnd: 28,
+    minMul: 0.5,
+    recoil: 0.007,
+    move: 1.1,
+    adsFov: 10,
+    preferredRange: 8,
+    pattern: [[0.7, 0.3], [0.8, -0.5], [0.8, 0.6], [0.7, -0.6], [0.7, 0.5], [0.6, -0.4]]
+  }),
+  autoshotgun: gun({
+    id: 'autoshotgun',
+    name: 'Saiga Auto Shotgun',
+    tag: 'SAIGA',
+    slot: 'primary',
+    damage: { head: 18, torso: 12, legs: 8 },
+    pellets: 8,
+    interval: 0.28,
+    auto: true,
+    magazine: 8,
+    reload: 2.8,
+    spreadStill: 0.075,
+    spreadMoving: 0.085,
+    adsSpread: 0.8,
+    falloffStart: 5,
+    falloffEnd: 16,
+    minMul: 0.15,
+    range: 50,
+    recoil: 0.04,
+    move: 0.97,
+    adsFov: 8,
+    preferredRange: 5,
+    pattern: [[1, 0.2], [1, -0.2], [1.1, 0.3]]
+  }),
+  barrett: gun({
+    id: 'barrett',
+    name: '.50 Cal Sniper',
+    tag: '.50 CAL',
+    slot: 'primary',
+    damage: { head: 250, torso: 105, legs: 80 },
+    interval: 0.55,
+    auto: false,
+    magazine: 8,
+    reload: 3.6,
+    spreadStill: 0.06,
+    spreadMoving: 0.1,
+    adsSpread: 0.03,
+    falloffStart: 999,
+    falloffEnd: 1000,
+    minMul: 1,
+    range: 320,
+    recoil: 0.09,
+    move: 0.86,
+    pattern: [[1, 0.15], [1, -0.1]],
+    adsFov: 66,
+    scope: true,
+    preferredRange: 40
+  }),
+  deagle: gun({
+    id: 'deagle',
+    name: 'Desert Eagle',
+    tag: 'DEAGLE',
+    slot: 'secondary',
+    damage: { head: 100, torso: 50, legs: 34 },
+    interval: 0.32,
+    auto: false,
+    magazine: 7,
+    reload: 2.0,
+    spreadStill: 0.008,
+    spreadMoving: 0.02,
+    adsSpread: 0.45,
+    falloffStart: 18,
+    falloffEnd: 45,
+    minMul: 0.65,
+    recoil: 0.055,
+    move: 1.04,
+    pattern: [[1, 0.25], [1.1, -0.2]],
+    adsFov: 12,
+    preferredRange: 14
+  }),
+  mpistol: gun({
+    id: 'mpistol',
+    name: 'Machine Pistol',
+    tag: 'MP',
+    slot: 'secondary',
+    damage: { head: 40, torso: 18, legs: 13 },
+    interval: 0.06,
+    auto: true,
+    magazine: 20,
+    reload: 1.5,
+    spreadStill: 0.018,
+    spreadMoving: 0.024,
+    adsSpread: 0.6,
+    falloffStart: 8,
+    falloffEnd: 22,
+    minMul: 0.5,
+    recoil: 0.009,
+    move: 1.1,
+    pattern: [[0.8, 0.4], [0.9, -0.5], [0.8, 0.5], [0.8, -0.5]],
+    adsFov: 8,
+    preferredRange: 7
+  }),
   knife: gun({
     id: 'knife',
     name: 'Combat Knife',
@@ -303,8 +437,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   })
 };
 
-export const PRIMARIES: WeaponId[] = ['rifle', 'ak', 'burst', 'smg', 'shotgun', 'dmr', 'sniper', 'lmg'];
-export const SECONDARIES: WeaponId[] = ['pistol', 'revolver'];
+export const PRIMARIES: WeaponId[] = ['rifle', 'ak', 'scar', 'burst', 'smg', 'uzi', 'shotgun', 'autoshotgun', 'dmr', 'sniper', 'barrett', 'lmg'];
+export const SECONDARIES: WeaponId[] = ['pistol', 'revolver', 'deagle', 'mpistol'];
 
 /** Gun Game ladder: two kills per gun, the knife kill wins. */
 export const GUN_GAME_LADDER: WeaponId[] = ['pistol', 'smg', 'shotgun', 'rifle', 'lmg', 'sniper', 'knife'];

@@ -1,6 +1,8 @@
 import type { HudState, ScoreRow } from '../game/Game';
 import { isDark } from '../game/identity';
 import type { Division } from '../game/progression';
+import { BADGES } from '../game/cosmetics';
+import { CallingCard } from './ProfilePanel';
 
 const acc = (r: ScoreRow) => (r.accuracy < 0 ? '–' : `${r.accuracy}%`);
 const kd = (r: ScoreRow) => (r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2));
@@ -26,6 +28,11 @@ const Table = ({ rows, mvp, title, color }: { rows: ScoreRow[]; mvp: number; tit
       <div key={p.id} className={`end-row ${p.isPlayer ? 'mine' : ''}`}>
         <span className={`name ${isDark(p.color) ? 'dark' : ''}`} style={{ color: p.color }}>
           <i className="lvl">{p.level}</i>
+          {p.emblem && (
+            <em className="emblem" style={{ color: p.emblem.color }}>
+              {p.emblem.glyph}
+            </em>
+          )}
           {p.id === mvp && <em className="mvp-tag">MVP</em>}
           {p.name}
           {p.bot && <small className="bot-tag">BOT</small>}
@@ -47,13 +54,22 @@ export const EndScreen = ({
   hud,
   ranked,
   onAgain,
-  onMenu
+  onLobby,
+  waitingForHost,
+  onMenu,
+  mine
 }: {
   hud: HudState;
   ranked: { delta: number; division: Division; sr: number } | null;
   onAgain: (() => void) | null;
+  /** Online host: take everyone back to the room. */
+  onLobby: (() => void) | null;
+  /** Online guest: the host decides what happens next. */
+  waitingForHost: boolean;
   onMenu: () => void;
+  mine: { card: string; emblem: string; name: string; level: number };
 }) => {
+  const badges = hud.newBadges.map((id) => BADGES.find((b) => b.id === id)).filter((b): b is (typeof BADGES)[number] => !!b);
   const me = hud.players.find((p) => p.isPlayer);
   const mvp = hud.players.find((p) => p.id === hud.mvp);
   const title = hud.spectator ? 'Match over' : hud.banner || (hud.result === 'win' ? 'Victory' : 'Defeat');
@@ -105,15 +121,20 @@ export const EndScreen = ({
           {mvp && (
             <div className="end-stat-card mvp">
               <small>MVP</small>
-              <b className={`mvp-name ${isDark(mvp.color) ? 'dark' : ''}`} style={{ color: mvp.color }}>
-                {mvp.name}
-              </b>
-              <span>
-                {mvp.kills} kills · {mvp.damage} damage · {acc(mvp)} accuracy
-              </span>
+              <CallingCard card={mvp.isPlayer ? mine.card : mvp.card} emblem={mvp.isPlayer ? mine.emblem : mvp.emblemId} name={mvp.name} level={mvp.level} sub={`${mvp.kills} kills · ${mvp.damage} damage · ${acc(mvp)} accuracy`} />
             </div>
           )}
         </div>
+        {badges.length > 0 && (
+          <div className="end-badges">
+            <small>New badges</small>
+            {badges.map((b) => (
+              <span key={b.id} className="end-badge" title={b.blurb}>
+                {b.icon} {b.name}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="end-board">
           {hud.showTeams ? (
             <>
@@ -130,6 +151,12 @@ export const EndScreen = ({
               {ranked ? 'NEXT RANKED MATCH' : 'PLAY AGAIN'}
             </button>
           )}
+          {onLobby && (
+            <button className="play" onClick={onLobby}>
+              BACK TO LOBBY
+            </button>
+          )}
+          {waitingForHost && <span className="policy-note">Waiting for the host to start the next one…</span>}
           <button className="chip" onClick={onMenu}>
             Main menu
           </button>

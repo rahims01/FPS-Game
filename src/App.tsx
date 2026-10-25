@@ -3,24 +3,28 @@ import { loadAssets, type LoadedAssets } from './assets/AssetRegistry';
 import { GameAudio } from './game/Audio';
 import { Game, type GameSettings, type HudState, type NetRole } from './game/Game';
 import { ClientSession, HostSession, type ChatMsg } from './net/Session';
-import type { LobbyPlayer } from './net/protocol';
+import type { LobbyMsg, LobbyPlayer } from './net/protocol';
 import type { ChatLine } from './net/chat';
 import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
 import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
 import { streakDef } from './sim/killstreaks';
+import { perkDef, THROWABLES } from './sim/gear';
 import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
 import { divisionOf, levelOf, loadProfile, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, type Division, type Profile } from './game/progression';
 import { Hud } from './ui/Hud';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { LoadoutPanel } from './ui/LoadoutPanel';
+import { ProfilePanel } from './ui/ProfilePanel';
 import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
 import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
+import { PadMenus } from './game/gamepad';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' };
+type MenuTab = 'play' | 'loadout' | 'profile' | 'settings';
 
 interface LobbyView {
   mode: ModeId;
@@ -29,6 +33,7 @@ interface LobbyView {
   max: number;
   slots: number;
   rules: LobbyRules;
+  party: boolean;
 }
 
 const defaultName = () => `Player${Math.floor(1000 + Math.random() * 9000)}`;
@@ -52,6 +57,8 @@ const initialSettings = (): GameSettings => {
 
 /** Developer switch: ?ai=heuristic runs the hand-written opponents instead of the trained policy. */
 const forceHeuristic = new URLSearchParams(location.search).get('ai') === 'heuristic';
+/** Developer switch: ?night=1 makes every eligible match a night map. */
+const forceNight = new URLSearchParams(location.search).get('night') === '1';
 
 const LOBBY: { id: Difficulty; label: string }[] = [
   { id: 'easy', label: 'Casual' },
@@ -62,6 +69,10 @@ const LOBBY: { id: Difficulty; label: string }[] = [
 const audio = new GameAudio();
 
 const MODE_GROUPS = ['Practice', 'Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
+
+/** Modes played on generated maps, which can come up at night. */
+const NIGHT_CHANCE = 0.18;
+const NO_NIGHT: ModeId[] = ['1v1', '2v2', '3v3', 'gunfight', 'training', 'aimtrainer', 'survival', 'zombies'];
 
 let chatId = 0;
 
@@ -80,11 +91,11 @@ export const App = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [brain, setBrain] = useState<Brain | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: 'menu' });
+  const [tab, setTab] = useState<MenuTab>('play');
   const [mode, setMode] = useState<ModeId>('1v1');
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [settings, setSettings] = useState<GameSettings>(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
-  const [showLoadout, setShowLoadout] = useState(false);
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
   // Ranked.
@@ -119,7 +130,23 @@ export const App = () => {
   useEffect(() => {
     saveSettings(settings);
     game.current?.applySettings(settings);
+    // Accessibility: text size, colourblind palettes and high contrast are page-wide styles.
+    const root = document.documentElement;
+    root.style.setProperty('--ui-scale', String(settings.access.uiScale));
+    root.dataset.cb = settings.access.colorblind;
+    root.classList.toggle('hc', settings.access.highContrast);
   }, [settings]);
+
+  // Controller navigation in menus (in a match the game reads the controller itself).
+  useEffect(() => {
+    const nav = new PadMenus();
+    nav.onBack = () => {
+      setShowSettings(false);
+      if (game.current?.paused) game.current.requestLock();
+    };
+    nav.start();
+    return () => nav.stop();
+  }, []);
 
   // The online counter drifts.
   useEffect(() => {
@@ -153,6 +180,9 @@ export const App = () => {
     const host = netRef.current?.role === 'host' ? netRef.current.session : null;
     rankedDone.current = false;
     setRankedResult(null);
+    // Night maps: the host decides online; otherwise now and then on generated maps.
+    const time = host ? host.lobby.rules.time : 'random';
+    const night = !NO_NIGHT.includes(mode) && (forceNight || time === 'night' || (time === 'random' && Math.random() < NIGHT_CHANCE));
     const g = new Game(
       mount.current,
       assets,
@@ -163,8 +193,12 @@ export const App = () => {
         primary: settings.primary,
         secondary: settings.secondary,
         streaks: settings.streaks,
+        lethal: settings.lethal,
+        tactical: settings.tactical,
+        perks: settings.perks,
+        night,
         humans: host ? host.playingCount : 1,
-        ...(host ? { rules: host.lobby.rules } : {}),
+        ...(host && !host.party ? { rules: host.lobby.rules } : {}),
         ...(ranked && !netRef.current ? { skill: rankedDifficulty(loadProfile().sr) } : {})
       },
       brain,
@@ -255,22 +289,30 @@ export const App = () => {
     primary: settings.primary,
     secondary: settings.secondary,
     skins: settings.skins,
-    streaks: settings.streaks
+    streaks: settings.streaks,
+    perks: settings.perks,
+    lethal: settings.lethal,
+    tactical: settings.tactical,
+    cosmetics: settings.cosmetics
   });
 
-  const hostGame = async () => {
+  const lobbyFrom = (s: HostSession): LobbyView => ({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules, party: s.party });
+
+  const hostGame = async (party: boolean) => {
     audio.unlock();
     setNetError(null);
     setNetBusy(true);
     try {
       const p = profileForNet();
-      const session = await HostSession.create(mode, difficulty, p.name, p.color);
+      // A party starts on a normal mode (online-only modes need a friends room).
+      const start = party && (modeDef(mode).humansOnly || PRACTICE_MODES.includes(mode)) ? 'tdm' : mode;
+      const session = await HostSession.create(start, difficulty, p.name, p.color, party);
       hostRef.current = session;
-      const refresh = () =>
-        setLobby({ mode: session.lobby.mode, difficulty: session.lobby.difficulty, players: session.players, max: session.maxPlayers, slots: session.slots, rules: session.lobby.rules });
+      const refresh = () => setLobby(lobbyFrom(session));
       session.onChange = refresh;
       session.onChat = addChat;
       refresh();
+      setMode(start);
       setChat([]);
       setRoomCode(session.code);
       setRanked(false);
@@ -284,7 +326,7 @@ export const App = () => {
 
   const refreshHostLobby = () => {
     const s = hostRef.current;
-    if (s) setLobby({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules });
+    if (s) setLobby(lobbyFrom(s));
   };
 
   const changeLobbyMode = (m: ModeId) => {
@@ -310,6 +352,42 @@ export const App = () => {
     setRound((r) => r + 1);
   };
 
+  /** After an online match: everyone goes back to the room instead of leaving. */
+  const backToLobby = () => {
+    const s = hostRef.current;
+    if (!s) return;
+    if (game.current) game.current.keepNet = true;
+    netRef.current = null;
+    s.returnToLobby();
+    refreshHostLobby();
+    setScreen({ kind: 'host-lobby' });
+  };
+
+  /** Hooks a client session up to the menus (again after each match, since the game takes some hooks over). */
+  const bindClient = (session: ClientSession) => {
+    session.onChat = addChat;
+    session.onLobby = (msg: LobbyMsg) => setLobby({ mode: msg.mode, difficulty: msg.difficulty, players: msg.players, max: msg.max, slots: msg.slots, rules: msg.rules, party: msg.party });
+    session.onStart = (start) => {
+      netRef.current = { role: 'client', session, start };
+      setMode(start.mode);
+      setScreen({ kind: 'playing' });
+      setRound((r) => r + 1);
+    };
+    session.onEnd = (reason) => {
+      setNetError(reason);
+      clientRef.current = null;
+      netRef.current = null;
+      setLobby(null);
+      setScreen({ kind: 'menu' });
+    };
+    session.onToLobby = () => {
+      if (game.current) game.current.keepNet = true;
+      netRef.current = null;
+      bindClient(session);
+      setScreen({ kind: 'join-lobby' });
+    };
+  };
+
   const joinGame = async () => {
     audio.unlock();
     setNetError(null);
@@ -322,20 +400,7 @@ export const App = () => {
       const session = await ClientSession.connect(joinCode, profileForNet());
       clientRef.current = session;
       setChat([]);
-      session.onChat = addChat;
-      session.onLobby = (msg) => setLobby({ mode: msg.mode, difficulty: msg.difficulty, players: msg.players, max: msg.max, slots: msg.slots, rules: msg.rules });
-      session.onStart = (start) => {
-        netRef.current = { role: 'client', session, start };
-        setMode(start.mode);
-        setScreen({ kind: 'playing' });
-        setRound((r) => r + 1);
-      };
-      session.onEnd = (reason) => {
-        setNetError(reason);
-        clientRef.current = null;
-        setLobby(null);
-        setScreen({ kind: 'menu' });
-      };
+      bindClient(session);
       setRoomCode(joinCode.trim().toUpperCase());
       setRanked(false);
       setScreen({ kind: 'join-lobby' });
@@ -365,17 +430,18 @@ export const App = () => {
   const isHostLobby = screen.kind === 'host-lobby';
   const playingCount = lobby ? lobby.players.filter((p) => p.playing).length : 0;
   const minNeeded = lobby ? Math.max(1, modeDef(lobby.mode).minPlayers ?? 1) : 1;
+  const level = levelOf(profile.xp).level;
 
   return (
     <>
       <div ref={mount} className="viewport" />
       {screen.kind === 'menu' && (
         <div className="menu">
-          <div className="menu-card">
-            <h1>FPS SHOOTER</h1>
-            <p className="sub">
-              Pick a mode and jump into a lobby. <span className="online-count">● {online.toLocaleString()} players online</span>
-            </p>
+          <div className="menu-card main-menu">
+            <header className="menu-head">
+              <h1>FPS SHOOTER</h1>
+              <span className="online-count">● {online.toLocaleString()} players online</span>
+            </header>
             <div className="profile-row">
               <ProfileBar profile={profile} />
               <div className="ranked-card" style={{ borderColor: division.color }}>
@@ -395,120 +461,144 @@ export const App = () => {
                 </button>
               </div>
             </div>
-            <div className="profile">
-              <label className="name-field">
-                Username
-                <input
-                  value={settings.playerName}
-                  maxLength={16}
-                  spellCheck={false}
-                  onChange={(e) => setSettings({ ...settings, playerName: e.target.value.replace(/\s+/g, '_') })}
-                />
-              </label>
-              <div className="color-field">
-                <span>
-                  Colour <small>(free-for-all modes; team modes use your team's colour)</small>
-                </span>
-                <div className="swatches">
-                  {COLORS.map((c) => (
-                    <button
-                      key={c.hex}
-                      title={c.name}
-                      className={`swatch ${settings.playerColor === c.hex ? 'on' : ''}`}
-                      style={{ background: cssColor(c.hex) }}
-                      onClick={() => setSettings({ ...settings, playerColor: c.hex })}
+            <nav className="menu-tabs">
+              {(
+                [
+                  ['play', 'Play'],
+                  ['loadout', 'Loadout'],
+                  ['profile', 'Profile'],
+                  ['settings', 'Settings']
+                ] as [MenuTab, string][]
+              ).map(([id, label]) => (
+                <button key={id} className={`menu-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+
+            {tab === 'play' && (
+              <>
+                <div className="profile">
+                  <label className="name-field">
+                    Username
+                    <input
+                      value={settings.playerName}
+                      maxLength={16}
+                      spellCheck={false}
+                      onChange={(e) => setSettings({ ...settings, playerName: e.target.value.replace(/\s+/g, '_') })}
                     />
-                  ))}
+                  </label>
+                  <div className="color-field">
+                    <span>
+                      Colour <small>(free-for-all modes; team modes use your team's colour)</small>
+                    </span>
+                    <div className="swatches">
+                      {COLORS.map((c) => (
+                        <button
+                          key={c.hex}
+                          title={c.name}
+                          className={`swatch ${settings.playerColor === c.hex ? 'on' : ''}`}
+                          style={{ background: cssColor(c.hex) }}
+                          onClick={() => setSettings({ ...settings, playerColor: c.hex })}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            {MODE_GROUPS.map((group) => (
-              <div key={group}>
-                <div className="mode-group">{group}</div>
-                <div className="modes">
-                  {MODES.filter((m) => m.group === group).map((m) => (
-                    <button key={m.id} className={`mode ${mode === m.id ? 'on' : ''}`} onClick={() => setMode(m.id)}>
-                      <strong>
-                        {m.name}
-                        {m.humansOnly && <em className="tag-online">ONLINE</em>}
-                      </strong>
-                      <span>{m.blurb}</span>
+                <button className="loadout-strip" onClick={() => setTab('loadout')}>
+                  <span>
+                    <b>{WEAPONS[settings.primary].name}</b> + {WEAPONS[settings.secondary].name}
+                  </span>
+                  <span>
+                    {THROWABLES[settings.lethal].name} · {THROWABLES[settings.tactical].name}
+                  </span>
+                  <span>{settings.perks.map((p) => perkDef(p).name).join(' · ')}</span>
+                  <span>{settings.streaks.map((s) => streakDef(s).name).join(' / ')}</span>
+                  <em>Edit loadout ›</em>
+                </button>
+                {MODE_GROUPS.map((group) => (
+                  <div key={group}>
+                    <div className="mode-group">{group}</div>
+                    <div className="modes">
+                      {MODES.filter((m) => m.group === group).map((m) => (
+                        <button key={m.id} className={`mode ${mode === m.id ? 'on' : ''}`} onClick={() => setMode(m.id)}>
+                          <strong>
+                            {m.name}
+                            {m.humansOnly && <em className="tag-online">FRIENDS</em>}
+                          </strong>
+                          <span>{m.blurb}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div className="row">
+                  <label>Lobby</label>
+                  {LOBBY.map((d) => (
+                    <button key={d.id} className={`chip ${difficulty === d.id ? 'on' : ''}`} onClick={() => setDifficulty(d.id)}>
+                      {d.label}
                     </button>
                   ))}
                 </div>
-              </div>
-            ))}
-            <div className="row">
-              <label>Loadout</label>
-              <span className="loadout-summary">
-                <b>{WEAPONS[settings.primary].name}</b> + {WEAPONS[settings.secondary].name} · {settings.streaks.map((s) => streakDef(s).name).join(' / ')}
-              </span>
-              <button className="chip" onClick={() => setShowLoadout(true)}>
-                ✎ Edit loadout
-              </button>
-            </div>
-            <div className="row">
-              <label>Lobby</label>
-              {LOBBY.map((d) => (
-                <button key={d.id} className={`chip ${difficulty === d.id ? 'on' : ''}`} onClick={() => setDifficulty(d.id)}>
-                  {d.label}
+                <div className="online">
+                  <div className="online-head">
+                    <b>Play with friends</b>
+                    <span>
+                      <b>Create party</b>: queue into normal games together (the host picks the mode). <b>Host game</b>: a private room with custom rules and friends-only modes.
+                    </span>
+                  </div>
+                  <div className="row">
+                    <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(true)}>
+                      Create party
+                    </button>
+                    <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(false)}>
+                      Host game
+                    </button>
+                    <input
+                      className="code-input"
+                      placeholder="CODE"
+                      maxLength={5}
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                    />
+                    <button className="chip" disabled={!assets || netBusy} onClick={joinGame}>
+                      Join
+                    </button>
+                    {netBusy && <span className="policy-note">Connecting…</span>}
+                  </div>
+                  {netError && <div className="net-error">{netError}</div>}
+                </div>
+                <button className="play" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
+                  {!assets ? loadMsg : modeDef(mode).humansOnly ? 'FRIENDS ONLY — HOST A GAME ABOVE' : PRACTICE_MODES.includes(mode) ? 'START PRACTICE' : 'FIND MATCH'}
                 </button>
-              ))}
-            </div>
-            <div className="row">
-              <label>Options</label>
-              <button className="chip" onClick={() => setShowSettings(true)}>
-                ⚙ Settings
-              </button>
-              <span className="policy-note">Graphics quality, controls &amp; key bindings, crosshair, sensitivity and more.</span>
-            </div>
-            <div className="online">
-              <div className="online-head">
-                <b>Play online with friends</b>
-                <span>Host a room and share the code. Pick who plays, set the rules and chat in the lobby.</span>
-              </div>
-              <div className="row">
-                <button className="chip" disabled={!assets || netBusy} onClick={hostGame}>
-                  Host game
-                </button>
-                <input
-                  className="code-input"
-                  placeholder="ROOM CODE"
-                  maxLength={5}
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                />
-                <button className="chip" disabled={!assets || netBusy} onClick={joinGame}>
-                  Join
-                </button>
-                {netBusy && <span className="policy-note">Connecting…</span>}
-              </div>
-              {netError && <div className="net-error">{netError}</div>}
-            </div>
-            <button className="play" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
-              {!assets ? loadMsg : modeDef(mode).humansOnly ? 'ONLINE ONLY — HOST A GAME ABOVE' : PRACTICE_MODES.includes(mode) ? 'START PRACTICE' : 'FIND MATCH'}
-            </button>
-            <div className="controls">
-              <span>
-                {keyLabel(settings.keys.forward)}
-                {keyLabel(settings.keys.left)}
-                {keyLabel(settings.keys.back)}
-                {keyLabel(settings.keys.right)} move
-              </span>
-              <span>LMB fire · RMB aim</span>
-              <span>{keyLabel(settings.keys.sprint)} sprint</span>
-              <span>{keyLabel(settings.keys.jump)} jump</span>
-              <span>{keyLabel(settings.keys.crouch)} crouch/slide</span>
-              <span>{keyLabel(settings.keys.reload)} reload</span>
-              <span>{keyLabel(settings.keys.melee)} knife</span>
-              <span>{keyLabel(settings.keys.grenade)} grenade</span>
-              <span>
-                {keyLabel(settings.keys.weapon1)}/{keyLabel(settings.keys.weapon2)}/{keyLabel(settings.keys.swap)}/wheel switch
-              </span>
-              <span>{keyLabel(settings.keys.scores)} scores</span>
-              <span>{keyLabel(settings.keys.chat)} chat (online)</span>
-              <span>Esc pause</span>
-            </div>
+                <div className="controls">
+                  <span>
+                    {keyLabel(settings.keys.forward)}
+                    {keyLabel(settings.keys.left)}
+                    {keyLabel(settings.keys.back)}
+                    {keyLabel(settings.keys.right)} move
+                  </span>
+                  <span>LMB fire · RMB aim</span>
+                  <span>{keyLabel(settings.keys.sprint)} sprint</span>
+                  <span>{keyLabel(settings.keys.jump)} jump</span>
+                  <span>{keyLabel(settings.keys.crouch)} crouch/slide</span>
+                  <span>{keyLabel(settings.keys.reload)} reload</span>
+                  <span>{keyLabel(settings.keys.melee)} knife</span>
+                  <span>
+                    {keyLabel(settings.keys.grenade)} lethal · {keyLabel(settings.keys.tactical)} tactical
+                  </span>
+                  <span>
+                    {keyLabel(settings.keys.weapon1)}/{keyLabel(settings.keys.weapon2)}/{keyLabel(settings.keys.swap)}/wheel switch
+                  </span>
+                  <span>{keyLabel(settings.keys.scores)} scores</span>
+                  <span>{keyLabel(settings.keys.chat)} chat (online)</span>
+                  <span>Esc pause · controllers supported</span>
+                </div>
+              </>
+            )}
+            {tab === 'loadout' && <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
+            {tab === 'profile' && <ProfilePanel settings={settings} onChange={setSettings} profile={profile} />}
+            {tab === 'settings' && <SettingsPanel settings={settings} onChange={setSettings} />}
           </div>
         </div>
       )}
@@ -516,12 +606,18 @@ export const App = () => {
         <div className="menu">
           <div className="menu-card lobby-card">
             <div className="lobby-main">
-              <h2>{isHostLobby ? 'Your room' : 'Joined room'}</h2>
+              <h2>{lobby.party ? (isHostLobby ? 'Your party' : 'Joined party') : isHostLobby ? 'Your room' : 'Joined room'}</h2>
               <div className="room-code">{roomCode}</div>
-              <p className="sub">{isHostLobby ? 'Send this code to your friends. They enter it under "Play online".' : 'Waiting for the host to start…'}</p>
+              <p className="sub">
+                {lobby.party
+                  ? 'Your party queues into a normal matchmade game together, on the same team. Send friends the code.'
+                  : isHostLobby
+                    ? 'Send this code to your friends. They enter it under "Play with friends".'
+                    : 'Waiting for the host to start…'}
+              </p>
               {isHostLobby ? (
                 <select className="mode-select" value={lobby.mode} onChange={(e) => changeLobbyMode(e.target.value as ModeId)}>
-                  {MODES.map((m) => (
+                  {MODES.filter((m) => !lobby.party || (!m.humansOnly && !PRACTICE_MODES.includes(m.id))).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
@@ -538,7 +634,7 @@ export const App = () => {
                     <span className="rank">{i + 1}</span>
                     <span className={`name ${isDark(cssColor(p.color)) ? 'dark' : ''}`} style={{ color: cssColor(p.color) }}>
                       {p.name}
-                      {p.host && <small className="host-tag">host</small>}
+                      {p.host && <small className="host-tag">{lobby.party ? 'leader' : 'host'}</small>}
                     </span>
                     {isHostLobby ? (
                       <button
@@ -559,15 +655,15 @@ export const App = () => {
                 ))}
                 <small>
                   {playingCount} / {lobby.slots} playing{lobby.players.length > playingCount ? ` · ${lobby.players.length - playingCount} spectating` : ''}
-                  {lobby.rules.bots && !modeDef(lobby.mode).humansOnly ? ' · empty slots get bots' : ''}
+                  {lobby.party ? ' · the rest of the lobby is matchmade' : lobby.rules.bots && !modeDef(lobby.mode).humansOnly ? ' · empty slots get bots' : ''}
                   {isHostLobby && lobby.players.length > lobby.slots ? ' · more people than slots: pick who plays' : ''}
                 </small>
               </div>
-              <RulesPanel rules={lobby.rules} editable={isHostLobby} onChange={changeRules} humansOnly={!!modeDef(lobby.mode).humansOnly} />
+              {!lobby.party && <RulesPanel rules={lobby.rules} editable={isHostLobby} onChange={changeRules} humansOnly={!!modeDef(lobby.mode).humansOnly} />}
               <div className="row">
                 {isHostLobby && (
                   <button className="play" disabled={playingCount < minNeeded} onClick={startOnline}>
-                    {playingCount < minNeeded ? `NEEDS ${minNeeded} PLAYERS` : 'START'}
+                    {playingCount < minNeeded ? `NEEDS ${minNeeded} PLAYERS` : lobby.party ? 'FIND MATCH' : 'START'}
                   </button>
                 )}
                 <button className="chip" onClick={toMenu}>
@@ -576,7 +672,7 @@ export const App = () => {
               </div>
             </div>
             <div className="lobby-chat">
-              <h3>Chat</h3>
+              <h3>{lobby.party ? 'Party chat' : 'Chat'}</h3>
               <ChatBox lines={chat} onSend={sendChat} inGame={false} open now={Date.now()} />
             </div>
           </div>
@@ -588,17 +684,6 @@ export const App = () => {
             <h2>Settings</h2>
             <SettingsPanel settings={settings} onChange={setSettings} />
             <button className="play" onClick={() => setShowSettings(false)}>
-              DONE
-            </button>
-          </div>
-        </div>
-      )}
-      {showLoadout && screen.kind === 'menu' && (
-        <div className="overlay">
-          <div className="menu-card loadout-card">
-            <h2>Loadout</h2>
-            <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} />
-            <button className="play" onClick={() => setShowLoadout(false)}>
               DONE
             </button>
           </div>
@@ -620,7 +705,7 @@ export const App = () => {
             <div className="joining">
               {[settings.playerName.trim() || 'You', ...lobbyNames.slice(0, joined - 1)].slice(-8).map((n, i, arr) => (
                 <div key={n} className={`joining-row ${i === arr.length - 1 && joined > 1 && !lobbyFull ? 'new' : ''}`}>
-                  <i className="lvl">{n === (settings.playerName.trim() || 'You') ? levelOf(profile.xp).level : levelFor(n)}</i>
+                  <i className="lvl">{n === (settings.playerName.trim() || 'You') ? level : levelFor(n)}</i>
                   <span>{n}</span>
                   <small className="ping">{basePingFor(n)} ms</small>
                 </div>
@@ -643,14 +728,7 @@ export const App = () => {
         <>
           <Hud hud={hud} minimap={minimap} settings={settings} />
           {hud.online && (
-            <ChatBox
-              lines={chat}
-              onSend={sendChat}
-              inGame
-              open={hud.chatOpen}
-              onClose={() => game.current?.closeChat()}
-              now={Date.now()}
-            />
+            <ChatBox lines={chat} onSend={sendChat} inGame open={hud.chatOpen} onClose={() => game.current?.closeChat()} now={Date.now()} />
           )}
           {hud.touch && game.current && !hud.paused && hud.phase !== 'over' && (
             <TouchControls
@@ -701,7 +779,15 @@ export const App = () => {
             </div>
           )}
           {hud.phase === 'over' && !hud.netMessage && !hud.killcam && !hud.killcamPending && (
-            <EndScreen hud={hud} ranked={ranked && !hud.online ? rankedResult : null} onAgain={hud.online ? null : ranked ? playRanked : findMatch} onMenu={toMenu} />
+            <EndScreen
+              hud={hud}
+              ranked={ranked && !hud.online ? rankedResult : null}
+              onAgain={hud.online ? null : ranked ? playRanked : findMatch}
+              onLobby={hud.online && hostRef.current ? backToLobby : null}
+              waitingForHost={hud.online && !hostRef.current}
+              onMenu={toMenu}
+              mine={{ card: settings.cosmetics.card, emblem: settings.cosmetics.emblem, name: settings.playerName, level }}
+            />
           )}
         </>
       )}
@@ -770,6 +856,16 @@ const RulesPanel = ({ rules, editable, onChange, humansOnly }: { rules: LobbyRul
         (v) => onChange({ gravity: v })
       )}
       {opt(
+        'Time of day',
+        rules.time,
+        [
+          ['day', 'Day'],
+          ['night', 'Night'],
+          ['random', 'Random']
+        ],
+        (v) => onChange({ time: v })
+      )}
+      {opt(
         'Score to win',
         rules.score,
         [
@@ -816,3 +912,4 @@ const RulesPanel = ({ rules, editable, onChange, humansOnly }: { rules: LobbyRul
     </details>
   );
 };
+
