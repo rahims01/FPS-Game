@@ -5,26 +5,29 @@ import { Game, type GameSettings, type HudState, type NetRole } from './game/Gam
 import { ClientSession, HostSession, type ChatMsg } from './net/Session';
 import type { LobbyMsg, LobbyPlayer } from './net/protocol';
 import type { ChatLine } from './net/chat';
-import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby } from './game/identity';
+import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby, presetLobby } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
 import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
 import { streakDef } from './sim/killstreaks';
 import { perkDef, THROWABLES } from './sim/gear';
 import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
-import { divisionOf, levelOf, loadProfile, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, type Division, type Profile } from './game/progression';
+import { divisionOf, levelOf, loadProfile, prestigeUp, queueStats, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, saveProfile, type Division, type Profile, type RankedQueue } from './game/progression';
 import { Hud } from './ui/Hud';
 import { SettingsPanel } from './ui/SettingsPanel';
 import { LoadoutPanel } from './ui/LoadoutPanel';
-import { ProfilePanel } from './ui/ProfilePanel';
+import { CallingCard, LevelBadge, ProfilePanel } from './ui/ProfilePanel';
+import { ArmoryPanel } from './ui/ArmoryPanel';
+import { newTourney, opponent, recordMatch, roundDifficulty, ROUND_NAMES, tourneyXp, type Tourney } from './game/tournament';
+import { canMatchmake, seekPlayers, type MatchmakingResult } from './net/matchmaker';
 import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
 import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 import { PadMenus } from './game/gamepad';
 
-type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' };
-type MenuTab = 'play' | 'loadout' | 'profile' | 'settings';
+type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' } | { kind: 'tourney' };
+type MenuTab = 'play' | 'loadout' | 'armory' | 'profile' | 'settings';
 
 interface LobbyView {
   mode: ModeId;
@@ -100,6 +103,16 @@ export const App = () => {
   const [round, setRound] = useState(0);
   // Ranked.
   const [ranked, setRanked] = useState(false);
+  const [rankedQueue, setRankedQueue] = useState<RankedQueue>('team');
+  // Gunfight tournament.
+  const [tourney, setTourney] = useState<Tourney | null>(null);
+  const tourneyMatch = useRef(false);
+  // Real-player matchmaking (peer to peer).
+  const mmRef = useRef<MatchmakingResult>(null);
+  const mmCancel = useRef(false);
+  const [mmState, setMmState] = useState<'none' | 'host' | 'client'>('none');
+  const [mmGuests, setMmGuests] = useState<string[]>([]);
+  const [mmWaitTimedOut, setMmWaitTimedOut] = useState(false);
   const [rankedResult, setRankedResult] = useState<{ delta: number; division: Division; sr: number } | null>(null);
   const rankedDone = useRef(false);
   // Online play.
@@ -198,8 +211,10 @@ export const App = () => {
         perks: settings.perks,
         night,
         humans: host ? host.playingCount : 1,
-        ...(host && !host.party ? { rules: host.lobby.rules } : {}),
-        ...(ranked && !netRef.current ? { skill: rankedDifficulty(loadProfile().sr) } : {})
+        ...(host && !host.party && !host.public ? { rules: host.lobby.rules } : {}),
+        ...(ranked && !netRef.current ? { skill: rankedDifficulty(queueStats(loadProfile(), rankedQueue).sr) } : {}),
+        // Tournament matches: first to 3 rounds, sharper every round.
+        ...(tourneyMatch.current && tourney ? { skill: roundDifficulty(tourney.round), rules: { ...DEFAULT_RULES, score: 0.6 } } : {})
       },
       brain,
       { ...settings, playerName: name },
@@ -229,11 +244,11 @@ export const App = () => {
   useEffect(() => {
     if (!ranked || !hud || hud.phase !== 'over' || rankedDone.current || hud.online) return;
     rankedDone.current = true;
-    const delta = recordRanked(hud.result === 'win', hud.kills, hud.deaths);
+    const delta = recordRanked(hud.result === 'win', hud.kills, hud.deaths, rankedQueue);
     const p = loadProfile();
     setProfile(p);
-    setRankedResult({ delta, division: divisionOf(p), sr: p.sr });
-  }, [hud, ranked]);
+    setRankedResult({ delta, division: divisionOf(p, rankedQueue), sr: queueStats(p, rankedQueue).sr });
+  }, [hud, ranked, rankedQueue]);
 
   const addChat = useCallback((m: ChatMsg) => {
     setChat((c) => [...c.slice(-80), { id: chatId++, name: m.name, color: m.color, text: m.text, system: m.system, at: Date.now() }]);
@@ -244,23 +259,123 @@ export const App = () => {
     else clientRef.current?.sendChat(text);
   };
 
+  /** Ends any real-player search (and its session, unless we're playing in it). */
+  const stopSeeking = (keep = false) => {
+    mmCancel.current = true;
+    const mm = mmRef.current;
+    if (mm && !keep) {
+      if (mm.role === 'host') mm.session.close('The match was cancelled.');
+      else mm.session.leave();
+    }
+    mmRef.current = null;
+    setMmState('none');
+    setMmGuests([]);
+    setMmWaitTimedOut(false);
+  };
+
+  /** Looks for other real players searching for the same mode right now. */
+  const seek = (m: ModeId) => {
+    stopSeeking();
+    mmCancel.current = false;
+    if (!canMatchmake(m)) return;
+    void seekPlayers(m, difficulty, profileForNet(), () => mmCancel.current).then((res) => {
+      if (!res || mmCancel.current) return;
+      mmRef.current = res;
+      if (res.role === 'host') {
+        setMmState('host');
+        res.session.onChange = () => setMmGuests(res.session.players.slice(1).map((p) => p.name));
+      } else {
+        setMmState('client');
+        const s = res.session;
+        // Show who else is in this lobby (the host and any other real players).
+        const me = profileForNet().name;
+        s.onLobby = (msg) => setMmGuests(msg.players.map((p) => p.name).filter((n) => n !== me));
+        s.onStart = (start) => {
+          netRef.current = { role: 'client', session: s, start };
+          setMode(start.mode);
+          setScreen({ kind: 'playing' });
+          setRound((r) => r + 1);
+        };
+        // The host left before starting: carry on with a normal match.
+        s.onEnd = () => {
+          mmRef.current = null;
+          setMmState('none');
+        };
+      }
+    });
+  };
+
   const findMatch = () => {
     audio.unlock();
     setRanked(false);
+    tourneyMatch.current = false;
     // Practice needs no lobby: straight in.
     setScreen({ kind: PRACTICE_MODES.includes(mode) ? 'playing' : 'finding' });
     setRound((r) => r + 1);
+    if (!PRACTICE_MODES.includes(mode)) seek(mode);
   };
-  const playRanked = () => {
+  const playRanked = (q: RankedQueue) => {
     audio.unlock();
+    stopSeeking();
     setRanked(true);
-    setMode(RANKED_MODES[Math.floor(Math.random() * RANKED_MODES.length)]);
+    setRankedQueue(q);
+    tourneyMatch.current = false;
+    setMode(q === 'duel' ? '1v1' : RANKED_MODES[Math.floor(Math.random() * RANKED_MODES.length)]);
     setScreen({ kind: 'finding' });
     setRound((r) => r + 1);
   };
   const deploy = () => {
     audio.unlock();
+    const mm = mmRef.current;
+    if (mm?.role === 'host' && mm.session.players.length > 1) {
+      // Real players found us: host the match for them (everyone else is filled in as usual).
+      netRef.current = { role: 'host', session: mm.session, seed: (Math.random() * 1e9) | 0 };
+      stopSeeking(true);
+    } else stopSeeking();
     setScreen({ kind: 'playing' });
+  };
+
+  // A guest waits for the host to start; if it never does, play a normal match instead.
+  useEffect(() => {
+    if (screen.kind !== 'finding' || mmState !== 'client') return;
+    const t = window.setTimeout(() => setMmWaitTimedOut(true), 15000);
+    return () => window.clearTimeout(t);
+  }, [screen, mmState]);
+
+  // ---- Gunfight tournament
+  const startTourney = () => {
+    audio.unlock();
+    stopSeeking();
+    setTourney(newTourney(settings.playerName.trim() || 'You'));
+    setScreen({ kind: 'tourney' });
+  };
+  const playTourneyMatch = () => {
+    if (!tourney) return;
+    const opp = opponent(tourney);
+    if (opp === null) return;
+    const me = tourney.teams.find((t) => t.you)!;
+    // You, your teammate, then the two opponents.
+    presetLobby([me.players[1], ...tourney.teams[opp].players]);
+    tourneyMatch.current = true;
+    setRanked(false);
+    setMode('gunfight');
+    setScreen({ kind: 'playing' });
+    setRound((r) => r + 1);
+  };
+  const finishTourneyMatch = () => {
+    if (!tourney || !hud) return;
+    const next = recordMatch(tourney, hud.result === 'win');
+    // Bracket rewards when it ends for you.
+    if (next.outIn !== null || next.champion !== null) {
+      const p = loadProfile();
+      p.xp += tourneyXp(next);
+      if (next.champion !== null && next.teams[next.champion].you) p.tourneyWins++;
+      saveProfile(p);
+      setProfile(p);
+    }
+    tourneyMatch.current = false;
+    setTourney(next);
+    setScreen({ kind: 'tourney' });
   };
   const toMenu = useCallback(() => {
     // Quitting a ranked match early counts as a loss.
@@ -270,6 +385,8 @@ export const App = () => {
       recordRanked(false, g.match.player.kills, g.match.player.deaths);
     }
     setProfile(loadProfile());
+    stopSeeking();
+    tourneyMatch.current = false;
     // Leaving a lobby (a match's sessions are closed when its Game is disposed).
     if (screen.kind !== 'playing') {
       hostRef.current?.close('The host closed the lobby.');
@@ -293,7 +410,7 @@ export const App = () => {
     perks: settings.perks,
     lethal: settings.lethal,
     tactical: settings.tactical,
-    cosmetics: settings.cosmetics
+    cosmetics: { ...settings.cosmetics, prestige: profile.prestige }
   });
 
   const lobbyFrom = (s: HostSession): LobbyView => ({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules, party: s.party });
@@ -416,7 +533,9 @@ export const App = () => {
   };
   const def = modeDef(mode);
   const lobbyFull = joined >= def.players;
-  const division = divisionOf(profile);
+  const division = divisionOf(profile, rankedQueue);
+  const teamDiv = divisionOf(profile, 'team');
+  const duelDiv = divisionOf(profile, 'duel');
 
   if (loadError) {
     return (
@@ -443,21 +562,33 @@ export const App = () => {
               <span className="online-count">● {online.toLocaleString()} players online</span>
             </header>
             <div className="profile-row">
-              <ProfileBar profile={profile} />
-              <div className="ranked-card" style={{ borderColor: division.color }}>
+              <ProfileBar profile={profile} frame={settings.cosmetics.frame} />
+              <div className="ranked-card">
                 <small>Ranked</small>
-                <b style={{ color: division.color }}>{division.name}</b>
-                {division.placed && (
-                  <div className="xpbar">
-                    <div style={{ width: `${division.progress * 100}%`, background: division.color }} />
-                  </div>
-                )}
-                <small>
-                  {division.placed ? `${profile.sr} SR · ` : ''}
-                  {profile.rankedWins}W {profile.rankedMatches - profile.rankedWins}L
-                </small>
-                <button className="play ranked-btn" disabled={!assets} onClick={playRanked}>
-                  PLAY RANKED
+                {(
+                  [
+                    ['team', 'Team', teamDiv],
+                    ['duel', '1v1', duelDiv]
+                  ] as [RankedQueue, string, Division][]
+                ).map(([q, label, d]) => {
+                  const qs = queueStats(profile, q);
+                  return (
+                    <div key={q} className="rank-queue">
+                      <span>
+                        <em>{label}</em> <b style={{ color: d.color }}>{d.name}</b>
+                        <small>
+                          {d.placed ? `${qs.sr} SR · ` : ''}
+                          {qs.wins}W {qs.matches - qs.wins}L
+                        </small>
+                      </span>
+                      <button className="chip ranked-btn" disabled={!assets} onClick={() => playRanked(q)}>
+                        PLAY
+                      </button>
+                    </div>
+                  );
+                })}
+                <button className="chip tourney-btn" disabled={!assets} onClick={startTourney}>
+                  🏆 Gunfight tournament
                 </button>
               </div>
             </div>
@@ -466,6 +597,7 @@ export const App = () => {
                 [
                   ['play', 'Play'],
                   ['loadout', 'Loadout'],
+                  ['armory', 'Armory'],
                   ['profile', 'Profile'],
                   ['settings', 'Settings']
                 ] as [MenuTab, string][]
@@ -597,7 +729,17 @@ export const App = () => {
               </>
             )}
             {tab === 'loadout' && <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
-            {tab === 'profile' && <ProfilePanel settings={settings} onChange={setSettings} profile={profile} />}
+            {tab === 'armory' && <ArmoryPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
+            {tab === 'profile' && (
+              <ProfilePanel
+                settings={settings}
+                onChange={setSettings}
+                profile={profile}
+                onPrestige={() => {
+                  if (window.confirm('Prestige now? You go back to level 1 and keep all your unlocks.')) setProfile(prestigeUp());
+                }}
+              />
+            )}
             {tab === 'settings' && <SettingsPanel settings={settings} onChange={setSettings} />}
           </div>
         </div>
@@ -689,6 +831,7 @@ export const App = () => {
           </div>
         </div>
       )}
+      {screen.kind === 'tourney' && tourney && <TourneyScreen t={tourney} onPlay={playTourneyMatch} onMenu={() => { setTourney(null); toMenu(); }} onAgain={startTourney} />}
       {screen.kind === 'finding' && (
         <div className="menu">
           <div className="menu-card small">
@@ -703,7 +846,8 @@ export const App = () => {
               {joined} / {def.players} players
             </p>
             <div className="joining">
-              {[settings.playerName.trim() || 'You', ...lobbyNames.slice(0, joined - 1)].slice(-8).map((n, i, arr) => (
+              {/* You and any real players stay pinned at the top; the rest scroll in as they join. */}
+              {[settings.playerName.trim() || 'You', ...mmGuests, ...lobbyNames.slice(0, Math.max(0, joined - 1 - mmGuests.length)).slice(-Math.max(1, 7 - mmGuests.length))].map((n, i, arr) => (
                 <div key={n} className={`joining-row ${i === arr.length - 1 && joined > 1 && !lobbyFull ? 'new' : ''}`}>
                   <i className="lvl">{n === (settings.playerName.trim() || 'You') ? level : levelFor(n)}</i>
                   <span>{n}</span>
@@ -714,9 +858,22 @@ export const App = () => {
             </div>
             {ranked && <p className="set-hint">Leaving a ranked match early counts as a loss.</p>}
             <div className="row">
-              <button className="play" disabled={!lobbyFull} onClick={deploy}>
-                {lobbyFull ? 'DEPLOY' : 'WAITING…'}
-              </button>
+              {mmState === 'client' && !mmWaitTimedOut ? (
+                <button className="play" disabled>
+                  {lobbyFull ? 'CONNECTING TO SERVER…' : 'WAITING…'}
+                </button>
+              ) : (
+                <button
+                  className="play"
+                  disabled={!lobbyFull}
+                  onClick={() => {
+                    if (mmState === 'client') stopSeeking();
+                    deploy();
+                  }}
+                >
+                  {lobbyFull ? 'DEPLOY' : 'WAITING…'}
+                </button>
+              )}
               <button className="chip" onClick={toMenu}>
                 Cancel
               </button>
@@ -727,9 +884,10 @@ export const App = () => {
       {screen.kind === 'playing' && hud && (
         <>
           <Hud hud={hud} minimap={minimap} settings={settings} />
-          {hud.online && (
+          {hud.online && !hud.publicMatch && (
             <ChatBox lines={chat} onSend={sendChat} inGame open={hud.chatOpen} onClose={() => game.current?.closeChat()} now={Date.now()} />
           )}
+          {hud.intro !== null && hud.phase !== 'over' && <Lineup hud={hud} onSkip={() => game.current?.skipIntro()} />}
           {hud.touch && game.current && !hud.paused && hud.phase !== 'over' && (
             <TouchControls
               game={game.current}
@@ -782,11 +940,12 @@ export const App = () => {
             <EndScreen
               hud={hud}
               ranked={ranked && !hud.online ? rankedResult : null}
-              onAgain={hud.online ? null : ranked ? playRanked : findMatch}
+              onAgain={tourneyMatch.current ? finishTourneyMatch : hud.online && !hud.publicMatch ? null : ranked ? () => playRanked(rankedQueue) : findMatch}
+              againLabel={tourneyMatch.current ? 'CONTINUE' : undefined}
               onLobby={hud.online && hostRef.current ? backToLobby : null}
               waitingForHost={hud.online && !hostRef.current}
               onMenu={toMenu}
-              mine={{ card: settings.cosmetics.card, emblem: settings.cosmetics.emblem, name: settings.playerName, level }}
+              mine={{ card: settings.cosmetics.card, emblem: settings.cosmetics.emblem, name: settings.playerName, level, title: settings.cosmetics.title, frame: settings.cosmetics.frame, prestige: profile.prestige }}
             />
           )}
         </>
@@ -795,18 +954,21 @@ export const App = () => {
   );
 };
 
-const ProfileBar = ({ profile }: { profile: Profile }) => {
+const ProfileBar = ({ profile, frame }: { profile: Profile; frame: string }) => {
   const { level, into, need } = levelOf(profile.xp);
   return (
     <div className="profile-bar">
-      <div className="level">{level}</div>
+      <LevelBadge level={level} prestige={profile.prestige} frame={frame} />
       <div className="rank">
-        <b>{rankOf(level)}</b>
+        <b>
+          {rankOf(level)}
+          {profile.prestige > 0 && <em className="prestige-tag"> · Prestige {profile.prestige}</em>}
+        </b>
         <div className="xpbar">
           <div style={{ width: `${(into / need) * 100}%` }} />
         </div>
         <small>
-          {into} / {need} XP · {profile.matches} matches · {profile.wins} wins · {profile.kills} kills
+          {level >= 55 && profile.prestige < 10 ? 'Max level: prestige from your Profile' : `${into} / ${need} XP`} · {profile.matches} matches · {profile.wins} wins · {profile.kills} kills
         </small>
       </div>
     </div>
@@ -913,3 +1075,98 @@ const RulesPanel = ({ rules, editable, onChange, humansOnly }: { rules: LobbyRul
   );
 };
 
+
+/** The bracket: three rounds of four, two and one matches; your path highlighted. */
+const TourneyScreen = ({ t, onPlay, onMenu, onAgain }: { t: Tourney; onPlay: () => void; onMenu: () => void; onAgain: () => void }) => {
+  const opp = opponent(t);
+  const me = t.teams.findIndex((x) => x.you);
+  const won = t.champion !== null && t.teams[t.champion].you;
+  const rounds = [0, 1, 2].map((r) => t.rounds[r] ?? []);
+  const winners = (r: number) => new Set(t.rounds[r + 1] ?? []);
+  return (
+    <div className="menu">
+      <div className="menu-card tourney-card">
+        <h2>🏆 Gunfight Tournament</h2>
+        <p className="sub">8 teams, 2v2 Gunfight Roulette, first to 3 rounds. Lose once and you're out.</p>
+        <div className="bracket">
+          {rounds.map((teams, r) => (
+            <div key={r} className="bracket-col">
+              <small>{ROUND_NAMES[r]}</small>
+              {Array.from({ length: [4, 2, 1][r] }, (_, k) => {
+                const a = teams[k * 2];
+                const b = teams[k * 2 + 1];
+                const w = winners(r);
+                const row = (i: number | undefined) =>
+                  i === undefined ? (
+                    <div className="b-team tbd">TBD</div>
+                  ) : (
+                    <div className={`b-team ${i === me ? 'you' : ''} ${w.size ? (w.has(i) ? 'won' : 'lost') : ''}`}>
+                      <b>{t.teams[i].name}</b>
+                      <small>{t.teams[i].players.join(' & ')}</small>
+                    </div>
+                  );
+                return (
+                  <div key={k} className="b-match">
+                    {row(a)}
+                    {row(b)}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          <div className="bracket-col">
+            <small>Champion</small>
+            <div className="b-match">{t.champion !== null ? <div className={`b-team champ ${won ? 'you' : ''}`}><b>{t.teams[t.champion].name}</b></div> : <div className="b-team tbd">?</div>}</div>
+          </div>
+        </div>
+        {opp !== null ? (
+          <div className="row">
+            <button className="play" onClick={onPlay}>
+              PLAY {ROUND_NAMES[t.round].toUpperCase()} vs {t.teams[opp].name.toUpperCase()}
+            </button>
+            <button className="chip" onClick={onMenu}>
+              Forfeit
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className={`tourney-result ${won ? 'win' : 'lose'}`}>
+              {won ? 'Champions! +3000 XP, and tournament rewards in your Profile and Armory.' : `Knocked out in the ${ROUND_NAMES[t.outIn ?? 0].toLowerCase()} · +${tourneyXp(t)} XP`}
+            </p>
+            <div className="row">
+              <button className="play" onClick={onAgain}>
+                NEW TOURNAMENT
+              </button>
+              <button className="chip" onClick={onMenu}>
+                Main menu
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** Pre-match lineup: both sides' calling cards before the match starts. */
+const Lineup = ({ hud, onSkip }: { hud: HudState; onSkip: () => void }) => {
+  const card = (p: HudState['players'][number]) => (
+    <CallingCard key={p.id} card={p.card} emblem={p.emblemId} name={p.name} level={p.level} title={p.title} frame={p.frame} prestige={p.prestige} sub={p.bot ? 'BOT' : undefined} />
+  );
+  const teams = hud.showTeams ? [hud.players.filter((p) => p.ally), hud.players.filter((p) => !p.ally)] : [hud.players];
+  return (
+    <div className="lineup" onClick={onSkip}>
+      <h2>{hud.modeName}</h2>
+      <div className={`lineup-teams ${teams.length === 2 ? 'versus' : ''}`}>
+        {teams.map((list, i) => (
+          <div key={i} className="lineup-col" style={hud.teamColors ? { borderColor: hud.teamColors[i] } : undefined}>
+            {teams.length === 2 && <small style={{ color: hud.teamColors?.[i] }}>{i === 0 ? 'Your team' : 'Enemy team'}</small>}
+            {list.slice(0, 12).map(card)}
+          </div>
+        ))}
+        {teams.length === 2 && <div className="lineup-vs">VS</div>}
+      </div>
+      <small className="lineup-skip">Starting in {Math.ceil(hud.intro ?? 0)} · click or press Space to skip</small>
+    </div>
+  );
+};

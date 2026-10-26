@@ -22,10 +22,19 @@ export interface Profile {
   rankedWins: number;
   /** Lifetime stats that badges are earned from. */
   stats: Partial<Record<StatKey, number>>;
+  /** Times you reset from level 55 (0..10). */
+  prestige: number;
+  /** Gunfight tournaments won, and the best finish (1 = won). */
+  tourneyWins: number;
+  /** Ranked 1v1: its own rating and record. */
+  duelSr: number;
+  duelBestSr: number;
+  duelMatches: number;
+  duelWins: number;
 }
 
 export const loadProfile = (): Profile => {
-  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0, weaponKills: {}, sr: 1000, bestSr: 1000, rankedMatches: 0, rankedWins: 0, stats: {} };
+  const base: Profile = { xp: 0, matches: 0, wins: 0, kills: 0, deaths: 0, weaponKills: {}, sr: 1000, bestSr: 1000, rankedMatches: 0, rankedWins: 0, stats: {}, prestige: 0, tourneyWins: 0, duelSr: 1000, duelBestSr: 1000, duelMatches: 0, duelWins: 0 };
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
     return { ...base, ...raw, weaponKills: { ...(raw.weaponKills ?? {}) }, stats: { ...(raw.stats ?? {}) } };
@@ -142,19 +151,27 @@ export interface Division {
   placed: boolean;
 }
 
-export const divisionOf = (p: Profile): Division => {
-  if (p.rankedMatches < PLACEMENT_MATCHES) {
-    return { name: `Placements ${p.rankedMatches}/${PLACEMENT_MATCHES}`, color: '#9aa4ad', progress: p.rankedMatches / PLACEMENT_MATCHES, placed: false };
+/** Ranked has two queues with separate ratings: team modes, and 1v1 duels. */
+export type RankedQueue = 'team' | 'duel';
+
+/** One queue's rating and record. */
+export const queueStats = (p: Profile, q: RankedQueue): { sr: number; best: number; matches: number; wins: number } =>
+  q === 'duel' ? { sr: p.duelSr, best: p.duelBestSr, matches: p.duelMatches, wins: p.duelWins } : { sr: p.sr, best: p.bestSr, matches: p.rankedMatches, wins: p.rankedWins };
+
+export const divisionOf = (p: Profile, q: RankedQueue = 'team'): Division => {
+  const { sr, matches } = queueStats(p, q);
+  if (matches < PLACEMENT_MATCHES) {
+    return { name: `Placements ${matches}/${PLACEMENT_MATCHES}`, color: '#9aa4ad', progress: matches / PLACEMENT_MATCHES, placed: false };
   }
   let i = 0;
-  while (i + 1 < DIVISIONS.length && p.sr >= DIVISIONS[i + 1].min) i++;
+  while (i + 1 < DIVISIONS.length && sr >= DIVISIONS[i + 1].min) i++;
   const d = DIVISIONS[i];
   if (i === DIVISIONS.length - 1) return { name: d.name, color: d.color, progress: 1, placed: true };
   // Three tiers per division: III, II, I.
   const span = (DIVISIONS[i + 1].min - (i === 0 ? 600 : d.min)) / 3;
   const from = i === 0 ? 600 : d.min;
-  const tier = Math.max(0, Math.min(2, Math.floor((p.sr - from) / span)));
-  return { name: `${d.name} ${['III', 'II', 'I'][tier]}`, color: d.color, progress: Math.max(0, Math.min(1, (p.sr - from - tier * span) / span)), placed: true };
+  const tier = Math.max(0, Math.min(2, Math.floor((sr - from) / span)));
+  return { name: `${d.name} ${['III', 'II', 'I'][tier]}`, color: d.color, progress: Math.max(0, Math.min(1, (sr - from - tier * span) / span)), placed: true };
 };
 
 /** Modes in the ranked playlist (team modes where the result is down to how you play). */
@@ -167,20 +184,46 @@ export const rankedDifficulty = (sr: number): { skill: number; damageToPlayer: n
 };
 
 /** Rating change for one ranked result; placements move twice as far. */
-export const srChange = (p: Profile, won: boolean, kills: number, deaths: number): number => {
-  const perf = Math.max(-8, Math.min(8, (kills - deaths) * 1.5));
+export const srChange = (p: Profile, won: boolean, kills: number, deaths: number, q: RankedQueue = 'team'): number => {
+  const perf = Math.max(-8, Math.min(8, (kills - deaths) * (q === 'duel' ? 0.5 : 1.5)));
   const base = won ? 25 : -22;
-  return Math.round((base + perf) * (p.rankedMatches < PLACEMENT_MATCHES ? 2 : 1));
+  return Math.round((base + perf) * (queueStats(p, q).matches < PLACEMENT_MATCHES ? 2 : 1));
 };
 
 /** Applies one ranked result to the saved profile and returns the change. */
-export const recordRanked = (won: boolean, kills: number, deaths: number): number => {
+export const recordRanked = (won: boolean, kills: number, deaths: number, q: RankedQueue = 'team'): number => {
   const p = loadProfile();
-  const delta = srChange(p, won, kills, deaths);
-  p.sr = Math.max(0, p.sr + delta);
-  p.bestSr = Math.max(p.bestSr, p.sr);
-  p.rankedMatches++;
-  if (won) p.rankedWins++;
+  const delta = srChange(p, won, kills, deaths, q);
+  if (q === 'duel') {
+    p.duelSr = Math.max(0, p.duelSr + delta);
+    p.duelBestSr = Math.max(p.duelBestSr, p.duelSr);
+    p.duelMatches++;
+    if (won) p.duelWins++;
+  } else {
+    p.sr = Math.max(0, p.sr + delta);
+    p.bestSr = Math.max(p.bestSr, p.sr);
+    p.rankedMatches++;
+    if (won) p.rankedWins++;
+  }
   saveProfile(p);
   return delta;
 };
+
+// ---------------------------------------------------------------- prestige
+
+export const MAX_PRESTIGE = 10;
+
+/** At level 55 you can prestige: back to level 1 with a prestige rank, new cosmetics, and nothing else lost. */
+export const canPrestige = (p: Profile): boolean => levelOf(p.xp).level >= MAX_LEVEL && p.prestige < MAX_PRESTIGE;
+
+export const prestigeUp = (): Profile => {
+  const p = loadProfile();
+  if (!canPrestige(p)) return p;
+  p.prestige++;
+  p.xp = 0;
+  saveProfile(p);
+  return p;
+};
+
+/** "P3 · 27" style level label. */
+export const levelLabel = (level: number, prestige: number): string => (prestige > 0 ? `P${prestige} · ${level}` : String(level));

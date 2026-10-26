@@ -108,6 +108,8 @@ export class HostSession {
   hostPlaying = true;
   /** A party: friends queue into a normal matchmade game together (bots look like real players). */
   party = false;
+  /** Public matchmaking: strangers who found each other through Find Match. */
+  public = false;
   onChange: (() => void) | null = null;
   /** A player left: `newName` is the bot that took over their soldier (if a match is running). */
   onClientLeft: ((name: string, agentId: number, newName: string | null) => void) | null = null;
@@ -146,6 +148,14 @@ export class HostSession {
   private watchdog: number;
   /** How long a client may be silent before it is dropped (tests raise it for throttled tabs). */
   silentMs = SILENT_MS;
+
+  /** Hosts at a fixed address (a matchmaking bucket). Throws if someone already holds it. */
+  static async createAt(peerId: string, mode: ModeId, difficulty: Difficulty, hostName: string, hostColor: number): Promise<HostSession> {
+    const peer = await openPeer(peerId);
+    const s = new HostSession(peer, peerId.slice(-5), mode, difficulty, hostName, hostColor);
+    s.public = true;
+    return s;
+  }
 
   static async create(mode: ModeId, difficulty: Difficulty, hostName: string, hostColor: number, party = false): Promise<HostSession> {
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -383,8 +393,8 @@ export class HostSession {
       skins[a.id] = c.profile.skins ?? {};
       if (!teamColors) colors[a.id] = c.profile.color;
     }
-    // Rooms with friends: fillers are openly bots. Parties play a normal matchmade game instead.
-    if (!this.party) {
+    // Rooms with friends: fillers are openly bots. Parties and public matches look like any matchmade game.
+    if (!this.party && !this.public) {
       sim.roboticBots = true;
       for (const a of sim.agents) {
         if (a.control === 'player' || a.control === 'remote') continue;
@@ -412,7 +422,8 @@ export class HostSession {
         rules: this.lobby.rules,
         cosmetics,
         party: this.party,
-        night: !!match.opts.night
+        night: !!match.opts.night,
+        public: this.public
       };
       c.conn.send(start);
     }
@@ -538,11 +549,11 @@ export class ClientSession {
 
   private onPageHide = () => this.leave();
 
-  static async connect(code: string, profile: PlayerProfile): Promise<ClientSession> {
+  static async connect(code: string, profile: PlayerProfile, fullId?: string, timeoutMs = 12000): Promise<ClientSession> {
     const peer = await openPeer();
-    const conn = peer.connect(PEER_PREFIX + code.trim().toUpperCase(), { reliable: true });
+    const conn = peer.connect(fullId ?? PEER_PREFIX + code.trim().toUpperCase(), { reliable: true });
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('No game found with that code (or the host could not be reached).')), 12000);
+      const timer = setTimeout(() => reject(new Error('No game found with that code (or the host could not be reached).')), timeoutMs);
       conn.on('open', () => {
         clearTimeout(timer);
         resolve();

@@ -1,11 +1,29 @@
 import { useState } from 'react';
-import { BADGES, CARDS, CHARMS, EMBLEMS, MASTERY, earned, masteryOf, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
+import { BADGES, CARDS, CHARMS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
 import type { GameSettings } from '../game/settings';
-import { divisionOf, levelOf, rankOf, type Profile } from '../game/progression';
+import { canPrestige, divisionOf, levelLabel, levelOf, MAX_PRESTIGE, rankOf, type Profile } from '../game/progression';
 import { PRIMARIES, SECONDARIES, WEAPONS } from '../sim/weapons';
 
 /** The banner shown when you kill someone (and on the end screen if you are MVP). */
-export const CallingCard = ({ card, emblem, name, level, sub }: { card: string; emblem: string; name: string; level?: number; sub?: string }) => {
+export const CallingCard = ({
+  card,
+  emblem,
+  name,
+  level,
+  sub,
+  title,
+  frame,
+  prestige
+}: {
+  card: string;
+  emblem: string;
+  name: string;
+  level?: number;
+  sub?: string;
+  title?: string;
+  frame?: string;
+  prestige?: number;
+}) => {
   const c = CARDS.find((x) => x.id === card) ?? CARDS[0];
   const e = EMBLEMS.find((x) => x.id === emblem) ?? EMBLEMS[0];
   return (
@@ -15,17 +33,29 @@ export const CallingCard = ({ card, emblem, name, level, sub }: { card: string; 
       </span>
       <span className="cc-text">
         <b>{name}</b>
+        {title && title !== 'none' && <em className="cc-title">{titleDef(title).text}</em>}
         {sub && <small>{sub}</small>}
       </span>
-      {level !== undefined && level > 0 && <span className="cc-level">{level}</span>}
+      {level !== undefined && level > 0 && <LevelBadge level={level} prestige={prestige ?? 0} frame={frame ?? 'none'} />}
     </div>
+  );
+};
+
+/** Your level in its frame, with a prestige star. */
+export const LevelBadge = ({ level, prestige, frame }: { level: number; prestige: number; frame: string }) => {
+  const f = frameDef(frame);
+  return (
+    <span className={`lvl-badge fr-${f.id}`} style={{ borderColor: f.border, background: f.bg }}>
+      {prestige > 0 && <i className="lvl-prestige">P{prestige}</i>}
+      {level}
+    </span>
   );
 };
 
 type Tab = 'look' | 'badges' | 'mastery' | 'stats';
 
 /** Your calling card, emblem and weapon charm, badges, weapon mastery and lifetime stats. */
-export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile }) => {
+export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile; onPrestige: () => void }) => {
   const [tab, setTab] = useState<Tab>('look');
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
@@ -36,7 +66,20 @@ export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSe
 
   return (
     <div className="profile-panel">
-      <CallingCard card={cos.card} emblem={cos.emblem} name={settings.playerName || 'You'} level={level} sub={`${rankOf(level)} · ${div.name}`} />
+      <CallingCard card={cos.card} emblem={cos.emblem} name={settings.playerName || 'You'} level={level} sub={`${rankOf(level)} · ${div.name}`} title={cos.title} frame={cos.frame} prestige={profile.prestige} />
+      {canPrestige(profile) && (
+        <div className="prestige-offer">
+          <div>
+            <b>Prestige {profile.prestige + 1} available</b>
+            <small>
+              Go back to level 1 with a prestige rank. You keep every unlock, gun, camo and stat, and get new prestige cards, emblems, frames, titles, colours and styles. ({MAX_PRESTIGE - profile.prestige} prestiges left)
+            </small>
+          </div>
+          <button className="play" onClick={onPrestige}>
+            PRESTIGE
+          </button>
+        </div>
+      )}
       <div className="set-tabs">
         {(
           [
@@ -58,10 +101,58 @@ export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSe
           <div className="card-grid">
             {CARDS.map((c) => {
               const ok = unlocked(c.unlock, profile, level);
+              const hidden = c.secret && !ok;
               return (
-                <button key={c.id} className={`card-pick ${cos.card === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`} disabled={!ok} title={ok ? c.name : unlockText(c.unlock)} onClick={() => setCos({ card: c.id })} style={{ background: c.bg, color: c.ink }}>
-                  <span>{c.name}</span>
-                  {!ok && <small>🔒 {unlockText(c.unlock)}</small>}
+                <button
+                  key={c.id}
+                  className={`card-pick ${cos.card === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  title={ok ? c.name : hidden ? 'Secret' : unlockText(c.unlock)}
+                  onClick={() => setCos({ card: c.id })}
+                  style={{ background: hidden ? '#111' : c.bg, color: c.ink, boxShadow: `inset 0 -3px 0 ${RARITY[rarityOf(c)].color}` }}
+                >
+                  <span>{hidden ? '???' : c.name}</span>
+                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
+                </button>
+              );
+            })}
+          </div>
+          <h3>Title</h3>
+          <div className="title-grid">
+            {TITLES.map((t) => {
+              const ok = unlocked(t.unlock, profile, level);
+              const hidden = t.secret && !ok;
+              return (
+                <button
+                  key={t.id}
+                  className={`title-pick ${cos.title === t.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  style={{ borderColor: RARITY[rarityOf(t)].color }}
+                  title={ok ? '' : hidden ? 'Secret' : unlockText(t.unlock)}
+                  onClick={() => setCos({ title: t.id })}
+                >
+                  <span>{hidden ? '???' : t.text}</span>
+                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(t.unlock)}</small>}
+                </button>
+              );
+            })}
+          </div>
+          <h3>Level frame</h3>
+          <div className="title-grid">
+            {FRAMES.map((f) => {
+              const ok = unlocked(f.unlock, profile, level);
+              return (
+                <button
+                  key={f.id}
+                  className={`title-pick ${cos.frame === f.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  style={{ borderColor: RARITY[rarityOf(f)].color }}
+                  title={ok ? f.name : unlockText(f.unlock)}
+                  onClick={() => setCos({ frame: f.id })}
+                >
+                  <LevelBadge level={level} prestige={profile.prestige} frame={f.id} />
+                  <span>{f.name}</span>
+                  {!ok && <small>🔒 {unlockText(f.unlock)}</small>}
                 </button>
               );
             })}
@@ -70,9 +161,17 @@ export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSe
           <div className="emblem-grid">
             {EMBLEMS.map((e) => {
               const ok = unlocked(e.unlock, profile, level);
+              const hidden = e.secret && !ok;
               return (
-                <button key={e.id} className={`emblem-pick ${cos.emblem === e.id ? 'on' : ''} ${ok ? '' : 'locked'}`} disabled={!ok} title={ok ? e.id : unlockText(e.unlock)} onClick={() => setCos({ emblem: e.id })}>
-                  <span style={{ color: e.color }}>{e.glyph}</span>
+                <button
+                  key={e.id}
+                  className={`emblem-pick ${cos.emblem === e.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  style={{ borderColor: RARITY[rarityOf(e)].color }}
+                  title={ok ? e.id : hidden ? 'Secret' : unlockText(e.unlock)}
+                  onClick={() => setCos({ emblem: e.id })}
+                >
+                  <span style={{ color: e.color }}>{hidden ? '?' : e.glyph}</span>
                   {!ok && <small>🔒</small>}
                 </button>
               );
@@ -82,11 +181,19 @@ export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSe
           <div className="skin-grid">
             {CHARMS.map((c) => {
               const ok = unlocked(c.unlock, profile, level);
+              const hidden = c.secret && !ok;
               return (
-                <button key={c.id} className={`skin ${cos.charm === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`} disabled={!ok} title={ok ? c.name : unlockText(c.unlock)} onClick={() => setCos({ charm: c.id })}>
+                <button
+                  key={c.id}
+                  className={`skin ${cos.charm === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  style={{ borderColor: RARITY[rarityOf(c)].color }}
+                  title={ok ? c.name : hidden ? 'Secret' : unlockText(c.unlock)}
+                  onClick={() => setCos({ charm: c.id })}
+                >
                   <i style={{ background: c.shape === 'none' ? 'transparent' : `#${c.color.toString(16).padStart(6, '0')}`, borderRadius: c.shape === 'ball' || c.shape === 'heart' || c.shape === 'duck' ? '50%' : 6 }} />
-                  <span>{c.name}</span>
-                  {!ok && <small>🔒 {unlockText(c.unlock)}</small>}
+                  <span>{hidden ? '???' : c.name}</span>
+                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
                 </button>
               );
             })}
@@ -152,7 +259,8 @@ export const ProfilePanel = ({ settings, onChange, profile }: { settings: GameSe
         <div className="stat-tiles">
           {(
             [
-              ['Level', level],
+              ['Level', levelLabel(level, profile.prestige)],
+              ['Tournaments won', profile.tourneyWins],
               ['Matches', profile.matches],
               ['Wins', profile.wins],
               ['Win rate', profile.matches ? `${Math.round((profile.wins / profile.matches) * 100)}%` : '–'],

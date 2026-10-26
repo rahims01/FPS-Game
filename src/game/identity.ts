@@ -270,6 +270,14 @@ export const prepareLobby = (count: number): string[] => {
   return preset;
 };
 
+/** Fresh names without touching the next match's lobby. */
+export const freshNames = (count: number): string[] => tagPool(count);
+
+/** Sets exactly who the next match's other players are (in agent order after you). */
+export const presetLobby = (names: string[]): void => {
+  preset = names.slice();
+};
+
 const hash = (s: string): number => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);

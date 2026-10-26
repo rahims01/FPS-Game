@@ -106,6 +106,8 @@ export interface StartMsg {
   party: boolean;
   /** Night map. */
   night: boolean;
+  /** Public matchmaking: strangers, so no chat and nobody is labelled. */
+  public: boolean;
 }
 
 export type HostMsg =

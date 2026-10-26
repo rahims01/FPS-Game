@@ -16,7 +16,8 @@ import { hasPerk, type ThrowableId } from '../sim/gear';
 import { isBrMode } from '../sim/Match';
 import { thrownModel } from '../render/thrown';
 import { Gamepads, type PadFrame } from './gamepad';
-import { BADGES, earned, emblemDef, masteryOf, randomCosmetics, type Cosmetics, type StatKey } from './cosmetics';
+import { BADGES, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
+import { tickSkins } from '../assets/skins';
 import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
@@ -59,6 +60,10 @@ export interface ScoreRow {
   mastery: string | null;
   card: string;
   emblemId: string;
+  prestige: number;
+  frame: string;
+  title: string;
+  nametag: string;
 }
 
 export interface KillFeedEntry {
@@ -109,6 +114,10 @@ export interface HudState {
   aliveTotal: number;
   placement: number;
   canRespawn: boolean;
+  /** Squad battle royale: seconds until you redeploy, if a squadmate is alive. */
+  redeployIn: number | null;
+  /** Pre-match lineup: seconds left (null once the match is on). */
+  intro: number | null;
   feed: KillFeedEntry[];
   hitMarkerAt: number;
   hitMarkerKind: 'hit' | 'head' | 'kill';
@@ -134,7 +143,7 @@ export interface HudState {
   medals: { id: number; name: string; xp: number; big: boolean; at: number }[];
   callouts: { id: number; text: string; at: number }[];
   xp: number;
-  killedBy: { name: string; color: string; weapon: string; distance: number; hp: number; headshot: boolean; card: string; emblem: string; level: number } | null;
+  killedBy: { name: string; color: string; weapon: string; distance: number; hp: number; headshot: boolean; card: string; emblem: string; level: number; title: string; frame: string; prestige: number } | null;
   ctf: { ours: 'home' | 'taken' | 'dropped'; theirs: 'home' | 'taken' | 'dropped'; carrying: boolean } | null;
   killcam: { killer: string; color: string; weapon: string } | null;
   /** Online: why the match ended for us (host left, connection lost), or null. */
@@ -175,6 +184,8 @@ export interface HudState {
   throwables: { lethal: ThrowableId; lethals: number; tactical: ThrowableId; tacticals: number };
   night: boolean;
   party: boolean;
+  /** Public matchmaking with strangers (no chat). */
+  publicMatch: boolean;
 }
 
 /** One recorded agent state for the killcam. */
@@ -272,6 +283,10 @@ export class Game {
   keepNet = false;
   readonly party: boolean;
   private nextFrameAt = 0;
+  /** Pre-match lineup: the match waits until then (offline matches only). */
+  private introUntil = 0;
+  /** The lineup starts with the first frame actually drawn (scene setup can take a moment). */
+  private introPending = false;
   private lateAfkDone = false;
   /** Calling card, emblem and charm by agent id. */
   private cosmetics: (Cosmetics | null)[] = [];
@@ -451,7 +466,14 @@ export class Game {
     } else {
       this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor, settings.skins);
       // Everyone else's calling card and emblem (yours from the menu).
-      this.cosmetics = this.match.sim.agents.map((a) => (a === this.match.player ? settings.cosmetics : a.dummy ? null : randomCosmetics(levelFor(this.ids.names[a.id]))));
+      this.cosmetics = this.match.sim.agents.map((a) => {
+        if (a === this.match.player) return { ...settings.cosmetics, prestige: loadProfile().prestige };
+        if (a.dummy) return null;
+        // Other players wear what they've unlocked; long-time players have often prestiged.
+        const lvl = levelFor(this.ids.names[a.id]);
+        const prestige = a.smurf ? 0 : lvl > 30 && Math.random() < 0.3 ? 1 + Math.floor(Math.random() * Math.random() * 6) : 0;
+        return randomCosmetics(lvl, Math.random, prestige);
+      });
       this.clanTags();
       if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins, this.cosmetics);
     }
@@ -476,6 +498,8 @@ export class Game {
     window.addEventListener('blur', this.onBlur);
 
     this.applySettings(settings);
+    // Offline matches open with the lineup (practice drops you straight in).
+    if (!net && !this.practice && this.match.mode !== 'survival' && this.match.mode !== 'zombies') this.introPending = true;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
     if (net) this.startBackgroundTicker();
@@ -552,6 +576,12 @@ export class Game {
     if (action === 'swap') this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
   }
 
+  /** Skips the pre-match lineup. */
+  skipIntro(): void {
+    this.introUntil = 0;
+    this.introPending = false;
+  }
+
   /** Practice modes: no medals, XP, camo progress or killcams. */
   get practice(): boolean {
     return PRACTICE_MODES.includes(this.match.mode);
@@ -611,6 +641,10 @@ export class Game {
     if (e.code === 'Tab' || e.code === k.scores) e.preventDefault();
     if (e.repeat) return;
     this.keys.add(e.code);
+    if (performance.now() < this.introUntil && (e.code === k.jump || e.code === 'Enter')) {
+      this.skipIntro();
+      return;
+    }
     if (e.code === k.jump && this.killcam) {
       this.endKillcam();
       return;
@@ -880,6 +914,16 @@ export class Game {
       this.acc = 0;
       return;
     }
+    // The pre-match lineup: draw the scene but hold the match.
+    if (this.introPending && render) {
+      this.introPending = false;
+      this.introUntil = now + 4500;
+    }
+    if (now < this.introUntil || this.introPending) {
+      this.last = now;
+      if (render) this.renderFrame(0, 1);
+      return;
+    }
     // Online matches never pause: other people are still playing.
     if (!this.paused || this.net) {
       this.acc += dt;
@@ -951,7 +995,7 @@ export class Game {
   private ensureIdentity(id: number): void {
     const a = this.match.sim.agents[id];
     while (this.ids.names.length <= id) {
-      this.ids.names.push(this.net && !this.party ? `Bot ${this.ids.names.length + 1}` : randomUsername(this.ids.names));
+      this.ids.names.push(this.net && !this.party && !this.isPublic ? `Bot ${this.ids.names.length + 1}` : randomUsername(this.ids.names));
       this.ids.skins.push(null);
       this.ids.colors.push(lateJoinerColor(this.ids, a ? a.team : 1));
     }
@@ -991,7 +1035,12 @@ export class Game {
     }
     if (!v) {
       v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none');
-      if (a !== this.match.player || this.spectator) v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team);
+      const cos = this.cosmetics[a.id];
+      v.setStyle(this.styleFor(a), this.colorOf(a.id));
+      if (a !== this.match.player || this.spectator) {
+        const title = cos && cos.title !== 'none' ? titleDef(cos.title).text : null;
+        v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team, cos?.nametag ?? 'plain', title);
+      }
       this.scene.add(v.root);
       this.views.set(a.id, v);
       this.prev.set(a.id, { x: a.x, y: a.y, z: a.z });
@@ -1022,11 +1071,12 @@ export class Game {
           const v = this.views.get(shooter.id);
           from = v ? v.muzzle(this.tmpA) : this.tmpA.set(e.ox, e.oy, e.oz);
           if (e.first) {
-            this.effects.muzzleFlash(from, true);
+            const fl = flashDef(this.cosmetics[shooter.id]?.flash ?? 'default');
+            this.effects.muzzleFlash(from, true, fl.scale, fl.color);
             this.audio.gunshot(this.distTo(shooter.x, shooter.z), this.panTo(shooter.x, shooter.z), false, e.weapon);
           }
         }
-        this.effects.tracer(from, end);
+        this.effects.tracer(from, end, this.tracerColor(shooter.id));
         const paintball = this.match.mode === 'paintball';
         const paint = paintball ? this.colorOf(shooter.id) : 0;
         if (e.world) {
@@ -1101,7 +1151,10 @@ export class Game {
             headshot: e.region === 'head',
             card: killer ? (this.cosmetics[killer.id]?.card ?? 'recruit') : 'recruit',
             emblem: killer ? (this.cosmetics[killer.id]?.emblem ?? 'star') : 'star',
-            level: killer ? this.levelOfAgent(killer) : 0
+            level: killer ? this.levelOfAgent(killer) : 0,
+            title: killer ? (this.cosmetics[killer.id]?.title ?? 'none') : 'none',
+            frame: killer ? (this.cosmetics[killer.id]?.frame ?? 'none') : 'none',
+            prestige: killer ? (this.cosmetics[killer.id]?.prestige ?? 0) : 0
           };
         }
         if (killer === player && victim !== player && !this.spectator && !this.practice) this.awardKill(e, victim);
@@ -1181,6 +1234,30 @@ export class Game {
       const tag = TAGS[Math.floor(Math.random() * TAGS.length)];
       for (const a of members) if (!this.ids.names[a.id].startsWith('[')) this.ids.names[a.id] = `${tag}${this.ids.names[a.id]}`.slice(0, 20);
     }
+  }
+
+  /** Public matchmaking with strangers: looks like any matchmade game (nobody is labelled). */
+  private get isPublic(): boolean {
+    return this.net?.role === 'client' ? !!this.net.start.public : this.net?.role === 'host' ? this.net.session.public : false;
+  }
+
+  /** Your prestige rank, for the scoreboard. */
+  private myPrestige = loadProfile().prestige;
+
+  /**
+   * The style a soldier wears. Team modes keep the team colour readable: styles
+   * that change the hue (rainbow, glitch...) pulse in the team colour instead.
+   */
+  private styleFor(a: Agent): string {
+    const id = this.cosmetics[a.id]?.style ?? 'none';
+    if (this.match.mode === 'paintball' || a.dummy) return 'none';
+    return this.ids.teamColors && styleDef(id).hueShift ? 'pulse' : id;
+  }
+
+  /** Bullet tracer colour for a shooter (-1 = rainbow). */
+  private tracerColor(id: number): number {
+    const c = tracerDef(this.cosmetics[id]?.tracer ?? 'default').color;
+    return c === 'rainbow' ? -1 : c;
   }
 
   /** Smurfs show a low level; everyone else's comes from their name. */
@@ -1554,13 +1631,13 @@ export class Game {
       if (sh.shooter === kc.killer) {
         this.viewmodel.fire();
         const from = this.camera.localToWorld(this.viewmodel.muzzleLocal(new THREE.Vector3()));
-        this.effects.tracer(from, end);
+        this.effects.tracer(from, end, this.tracerColor(sh.shooter));
         this.audio.gunshot(0, 0, true, killer.weapon);
       } else {
         const g = kc.ghosts.get(sh.shooter);
         if (!g || !g.root.visible) continue;
         const from = g.muzzle(new THREE.Vector3());
-        this.effects.tracer(from, end);
+        this.effects.tracer(from, end, this.tracerColor(sh.shooter));
         this.effects.muzzleFlash(from, true);
         this.audio.gunshot(this.distTo(from.x, from.z), 0, false);
       }
@@ -1896,6 +1973,7 @@ export class Game {
     }
     if (this.night) this.updateNight();
 
+    tickSkins(time);
     const inKillcam = this.updateKillcam(dt);
     const spec = inKillcam ? null : this.spectateTarget();
     this.specShown = spec ? spec.id : -1;
@@ -2116,6 +2194,10 @@ export class Game {
       this.lastWeapon = pw.id;
       this.viewmodel.setWeapon(pw.id, this.settings.skins, this.settings.cosmetics.charm);
     }
+    this.viewmodel.kills = player.kills;
+    const myFlash = flashDef(this.settings.cosmetics.flash);
+    this.viewmodel.flashColor = myFlash.color;
+    this.viewmodel.flashScale = myFlash.scale;
     this.viewmodel.update(dt, {
       speed: Math.hypot(player.vx, player.vz),
       aiming: player.aiming && player.alive,
@@ -2143,7 +2225,7 @@ export class Game {
     if (p.crouching) spread *= 0.75;
     const picks = m.streaksFor(p).map(streakDef);
     const next = picks.find((s) => s.kills > p.streak) ?? null;
-    const bots = !!this.net && !this.party;
+    const bots = !!this.net && !this.party && !this.isPublic;
     const myMastery = masteryOf(Math.max(0, ...Object.values({ ...this.baseWeaponKills })));
     const spec = this.specShown >= 0 ? sim.agents[this.specShown] : null;
     // During the killcam the HUD shows the killer's health, ammo and crosshair.
@@ -2170,6 +2252,10 @@ export class Game {
         mastery: a === p && !this.spectator ? (myMastery.tier >= 0 ? myMastery.color : null) : this.botMastery(a),
         card: this.cosmetics[a.id]?.card ?? 'recruit',
         emblemId: this.cosmetics[a.id]?.emblem ?? 'star',
+        prestige: a === p && !this.spectator ? this.myPrestige : (this.cosmetics[a.id]?.prestige ?? 0),
+        frame: this.cosmetics[a.id]?.frame ?? 'none',
+        title: this.cosmetics[a.id]?.title ?? 'none',
+        nametag: this.cosmetics[a.id]?.nametag ?? 'plain',
         ping: this.pings.get(a.id) ?? null
       }))
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
@@ -2211,6 +2297,8 @@ export class Game {
       aliveTotal: sim.agents.filter((a) => a.alive).length,
       placement: m.placement,
       canRespawn: this.net?.role === 'client' ? false : m.canPlayerRespawn(),
+      redeployIn: m.redeployIn(p),
+      intro: this.introPending ? 4.5 : this.introUntil > performance.now() ? (this.introUntil - performance.now()) / 1000 : null,
       feed: this.feed.filter((f) => sim.time - f.at < 7),
       hitMarkerAt: this.hitMarkerAt,
       hitMarkerKind: this.hitMarkerKind,
@@ -2273,6 +2361,7 @@ export class Game {
       throwables: { lethal: p.lethal, lethals: p.grenades, tactical: p.tactical, tacticals: p.tacticals },
       night: this.night,
       party: this.party,
+      publicMatch: this.net?.role === 'client' ? !!this.net.start.public : this.net?.role === 'host' ? this.net.session.public : false,
       killcam: this.killcam
         ? { killer: this.nameOf(this.killcam.killer), color: cssColor(this.colorOf(this.killcam.killer)), weapon: WEAPONS[this.killcam.weapon].name }
         : null,

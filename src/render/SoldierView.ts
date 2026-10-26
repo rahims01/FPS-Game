@@ -9,7 +9,8 @@ import { SOLDIER } from '../sim/config';
 import { wrapAngle } from '../sim/math';
 import type { WeaponId } from '../sim/weapons';
 import { weaponModels } from '../assets/weaponModels';
-import { skinned, type SkinChoice, type SkinId } from '../assets/skins';
+import { ownReactive, setReactive, skinned, type SkinChoice, type SkinId } from '../assets/skins';
+import { animateStyle, applyStyle, drawNametag } from './soldierStyle';
 import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
 
@@ -283,6 +284,8 @@ export class SoldierView {
     this.weaponId = id;
     this.rifle.clear();
     this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm).clone(true));
+    // Reactive camos change with this soldier's own kills.
+    ownReactive(this.rifle);
     this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
   }
 
@@ -292,9 +295,21 @@ export class SoldierView {
 
   private frozen = false;
   /** Freeze tag: an icy tint while frozen. */
+  // Soldier style (finish, pattern, animation or reaction to play).
+  private style = 'none';
+  private styleBase = 0xffffff;
+  private styleSeed = Math.random() * 10;
+
+  setStyle(style: string, base: number): void {
+    this.style = style;
+    this.styleBase = base;
+    applyStyle(this.materials, style, base);
+  }
+
   setFrozen(on: boolean): void {
     if (on === this.frozen) return;
     this.frozen = on;
+    if (!on) applyStyle(this.materials, this.style, this.styleBase);
     for (const m of this.materials) {
       const mat = m as THREE.MeshPhongMaterial;
       if (!mat.emissive) continue;
@@ -306,27 +321,18 @@ export class SoldierView {
    * Floating name above the head, in the player's colour. Ally tags draw
    * through walls; enemy tags are depth-tested (and only shown when seen).
    */
-  setNameTag(name: string, color: string, throughWalls: boolean): void {
+  setNameTag(name: string, color: string, throughWalls: boolean, style = 'plain', title: string | null = null): void {
     const c = document.createElement('canvas');
     c.width = 512;
-    c.height = 96;
+    c.height = 128;
     const g = c.getContext('2d')!;
-    g.font = 'bold 54px "Segoe UI", system-ui, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    const n = parseInt(color.slice(1), 16);
-    const dark = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) < 70;
-    g.lineWidth = 10;
-    g.strokeStyle = dark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)';
-    g.strokeText(name, 256, 50);
-    g.fillStyle = color;
-    g.fillText(name, 256, 50);
+    drawNametag(g, 512, name, color, style, title);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: !throughWalls, depthWrite: false });
     this.tag = new THREE.Sprite(mat);
-    this.tag.scale.set(1.6, 0.3, 1);
-    this.tag.position.y = 2.2;
+    this.tag.scale.set(1.6, 0.4, 1);
+    this.tag.position.y = 2.25;
     this.tag.renderOrder = 10;
     this.root.add(this.tag);
   }
@@ -336,7 +342,7 @@ export class SoldierView {
     if (!this.tag) return;
     this.tag.visible = v && !this.ragdoll;
     const k = THREE.MathUtils.clamp(distance * 0.08, 0.35, 2.4);
-    this.tag.scale.set(1.6 * k, 0.3 * k, 1);
+    this.tag.scale.set(1.6 * k, 0.4 * k, 1);
   }
 
   /**
@@ -389,6 +395,8 @@ export class SoldierView {
     }
     this.root.position.set(x, y, z);
     if (this.root.scale.x !== agent.scale) this.root.scale.setScalar(agent.scale);
+    if (!this.frozen && this.style !== 'none') animateStyle(this.materials, this.style, this.styleBase, agent, time, this.styleSeed);
+    setReactive(this.rifle, agent.kills / 10);
     // Leg hits buckle the knees for a moment.
     if (this.flinch > 0 && this.flinchRegion === 'legs') this.root.position.y -= this.flinch * 0.07;
 

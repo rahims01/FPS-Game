@@ -8,12 +8,44 @@ export interface Cosmetics {
   card: string;
   emblem: string;
   charm: string;
+  title: string;
+  frame: string;
+  nametag: string;
+  tracer: string;
+  flash: string;
+  /** Soldier style: finish, pattern, animation or interactive. */
+  style?: string;
+  /** Shown next to your level (0 = never prestiged). */
+  prestige?: number;
 }
 
-export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none' };
+export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none' };
 
-/** What a cosmetic needs: free, a player level, or a badge. */
-export type Unlock = { level: number } | { badge: string } | null;
+/**
+ * What a cosmetic needs: free, a player level, a badge, a prestige, a
+ * tournament win, or weapon mastery (Diamond on `count` guns, say).
+ */
+export type Unlock = { level: number } | { badge: string } | { prestige: number } | { tourney: number } | { mastery: number; count: number } | null;
+
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export const RARITY: Record<Rarity, { name: string; color: string }> = {
+  common: { name: 'Common', color: '#9aa4ad' },
+  rare: { name: 'Rare', color: '#4fa3ff' },
+  epic: { name: 'Epic', color: '#b46bff' },
+  legendary: { name: 'Legendary', color: '#ffb02e' },
+  mythic: { name: 'Mythic', color: '#ff4f7b' }
+};
+
+/** How rare something is, from what it takes to unlock (or set explicitly). */
+export const rarityOf = (item: { unlock: Unlock; rarity?: Rarity }): Rarity => {
+  if (item.rarity) return item.rarity;
+  const u = item.unlock;
+  if (!u) return 'common';
+  if ('level' in u) return u.level < 15 ? 'rare' : u.level < 40 ? 'epic' : 'legendary';
+  if ('badge' in u) return 'epic';
+  if ('mastery' in u) return 'legendary';
+  return 'mythic';
+};
 
 export interface CardDef {
   id: string;
@@ -23,6 +55,8 @@ export interface CardDef {
   /** Text colour on it. */
   ink: string;
   unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
 }
 
 export const CARDS: CardDef[] = [
@@ -46,7 +80,14 @@ export const CARDS: CardDef[] = [
   { id: 'giant', name: 'Giant Slayer', bg: 'linear-gradient(120deg,#141e30,#243b55)', ink: '#ffd34d', unlock: { badge: 'giantslayer' } },
   { id: 'flawless', name: 'Flawless', bg: 'linear-gradient(120deg,#e0eafc,#cfdef3)', ink: '#1b2735', unlock: { badge: 'flawless' } },
   { id: 'diamondcard', name: 'Diamond', bg: 'linear-gradient(120deg,#a8e9ff,#5fb8e6 50%,#e6f9ff)', ink: '#0b2a3a', unlock: { badge: 'diamondhands' } },
-  { id: 'ranked', name: 'Top Rank', bg: 'linear-gradient(120deg,#ff6b8a,#7f00ff)', ink: '#fff', unlock: { badge: 'rankedchamp' } }
+  { id: 'ranked', name: 'Top Rank', bg: 'linear-gradient(120deg,#ff6b8a,#7f00ff)', ink: '#fff', unlock: { badge: 'rankedchamp' } },
+  { id: 'prestige1', name: 'Prestige', bg: 'linear-gradient(120deg,#1b1b2f,#5b2a86 60%,#d4a933)', ink: '#ffe58a', unlock: { prestige: 1 } },
+  { id: 'prestige5', name: 'Elite', bg: 'radial-gradient(circle at 80% 50%,#ffd34d 0,transparent 30%),linear-gradient(120deg,#0b0b0b,#2b1d00)', ink: '#ffd34d', unlock: { prestige: 5 } },
+  { id: 'prestige10', name: 'Immortal', bg: 'linear-gradient(120deg,#ff4f7b,#ffb02e,#4fa3ff,#b46bff)', ink: '#fff', unlock: { prestige: 10 } },
+  { id: 'trophy', name: 'Bracket Boss', bg: 'linear-gradient(120deg,#0f2027,#d4a933)', ink: '#fff6c8', unlock: { tourney: 1 } },
+  { id: 'dynasty', name: 'Dynasty', bg: 'repeating-linear-gradient(135deg,#d4a933 0 10px,#8a6510 10px 20px)', ink: '#1b1200', unlock: { tourney: 5 } },
+  { id: 'armory', name: 'Weapon Master', bg: 'linear-gradient(120deg,#000,#1f3b4d 50%,#7fd8ff)', ink: '#e6f9ff', unlock: { mastery: 3, count: 3 } },
+  { id: 'void', name: '???', bg: 'radial-gradient(circle,#000 30%,#2b0040)', ink: '#c9b6ff', unlock: { badge: 'godlike' }, secret: true, rarity: 'mythic' }
 ];
 
 export interface EmblemDef {
@@ -54,6 +95,8 @@ export interface EmblemDef {
   glyph: string;
   color: string;
   unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
 }
 
 export const EMBLEMS: EmblemDef[] = [
@@ -80,7 +123,12 @@ export const EMBLEMS: EmblemDef[] = [
   { id: 'robot', glyph: '🤖', color: '#9aa4ad', unlock: { badge: 'giantslayer' } },
   { id: 'gem', glyph: '💎', color: '#7fd8ff', unlock: { badge: 'diamondhands' } },
   { id: 'medal', glyph: '🎖', color: '#ffcc33', unlock: { badge: 'veteran' } },
-  { id: 'spear', glyph: '🗡', color: '#c8a46a', unlock: { badge: 'bullseye' } }
+  { id: 'spear', glyph: '🗡', color: '#c8a46a', unlock: { badge: 'bullseye' } },
+  { id: 'prestige', glyph: '✪', color: '#ffd34d', unlock: { prestige: 1 } },
+  { id: 'phoenix', glyph: '🐦‍🔥', color: '#ff7a1a', unlock: { prestige: 3 } },
+  { id: 'cup', glyph: '🏅', color: '#ffd34d', unlock: { tourney: 1 } },
+  { id: 'alien', glyph: '👽', color: '#9bff2a', unlock: { badge: 'nuke' }, secret: true, rarity: 'mythic' },
+  { id: 'eye', glyph: '👁', color: '#c9b6ff', unlock: { badge: 'flawless' }, secret: true, rarity: 'mythic' }
 ];
 
 export interface CharmDef {
@@ -89,6 +137,8 @@ export interface CharmDef {
   shape: 'none' | 'ball' | 'dice' | 'gem' | 'ring' | 'cone' | 'star' | 'heart' | 'skull' | 'duck';
   color: number;
   unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
 }
 
 export const CHARMS: CharmDef[] = [
@@ -103,7 +153,10 @@ export const CHARMS: CharmDef[] = [
   { id: 'star', name: 'Gold Star', shape: 'star', color: 0xffcc33, unlock: { badge: 'centurion' } },
   { id: 'skull', name: 'Bone Skull', shape: 'skull', color: 0xe8e2d0, unlock: { badge: 'headhunter' } },
   { id: 'ruby', name: 'Ruby', shape: 'gem', color: 0xd9183c, unlock: { badge: 'unstoppable' } },
-  { id: 'diamondcharm', name: 'Diamond', shape: 'gem', color: 0x9fe8ff, unlock: { badge: 'diamondhands' } }
+  { id: 'diamondcharm', name: 'Diamond', shape: 'gem', color: 0x9fe8ff, unlock: { badge: 'diamondhands' } },
+  { id: 'prestigestar', name: 'Prestige Star', shape: 'star', color: 0xb46bff, unlock: { prestige: 1 } },
+  { id: 'trophycharm', name: 'Mini Trophy', shape: 'cone', color: 0xd4a933, unlock: { tourney: 1 } },
+  { id: 'goldenduck', name: 'Golden Duck', shape: 'duck', color: 0xffcc00, unlock: { badge: 'giantslayer' }, secret: true, rarity: 'mythic' }
 ];
 
 // ---------------------------------------------------------------- badges
@@ -129,6 +182,8 @@ export type StatKey =
 
 export interface ProfileLike {
   xp: number;
+  prestige?: number;
+  tourneyWins?: number;
   matches: number;
   wins: number;
   kills: number;
@@ -198,32 +253,276 @@ export const earned = (b: BadgeDef, p: ProfileLike, level: number): boolean => {
   return have >= need;
 };
 
+/** Level unlocks stay unlocked after you prestige. */
+export const effectiveLevel = (p: ProfileLike, level: number): number => ((p.prestige ?? 0) > 0 ? 55 : level);
+
 export const unlocked = (u: Unlock, p: ProfileLike, level: number): boolean => {
   if (!u) return true;
-  if ('level' in u) return level >= u.level;
+  const lvl = effectiveLevel(p, level);
+  if ('level' in u) return lvl >= u.level;
+  if ('prestige' in u) return (p.prestige ?? 0) >= u.prestige;
+  if ('tourney' in u) return (p.tourneyWins ?? 0) >= u.tourney;
+  if ('mastery' in u) return Object.values(p.weaponKills).filter((k) => masteryOf(k).tier >= u.mastery).length >= u.count;
   const b = BADGES.find((x) => x.id === u.badge);
-  return !!b && earned(b, p, level);
+  return !!b && earned(b, p, lvl);
 };
 
 export const unlockText = (u: Unlock): string => {
   if (!u) return '';
   if ('level' in u) return `Level ${u.level}`;
+  if ('prestige' in u) return `Prestige ${u.prestige}`;
+  if ('tourney' in u) return u.tourney === 1 ? 'Win a tournament' : `Win ${u.tourney} tournaments`;
+  if ('mastery' in u) return `${MASTERY[u.mastery].name} mastery on ${u.count} guns`;
   const b = BADGES.find((x) => x.id === u.badge);
   return b ? `Badge: ${b.name}` : '';
 };
 
 /** Random cosmetics for a computer player (higher levels show off more). */
-export const randomCosmetics = (level: number, rand: () => number = Math.random): Cosmetics => {
-  const cards = CARDS.filter((c) => !c.unlock || ('level' in c.unlock ? c.unlock.level <= level : rand() < 0.25));
-  const emblems = EMBLEMS.filter((e) => !e.unlock || ('level' in e.unlock ? e.unlock.level <= level : rand() < 0.25));
-  const charms = CHARMS.filter((c) => !c.unlock || ('level' in c.unlock ? c.unlock.level <= level : rand() < 0.2));
+/**
+ * Cosmetics for a computer player, as if they had played for a while: level
+ * unlocks up to their level, the odd badge item, rarely a prestige or
+ * tournament one, and plenty of people leaving things on default.
+ */
+export const randomCosmetics = (level: number, rand: () => number = Math.random, prestige = 0): Cosmetics => {
+  const ok = (u: Unlock): boolean => {
+    if (!u) return true;
+    if ('level' in u) return u.level <= (prestige > 0 ? 55 : level);
+    if ('prestige' in u) return u.prestige <= prestige;
+    if ('tourney' in u) return rand() < 0.04;
+    if ('mastery' in u) return level > 40 && rand() < 0.15;
+    return rand() < 0.2;
+  };
+  const pick = <T extends { id: string; unlock: Unlock; secret?: boolean }>(list: T[], keepDefault: number): string => {
+    if (rand() < keepDefault) return list[0].id;
+    const pool = list.filter((x) => !x.secret && ok(x.unlock));
+    return pool[Math.floor(rand() * pool.length)].id;
+  };
   return {
-    card: cards[Math.floor(rand() * cards.length)].id,
-    emblem: emblems[Math.floor(rand() * emblems.length)].id,
-    charm: rand() < 0.5 ? 'none' : charms[Math.floor(rand() * charms.length)].id
+    card: pick(CARDS, 0.15),
+    emblem: pick(EMBLEMS, 0.2),
+    charm: pick(CHARMS, 0.5),
+    title: pick(TITLES, 0.45),
+    frame: pick(FRAMES, 0.4),
+    nametag: pick(NAMETAGS, 0.55),
+    tracer: pick(TRACERS, 0.6),
+    flash: pick(FLASHES, 0.7),
+    style: pick(STYLES, 0.6),
+    prestige
   };
 };
 
 export const cardDef = (id: string): CardDef => CARDS.find((c) => c.id === id) ?? CARDS[0];
 export const emblemDef = (id: string): EmblemDef => EMBLEMS.find((e) => e.id === id) ?? EMBLEMS[0];
 export const charmDef = (id: string): CharmDef => CHARMS.find((c) => c.id === id) ?? CHARMS[0];
+
+// ---------------------------------------------------------------- titles, frames, name tags, tracers, flashes
+
+export interface TitleDef {
+  id: string;
+  text: string;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const TITLES: TitleDef[] = [
+  { id: 'none', text: 'No title', unlock: null },
+  { id: 'rookie', text: 'Rookie', unlock: null },
+  { id: 'grinder', text: 'The Grinder', unlock: { level: 10 } },
+  { id: 'veteran', text: 'Veteran', unlock: { badge: 'veteran' } },
+  { id: 'sharp', text: 'Sharpshooter', unlock: { badge: 'sharpshooter' } },
+  { id: 'surgeon', text: 'Brain Surgeon', unlock: { badge: 'brainsurgeon' } },
+  { id: 'blade', text: 'Knife Lord', unlock: { badge: 'knifemaster' } },
+  { id: 'pyro', text: 'Pyromaniac', unlock: { badge: 'firestarter' } },
+  { id: 'clutch', text: 'Clutch King', unlock: { badge: 'clutch' } },
+  { id: 'unstoppable', text: 'Unstoppable', unlock: { badge: 'unstoppable' } },
+  { id: 'champion', text: 'Last One Standing', unlock: { badge: 'champion' } },
+  { id: 'giantslayer', text: 'Giant Slayer', unlock: { badge: 'giantslayer' } },
+  { id: 'master', text: 'Weapon Master', unlock: { mastery: 3, count: 3 } },
+  { id: 'prestige', text: 'Prestige', unlock: { prestige: 1 } },
+  { id: 'legend', text: 'Living Legend', unlock: { prestige: 5 } },
+  { id: 'immortal', text: 'Immortal', unlock: { prestige: 10 } },
+  { id: 'tourney', text: 'Tournament Champion', unlock: { tourney: 1 } },
+  { id: 'dynasty', text: 'Dynasty', unlock: { tourney: 5 } },
+  { id: 'rankedchamp', text: 'Ranked Champion', unlock: { badge: 'rankedchamp' } },
+  { id: 'untouchable', text: 'Untouchable', unlock: { badge: 'flawless' }, secret: true, rarity: 'mythic' },
+  { id: 'nuclear', text: 'Nuclear Option', unlock: { badge: 'nuke' }, secret: true, rarity: 'mythic' }
+];
+
+/** Frames around your level number (CSS border and background). */
+export interface FrameDef {
+  id: string;
+  name: string;
+  border: string;
+  bg: string;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const FRAMES: FrameDef[] = [
+  { id: 'none', name: 'Standard', border: 'transparent', bg: 'var(--accent)', unlock: null },
+  { id: 'bronze', name: 'Bronze', border: '#c8814a', bg: '#3a2412', unlock: { level: 10 } },
+  { id: 'silver', name: 'Silver', border: '#c3cbd3', bg: '#2a3036', unlock: { level: 25 } },
+  { id: 'gold', name: 'Gold', border: '#f2c94c', bg: '#3a2c00', unlock: { level: 40 } },
+  { id: 'diamond', name: 'Diamond', border: '#7fd8ff', bg: '#0b2a3a', unlock: { level: 55 } },
+  { id: 'prestige', name: 'Prestige', border: '#b46bff', bg: 'linear-gradient(135deg,#2b0040,#5b2a86)', unlock: { prestige: 1 } },
+  { id: 'prestige5', name: 'Prestige Elite', border: '#ffd34d', bg: 'linear-gradient(135deg,#3a2c00,#b46bff)', unlock: { prestige: 5 } },
+  { id: 'immortal', name: 'Immortal', border: '#ff4f7b', bg: 'linear-gradient(135deg,#ff4f7b,#ffb02e,#4fa3ff)', unlock: { prestige: 10 } },
+  { id: 'champion', name: 'Champion', border: '#ffd34d', bg: 'linear-gradient(135deg,#0f2027,#d4a933)', unlock: { tourney: 1 } }
+];
+
+/** Name tag styles (drawn above your head and on the scoreboard). */
+export interface NametagDef {
+  id: string;
+  name: string;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const NAMETAGS: NametagDef[] = [
+  { id: 'plain', name: 'Plain', unlock: null },
+  { id: 'outline', name: 'Outlined', unlock: { level: 5 } },
+  { id: 'gold', name: 'Gold Plate', unlock: { level: 20 } },
+  { id: 'neon', name: 'Neon', unlock: { level: 30 } },
+  { id: 'ice', name: 'Frozen', unlock: { badge: 'longarm' } },
+  { id: 'flame', name: 'On Fire', unlock: { badge: 'firestarter' } },
+  { id: 'royal', name: 'Royal', unlock: { prestige: 1 } },
+  { id: 'rainbow', name: 'Rainbow', unlock: { tourney: 1 } },
+  { id: 'toxic', name: '???', unlock: { badge: 'nuke' }, secret: true, rarity: 'mythic' }
+];
+
+/** Bullet tracer colours (`rainbow` cycles). */
+export interface TracerDef {
+  id: string;
+  name: string;
+  color: number | 'rainbow';
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const TRACERS: TracerDef[] = [
+  { id: 'default', name: 'Standard', color: 0xffe9a8, unlock: null },
+  { id: 'red', name: 'Red', color: 0xff3b3b, unlock: { level: 8 } },
+  { id: 'green', name: 'Green', color: 0x3bff6b, unlock: { level: 14 } },
+  { id: 'blue', name: 'Blue', color: 0x3bb9ff, unlock: { level: 22 } },
+  { id: 'purple', name: 'Purple', color: 0xb46bff, unlock: { level: 34 } },
+  { id: 'pink', name: 'Hot Pink', color: 0xff4fd8, unlock: { badge: 'centurion' } },
+  { id: 'rainbow', name: 'Rainbow', color: 'rainbow', unlock: { prestige: 2 } },
+  { id: 'golden', name: 'Golden', color: 0xffcc33, unlock: { badge: 'masterofarms' }, secret: true, rarity: 'mythic' }
+];
+
+/** Muzzle flash colours and sizes. */
+export interface FlashDef {
+  id: string;
+  name: string;
+  color: number;
+  scale: number;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const FLASHES: FlashDef[] = [
+  { id: 'default', name: 'Standard', color: 0xffffff, scale: 1, unlock: null },
+  { id: 'blue', name: 'Plasma Blue', color: 0x6ab8ff, scale: 1, unlock: { level: 12 } },
+  { id: 'green', name: 'Toxic Green', color: 0x8aff5a, unlock: { level: 26 }, scale: 1 },
+  { id: 'purple', name: 'Void Purple', color: 0xc08aff, scale: 1.1, unlock: { level: 38 } },
+  { id: 'big', name: 'Cannon', color: 0xffd08a, scale: 1.6, unlock: { badge: 'thousand' } },
+  { id: 'dragon', name: "Dragon's Breath", color: 0xff6a1a, scale: 1.8, unlock: { badge: 'firestarter' }, secret: true, rarity: 'mythic' }
+];
+
+/** Unlockable player colours (free-for-all modes and your soldier); the 12 basics are free. */
+export interface ThemeColorDef {
+  id: string;
+  name: string;
+  hex: number;
+  /** flat paint, metallic, glowing, or cycling through the rainbow. */
+  finish: 'flat' | 'metal' | 'glow' | 'rainbow';
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const THEME_COLORS: ThemeColorDef[] = [
+  { id: 'crimson', name: 'Crimson', hex: 0x9e0f2b, finish: 'flat', unlock: { level: 6 } },
+  { id: 'mint', name: 'Mint', hex: 0x6ff0c0, finish: 'flat', unlock: { level: 9 } },
+  { id: 'sky', name: 'Sky', hex: 0x8fd3ff, finish: 'flat', unlock: { level: 12 } },
+  { id: 'coral', name: 'Coral', hex: 0xff7b6b, finish: 'flat', unlock: { level: 15 } },
+  { id: 'lavender', name: 'Lavender', hex: 0xb9a3ff, finish: 'flat', unlock: { level: 18 } },
+  { id: 'army', name: 'Army', hex: 0x4b5a2a, finish: 'flat', unlock: { level: 21 } },
+  { id: 'chrome', name: 'Chrome', hex: 0xd8dde3, finish: 'metal', unlock: { level: 28 } },
+  { id: 'bronze', name: 'Bronze', hex: 0xb07a3c, finish: 'metal', unlock: { level: 33 } },
+  { id: 'neonpink', name: 'Neon Pink', hex: 0xff2bd6, finish: 'glow', unlock: { level: 37 } },
+  { id: 'neongreen', name: 'Toxic', hex: 0x7dff2a, finish: 'glow', unlock: { level: 42 } },
+  { id: 'gold', name: 'Gold', hex: 0xe8b63a, finish: 'metal', unlock: { level: 50 } },
+  { id: 'lava', name: 'Lava', hex: 0xff4e00, finish: 'glow', unlock: { badge: 'firestarter' } },
+  { id: 'ice', name: 'Ice', hex: 0x9fe8ff, finish: 'glow', unlock: { badge: 'longarm' } },
+  { id: 'obsidian', name: 'Obsidian', hex: 0x1a1426, finish: 'metal', unlock: { mastery: 3, count: 3 } },
+  { id: 'royal', name: 'Royal Purple', hex: 0x6a2bd9, finish: 'metal', unlock: { prestige: 1 } },
+  { id: 'champion', name: 'Champion Gold', hex: 0xffd34d, finish: 'glow', unlock: { tourney: 1 } },
+  { id: 'spectral', name: '???', hex: 0xbaffef, finish: 'glow', unlock: { badge: 'godlike' }, secret: true, rarity: 'mythic' }
+];
+
+/** The finish for a soldier colour (themed colours glow, shine or cycle). */
+export const finishOf = (hex: number): ThemeColorDef['finish'] => THEME_COLORS.find((c) => c.hex === hex)?.finish ?? 'flat';
+
+export const titleDef = (id: string): TitleDef => TITLES.find((t) => t.id === id) ?? TITLES[0];
+export const frameDef = (id: string): FrameDef => FRAMES.find((f) => f.id === id) ?? FRAMES[0];
+export const tracerDef = (id: string): TracerDef => TRACERS.find((t) => t.id === id) ?? TRACERS[0];
+export const flashDef = (id: string): FlashDef => FLASHES.find((f) => f.id === id) ?? FLASHES[0];
+
+// ---------------------------------------------------------------- soldier styles
+
+/**
+ * How your soldier wears its colour: a finish, a pattern (in your colour), an
+ * animation, or something that reacts to how you are playing.
+ */
+export interface StyleDef {
+  id: string;
+  name: string;
+  kind: 'finish' | 'pattern' | 'animated' | 'interactive';
+  /** Changes the hue itself (rainbow, glitch...): team modes swap these for a pulse in the team colour. */
+  hueShift?: boolean;
+  blurb: string;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+}
+
+export const STYLES: StyleDef[] = [
+  { id: 'none', name: 'Plain', kind: 'finish', blurb: 'Your colour, nothing else.', unlock: null },
+  { id: 'matte', name: 'Matte', kind: 'finish', blurb: 'Flat, no shine.', unlock: null },
+  { id: 'metal', name: 'Metallic', kind: 'finish', blurb: 'Polished and shiny.', unlock: { level: 7 } },
+  { id: 'glow', name: 'Glow', kind: 'finish', blurb: 'Lit from within.', unlock: { level: 13 } },
+  { id: 'stripes', name: 'Stripes', kind: 'pattern', blurb: 'Bold diagonal stripes.', unlock: { level: 4 } },
+  { id: 'checker', name: 'Checker', kind: 'pattern', blurb: 'Racing checks.', unlock: { level: 9 } },
+  { id: 'polka', name: 'Polka Dots', kind: 'pattern', blurb: 'Dots. Lots of dots.', unlock: { level: 11 } },
+  { id: 'camo', name: 'Camo', kind: 'pattern', blurb: 'Blotchy camouflage in your colour.', unlock: { level: 16 } },
+  { id: 'zebra', name: 'Zebra', kind: 'pattern', blurb: 'Wavy stripes.', unlock: { level: 19 } },
+  { id: 'tiger', name: 'Tiger', kind: 'pattern', blurb: 'Tiger stripes.', unlock: { level: 23 } },
+  { id: 'digital', name: 'Digital', kind: 'pattern', blurb: 'Pixel camo.', unlock: { level: 27 } },
+  { id: 'hex', name: 'Hex Armour', kind: 'pattern', blurb: 'Honeycomb plating.', unlock: { level: 31 } },
+  { id: 'circuit', name: 'Circuit', kind: 'pattern', blurb: 'Glowing circuit traces.', unlock: { badge: 'triple' } },
+  { id: 'stars', name: 'Starfield', kind: 'pattern', blurb: 'A night sky.', unlock: { level: 44 } },
+  { id: 'pulse', name: 'Pulse', kind: 'animated', blurb: 'A slow breathing glow.', unlock: { level: 17 } },
+  { id: 'rainbow', name: 'Rainbow', kind: 'animated', hueShift: true, blurb: 'Cycles through every colour.', unlock: { level: 35 } },
+  { id: 'mono', name: 'Monochrome', kind: 'animated', hueShift: true, blurb: 'Fades between black and white.', unlock: { level: 24 } },
+  { id: 'holo', name: 'Holographic', kind: 'animated', hueShift: true, blurb: 'Iridescent: shifts as it moves.', unlock: { level: 47 } },
+  { id: 'glitch', name: 'Glitch', kind: 'animated', hueShift: true, blurb: 'Corrupted: random colour jumps and flicker.', unlock: { badge: 'triple' } },
+  { id: 'lava', name: 'Lava Flow', kind: 'animated', blurb: 'Molten cracks flowing over you.', unlock: { badge: 'firestarter' } },
+  { id: 'electric', name: 'Electric', kind: 'animated', blurb: 'Crackling, flickering energy.', unlock: { level: 52 } },
+  { id: 'aurora', name: 'Aurora', kind: 'animated', hueShift: true, blurb: 'Green, blue and purple waves.', unlock: { prestige: 1 } },
+  { id: 'ghost', name: 'Ghost', kind: 'animated', blurb: 'See-through and shimmering.', unlock: { prestige: 3 } },
+  { id: 'heartbeat', name: 'Heartbeat', kind: 'interactive', blurb: 'Pulses red, faster the lower your health.', unlock: { badge: 'clutch' } },
+  { id: 'streakheat', name: 'Killstreak Heat', kind: 'interactive', blurb: 'Glows hotter with every kill in your streak.', unlock: { badge: 'unstoppable' } },
+  { id: 'chameleon', name: 'Chameleon', kind: 'interactive', blurb: 'Fades toward the ground colour when you stand still or crouch.', unlock: { badge: 'longarm' } },
+  { id: 'thermal', name: 'Thermal', kind: 'interactive', hueShift: true, blurb: 'Blue when still, red hot when sprinting.', unlock: { level: 40 } },
+  { id: 'hitflash', name: 'Shockwave', kind: 'interactive', blurb: 'Flashes white whenever you get hit.', unlock: { level: 29 } },
+  { id: 'trophy', name: 'Trophy', kind: 'interactive', blurb: 'Turns more golden with every kill this match.', unlock: { tourney: 1 } },
+  { id: 'voidwalker', name: '???', kind: 'animated', hueShift: true, blurb: 'A swirling void.', unlock: { badge: 'godlike' }, secret: true, rarity: 'mythic' }
+];
+
+export const styleDef = (id: string): StyleDef => STYLES.find((s) => s.id === id) ?? STYLES[0];

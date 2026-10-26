@@ -3,7 +3,7 @@ import type { HudState, ScoreRow } from '../game/Game';
 import type { GameSettings } from '../game/settings';
 import { isDark } from '../game/identity';
 import { THROWABLES } from '../sim/gear';
-import { CallingCard } from './ProfilePanel';
+import { CallingCard, LevelBadge } from './ProfilePanel';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -208,7 +208,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           {hud.killedBy && (
             <div className="killed-by">
               <span>Killed by</span>
-              <CallingCard card={hud.killedBy.card} emblem={hud.killedBy.emblem} name={hud.killedBy.name} level={hud.killedBy.level} />
+              <CallingCard card={hud.killedBy.card} emblem={hud.killedBy.emblem} name={hud.killedBy.name} level={hud.killedBy.level} title={hud.killedBy.title} frame={hud.killedBy.frame} prestige={hud.killedBy.prestige} />
               <small>
                 {hud.killedBy.weapon}
                 {hud.killedBy.headshot ? ' · headshot' : ''}
@@ -217,7 +217,9 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
               </small>
             </div>
           )}
-          {hud.canRespawn ? (
+          {hud.redeployIn !== null ? (
+            <p>Redeploying next to your squad in {Math.ceil(hud.redeployIn)}s, as long as one of them survives</p>
+          ) : hud.canRespawn ? (
             <p>Click or press Space to respawn</p>
           ) : hud.mode.startsWith('br') || hud.mode === 'survival' ? null : hud.mode.startsWith('1') || hud.mode.startsWith('2') || hud.mode.startsWith('3') ? (
             <p>Spectating — waiting for the round to end</p>
@@ -367,7 +369,7 @@ const Scoreboard = ({ hud }: { hud: HudState }) => {
           {g.rows.map((p) => (
             <div key={p.id} className={`sb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'}`}>
               <span className="sb-name">
-                <i className="lvl">{p.level}</i>
+                <LevelBadge level={p.level} prestige={p.prestige} frame={p.frame} />
                 {p.emblem && (
                   <em className="emblem" style={{ color: p.emblem.color }}>
                     {p.emblem.glyph}

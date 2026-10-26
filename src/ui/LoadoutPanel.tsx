@@ -3,7 +3,7 @@ import type { LoadedAssets } from '../assets/AssetRegistry';
 import { SKINS, type SkinId } from '../assets/skins';
 import type { GameSettings } from '../game/settings';
 import type { Profile } from '../game/progression';
-import { masteryOf, MASTERY } from '../game/cosmetics';
+import { masteryOf, MASTERY, RARITY } from '../game/cosmetics';
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
@@ -173,12 +173,14 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                 <button
                   key={s.id}
                   className={`skin ${on ? 'on' : ''} ${locked ? 'locked' : ''}`}
+                  style={{ borderColor: on ? undefined : RARITY[s.kind === 'mastery' || s.kills >= 400 ? 'mythic' : s.kind || s.kills >= 150 ? 'legendary' : s.kills >= 60 ? 'epic' : s.kills >= 15 ? 'rare' : 'common'].color }}
                   disabled={locked}
                   title={locked ? `${s.kills} kills with the ${fw.name} to unlock` : s.name}
                   onClick={() => set({ skins: { ...settings.skins, [focus]: s.id } })}
                 >
-                  <i style={{ background: s.swatch }} />
+                  <i style={{ background: s.swatch }} className={s.kind ? `camo-${s.kind}` : ''} />
                   <span>{s.name}</span>
+                  {s.kind && <small className={`camo-kind ${s.kind}`}>{s.kind === 'mastery' ? (s.kills >= 500 ? 'Diamond mastery' : 'Gold mastery') : s.kind}</small>}
                   {locked && <small>🔒 {s.kills}</small>}
                 </button>
               );

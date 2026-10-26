@@ -302,6 +302,8 @@ const AIM_TIME = 60;
 const SQUAD_SIZE: Partial<Record<ModeId, number>> = { br_duos: 2, br_trios: 3 };
 export const isBrMode = (m: ModeId): boolean => m === 'br' || m === 'br_duos' || m === 'br_trios';
 const BOSS_LIVES = 3;
+/** Squad battle royale: seconds before a downed player redeploys next to a living squadmate. */
+const SQUAD_RESPAWN = 30;
 const AIM_COUNTDOWN = 3;
 /** The range's shooting line (targets are placed at distances from it). */
 const RANGE_Z = -30;
@@ -1053,6 +1055,13 @@ export class Match {
         this.respawnSafely(a);
       }
     }
+  }
+
+  /** Squad battle royale: seconds until `a` redeploys (null if not waiting). */
+  redeployIn(a: Agent): number | null {
+    if (!SQUAD_SIZE[this.mode] || a.alive) return null;
+    if (!this.sim.agents.some((b) => b.alive && b.team === a.team)) return null;
+    return Math.max(0, SQUAD_RESPAWN - (this.sim.time - a.deathT));
   }
 
   /** Whether a dead `a` will come back this match (respawn modes, lives left). */
@@ -2371,6 +2380,25 @@ export class Match {
     if (sim.time >= this.nextMedkitT) {
       this.nextMedkitT = sim.time + 4;
       if (sim.pickups.filter((m) => m.active && m.kind === 'medkit').length < 40) this.dropMedkit();
+    }
+    // Squads: anyone who dies comes back near a squadmate after 30 s, as long as one of them is still alive.
+    if (SQUAD_SIZE[this.mode]) {
+      for (const a of sim.agents) {
+        if (a.alive) continue;
+        const mate = sim.agents.find((b) => b.alive && b.team === a.team);
+        if (!mate) {
+          this.respawnAt.delete(a.id);
+          continue;
+        }
+        const at = this.respawnAt.get(a.id);
+        if (at === undefined) this.respawnAt.set(a.id, sim.time + SQUAD_RESPAWN);
+        else if (sim.time >= at) {
+          this.respawnAt.delete(a.id);
+          const p = sim.arena.randomFreePoint(() => sim.rng.next(), mate.x, mate.z, 6) ?? { x: mate.x, z: mate.z };
+          sim.respawn(a, p.x, p.z, mate.yaw);
+          a.protectedUntil = sim.time + 3;
+        }
+      }
     }
     const alive = sim.agents.filter((a) => a.alive);
     // Squads: you are out when your whole squad is; placement counts squads.

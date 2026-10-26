@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { weaponModels } from '../assets/weaponModels';
-import { skinned, type SkinId } from '../assets/skins';
+import { setReactive, skinned, tickSkins, type SkinId } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
 import type { WeaponId } from '../sim/weapons';
 
@@ -44,6 +44,9 @@ export const GunPreview = ({ assets, weapon, skin, charm }: { assets: LoadedAsse
     const loop = (t: number) => {
       s.raf = requestAnimationFrame(loop);
       holder.rotation.y = Math.sin(t / 2400) * 0.7 + 0.25;
+      tickSkins(t / 1000);
+      // Reactive camos: show them building up, as if over a match.
+      setReactive(holder, ((t / 4000) % 1.3) / 1.0);
       renderer.render(scene, camera);
     };
     s.raf = requestAnimationFrame(loop);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { WeaponModel } from '../assets/weaponModels';
-import { skinned, type SkinChoice } from '../assets/skins';
+import { setReactive, skinned, type SkinChoice } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
 import type { WeaponId } from '../sim/weapons';
 
@@ -55,6 +55,11 @@ export class Viewmodel {
   charm = 'none';
   /** Accessibility: no weapon bob or sway. */
   reduceMotion = false;
+  /** Muzzle flash cosmetic: colour and size. */
+  flashColor = 0xffffff;
+  flashScale = 1;
+  /** Kills this match, for reactive camos. */
+  kills = 0;
   /** Scoped weapons hide the gun once fully aimed (the HUD draws the scope). */
   scoped = false;
 
@@ -117,7 +122,8 @@ export class Viewmodel {
     this.flash.material.rotation = Math.random() * Math.PI;
     const c = this.current;
     const big = c === 'shotgun' || c === 'sniper' || c === 'revolver' || c === 'barrett' || c === 'autoshotgun' || c === 'deagle' ? 1.6 : c === 'dmr' || c === 'ak' || c === 'scar' ? 1.25 : 1;
-    this.flash.scale.setScalar((0.16 + Math.random() * 0.08) * big);
+    this.flash.scale.setScalar((0.16 + Math.random() * 0.08) * big * this.flashScale);
+    this.flash.material.color.setHex(this.flashColor);
   }
 
   swing(): void {
@@ -179,6 +185,7 @@ export class Viewmodel {
       reloadDip * 0.7 + this.sprintT * 0.2 - swing * 0.6
     );
 
+    setReactive(this.holder, this.kills / 10);
     this.flashLife -= dt;
     this.flash.visible = this.flashLife > 0 && s.visible && !this.scoped;
   }

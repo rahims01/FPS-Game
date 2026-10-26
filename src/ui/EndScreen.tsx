@@ -54,6 +54,7 @@ export const EndScreen = ({
   hud,
   ranked,
   onAgain,
+  againLabel,
   onLobby,
   waitingForHost,
   onMenu,
@@ -62,12 +63,13 @@ export const EndScreen = ({
   hud: HudState;
   ranked: { delta: number; division: Division; sr: number } | null;
   onAgain: (() => void) | null;
+  againLabel?: string;
   /** Online host: take everyone back to the room. */
   onLobby: (() => void) | null;
   /** Online guest: the host decides what happens next. */
   waitingForHost: boolean;
   onMenu: () => void;
-  mine: { card: string; emblem: string; name: string; level: number };
+  mine: { card: string; emblem: string; name: string; level: number; title: string; frame: string; prestige: number };
 }) => {
   const badges = hud.newBadges.map((id) => BADGES.find((b) => b.id === id)).filter((b): b is (typeof BADGES)[number] => !!b);
   const me = hud.players.find((p) => p.isPlayer);
@@ -121,7 +123,7 @@ export const EndScreen = ({
           {mvp && (
             <div className="end-stat-card mvp">
               <small>MVP</small>
-              <CallingCard card={mvp.isPlayer ? mine.card : mvp.card} emblem={mvp.isPlayer ? mine.emblem : mvp.emblemId} name={mvp.name} level={mvp.level} sub={`${mvp.kills} kills · ${mvp.damage} damage · ${acc(mvp)} accuracy`} />
+              <CallingCard card={mvp.isPlayer ? mine.card : mvp.card} emblem={mvp.isPlayer ? mine.emblem : mvp.emblemId} title={mvp.isPlayer ? mine.title : mvp.title} frame={mvp.isPlayer ? mine.frame : mvp.frame} prestige={mvp.isPlayer ? mine.prestige : mvp.prestige} name={mvp.name} level={mvp.level} sub={`${mvp.kills} kills · ${mvp.damage} damage · ${acc(mvp)} accuracy`} />
             </div>
           )}
         </div>
@@ -148,7 +150,7 @@ export const EndScreen = ({
         <div className="row">
           {onAgain && (
             <button className="play" onClick={onAgain}>
-              {ranked ? 'NEXT RANKED MATCH' : 'PLAY AGAIN'}
+              {againLabel ?? (ranked ? 'NEXT RANKED MATCH' : 'PLAY AGAIN')}
             </button>
           )}
           {onLobby && (

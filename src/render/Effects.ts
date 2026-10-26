@@ -79,14 +79,14 @@ export class Effects {
     tracerGeo.translate(0, 0, 0.5);
     const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false });
     for (let i = 0; i < MAX_TRACERS; i++) {
-      const mesh = new THREE.Mesh(tracerGeo, tracerMat);
+      const mesh = new THREE.Mesh(tracerGeo, tracerMat.clone());
       mesh.visible = false;
       this.group.add(mesh);
       this.tracers.push({ mesh, life: 0 });
     }
     const flashMat = new THREE.SpriteMaterial({ map: flashTexture(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
     for (let i = 0; i < 16; i++) {
-      const sprite = new THREE.Sprite(flashMat);
+      const sprite = new THREE.Sprite(flashMat.clone());
       sprite.visible = false;
       this.group.add(sprite);
       this.flashes.push({ sprite, life: 0 });
@@ -236,10 +236,14 @@ export class Effects {
     this.pGrav[i] = grav;
   }
 
-  tracer(from: THREE.Vector3, to: THREE.Vector3): void {
+  /** `color` -1 cycles the rainbow (the rainbow tracer cosmetic). */
+  tracer(from: THREE.Vector3, to: THREE.Vector3, color = 0xffe9a8): void {
     const len = from.distanceTo(to);
     if (len < 1.5) return;
     const t = this.tracers[this.tracerNext];
+    const mat = t.mesh.material as THREE.MeshBasicMaterial;
+    if (color < 0) mat.color.setHSL((performance.now() / 900) % 1, 1, 0.6);
+    else mat.color.setHex(color);
     this.tracerNext = (this.tracerNext + 1) % MAX_TRACERS;
     // A streak covering part of the path reads better than a full laser line.
     const start = from.clone().lerp(to, Math.random() * 0.3);
@@ -250,8 +254,9 @@ export class Effects {
     t.life = 0.05;
   }
 
-  muzzleFlash(at: THREE.Vector3, withLight: boolean, scale = 1): void {
+  muzzleFlash(at: THREE.Vector3, withLight: boolean, scale = 1, color = 0xffffff): void {
     const f = this.flashes[this.flashNext];
+    f.sprite.material.color.setHex(color);
     this.flashNext = (this.flashNext + 1) % this.flashes.length;
     f.sprite.position.copy(at);
     f.sprite.scale.setScalar((0.35 + Math.random() * 0.2) * scale);
