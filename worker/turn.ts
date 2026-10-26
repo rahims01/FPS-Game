@@ -49,7 +49,11 @@ const relaysOnly = (servers: IceServer[]): IceServer[] =>
 
 const staticTurn = (env: TurnEnv): IceServer[] => {
   if (!env.TURN_URLS || !env.TURN_USERNAME || !env.TURN_CREDENTIAL) return [];
-  const urls = env.TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean);
+  // Forgiving about how the address was pasted: quotes, spaces, or no "turn:" in front.
+  const urls = env.TURN_URLS.split(',')
+    .map((u) => u.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean)
+    .map((u) => (/^turns?:/i.test(u) ? u : `turn:${u.replace(/^[a-z]+:\/\//i, '')}`));
   return urls.length ? [{ urls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL }] : [];
 };
 
@@ -80,6 +84,17 @@ export const turn = async (env: TurnEnv): Promise<Response> => {
   // One provider failing (quota, outage) never hides the others.
   const results = await Promise.allSettled([Promise.resolve(staticTurn(env)), metered(env), cloudflare(env)]);
   const iceServers = relaysOnly(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
-  if (!iceServers.length) return json({ error: 'No TURN relay is configured' }, 404);
+  if (!iceServers.length) {
+    // Names only (never values), so a misnamed or missing setting is easy to spot.
+    const names: (keyof TurnEnv)[] = ['TURN_URLS', 'TURN_USERNAME', 'TURN_CREDENTIAL', 'METERED_DOMAIN', 'METERED_API_KEY', 'TURN_KEY_ID', 'TURN_KEY_API_TOKEN'];
+    return json(
+      {
+        error: 'No TURN relay is configured',
+        settingsFound: names.filter((n) => !!env[n]),
+        needs: 'TURN_URLS, TURN_USERNAME and TURN_CREDENTIAL under Settings > Variables and Secrets (not Build variables)'
+      },
+      404
+    );
+  }
   return json({ iceServers });
 };
