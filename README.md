@@ -139,7 +139,7 @@ Under **Play online**, click **Host game** to open a room. Send the 5-letter cod
 
 ### Relay (TURN) setup: free
 
-PeerJS's built-in relays no longer answer, so the game gets relay servers from its own Cloudflare Pages Function, `functions/api/turn.ts` (served at `/api/turn`). Without a relay, players on different networks often can't join each other's rooms (two tabs on one computer always can). Set up one or both free relays; the game offers every one you configure and uses whichever gets through.
+PeerJS's built-in relays no longer answer, so the game gets relay servers from its own Cloudflare Pages Function, `functions/api/turn.ts` (served at `/api/turn`). Without a relay, players on different networks often can't join each other's rooms (two tabs on one computer always can). ExpressTURN is the one to set up. The others are optional extras: the game offers every relay you configure, uses whichever gets through, and skips any that are down (each gets 2.5 s before it's left out).
 
 **ExpressTURN (free, 1,000 GB a month, port 3478)**
 
@@ -150,9 +150,9 @@ PeerJS's built-in relays no longer answer, so the game gets relay servers from i
    - `TURN_USERNAME`;
    - `TURN_CREDENTIAL` (as a secret).
 
-**Metered Open Relay (free, 20 GB a month, also ports 80 and 443)**
+**Optional: Metered Open Relay (free, 20 GB a month, also ports 80 and 443)**
 
-These ports get through school and office firewalls that block 3478, so it's worth adding as well.
+Ports 80 and 443 get through school and office firewalls that block 3478. Its service has been unreliable, so treat it as a bonus, not the main relay.
 
 1. Sign up for the free plan at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/) and create an app.
 2. Add `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret) the same way.

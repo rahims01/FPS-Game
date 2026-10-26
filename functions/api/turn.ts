@@ -39,6 +39,9 @@ interface IceServer {
   credential?: string;
 }
 
+/** A provider that hangs is skipped rather than holding up the others (the game waits about 4 s in total). */
+const PROVIDER_TIMEOUT_MS = 2500;
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
@@ -57,9 +60,11 @@ const staticTurn = (env: Env): IceServer[] => {
 const metered = async (env: Env): Promise<IceServer[]> => {
   if (!env.METERED_DOMAIN || !env.METERED_API_KEY) return [];
   const domain = env.METERED_DOMAIN.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(env.METERED_API_KEY)}`);
+  const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(env.METERED_API_KEY)}`, { signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
   if (!res.ok) return [];
-  return (await res.json()) as IceServer[];
+  const data = (await res.json()) as unknown;
+  // A broken service can answer 200 with an error object; only a list of servers counts.
+  return Array.isArray(data) ? (data as IceServer[]) : [];
 };
 
 const cloudflare = async (env: Env): Promise<IceServer[]> => {
@@ -68,7 +73,8 @@ const cloudflare = async (env: Env): Promise<IceServer[]> => {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
     // Longer than any match, so credentials never expire mid-game.
-    body: JSON.stringify({ ttl: 6 * 60 * 60 })
+    body: JSON.stringify({ ttl: 6 * 60 * 60 }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
   });
   if (!res.ok) return [];
   return ((await res.json()) as { iceServers: IceServer[] }).iceServers;
