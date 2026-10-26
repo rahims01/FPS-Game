@@ -5,6 +5,8 @@
   "name": "fps-game",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-01",
+  // Keep variables set in the dashboard (TURN_URLS, TURN_USERNAME...) across deploys.
+  "keep_vars": true,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
