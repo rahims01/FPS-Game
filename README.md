@@ -86,7 +86,7 @@ npm run build      # type-check + production build
 - **Armory:** a turning 3D view of your soldier with your colour, style, gun, camo and charm, plus name tag, tracer and muzzle flash pickers.
 - **Colours:** 12 basics plus 17 unlockable themed colours (Chrome, Gold, Neon Pink, Lava, Ice, Obsidian, Royal Purple, Champion Gold...).
 - **Soldier styles** on top of your colour:
-  - finishes (matte, metallic, glow);
+  - finishes (matte, metallic, glow, and Real Metal: brushed metal that reflects its surroundings, tinted by your colour);
   - patterns in your colour (stripes, checker, polka dots, camo, zebra, tiger, digital, hex armour, circuit, starfield);
   - animated (rainbow, monochrome, holographic, glitch, lava flow, electric, pulse, aurora, ghost);
   - interactive: Heartbeat pulses faster as your health drops, Killstreak Heat glows hotter, Chameleon fades to the ground colour when you stand still, Thermal shows your speed, Shockwave flashes when you're hit, Trophy turns golden with each kill.
@@ -177,13 +177,13 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 
 - **Per-gun recoil patterns:** sustained fire climbs and drifts in a fixed, learnable pattern for each weapon (the rifle drifts right then left, the SMG zig-zags, the LMG starts slow then climbs hard). Pull against it. The pattern resets when you stop firing.
 - **Ragdoll push:** bodies are carried along the shot and twisted at the hit point. Shotguns and snipers push harder, and explosions launch bodies, all within a speed cap.
-- **Killcam (every mode):** after you die to another player, a replay of the last few seconds from your killer's eyes, with their gun, their shots, everyone near them and your body falling. Press Space or click to skip.
+- **Killcam:** after another player kills you, a replay of the last few seconds from your killer's eyes. It shows their gun, shots, impacts, hit reactions, explosions, smoke and fire as they were then (nothing from the live match leaks in), with everyone's name tags and the killer's HUD (health, ammo, loadout, minimap, kill feed). There's none for zombies, survival enemies or labelled "Bot N" bots. Press Space or click to skip.
 
 ## Settings
 
 - **Graphics:** quality presets (Low, Medium, High, Ultra). The first visit picks one to suit the device (Chromebooks, low-memory devices and weak or software graphics start on Low). Individual options:
   - render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing;
-  - **simplified soldiers** (on with Low): low-detail soldier bodies and guns (about 3,700 and 2,900 triangles instead of 50,000 and 22,000), no animation for soldiers out of view, and fewer animation updates for distant ones. This is the big one for 5v5 and bigger lobbies on weak devices.
+  - **simplified soldiers** (on with Low): low-detail soldier bodies and guns (about 3,700 and 2,900 triangles instead of 50,000 and 22,000), and no animation for soldiers out of view. This is the big one for 5v5 and bigger lobbies on weak devices.
 - **Adjust automatically** (on by default): if a match keeps running under about 40 fps, the game steps down by itself (High, then Medium, then Low, then a lower resolution), says so on screen and saves it. Fast devices never trigger it. Picking a preset yourself turns it off.
 - **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.

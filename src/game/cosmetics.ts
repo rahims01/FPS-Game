@@ -503,6 +503,7 @@ export const STYLES: StyleDef[] = [
   { id: 'matte', name: 'Matte', kind: 'finish', blurb: 'Flat, no shine.', unlock: null },
   { id: 'metal', name: 'Metallic', kind: 'finish', blurb: 'Polished and shiny.', unlock: { level: 7 } },
   { id: 'glow', name: 'Glow', kind: 'finish', blurb: 'Lit from within.', unlock: { level: 13 } },
+  { id: 'realmetal', name: 'Real Metal', kind: 'finish', blurb: 'Brushed metal that reflects the world around it, tinted by your colour.', unlock: { level: 20 } },
   { id: 'stripes', name: 'Stripes', kind: 'pattern', blurb: 'Bold diagonal stripes.', unlock: { level: 4 } },
   { id: 'checker', name: 'Checker', kind: 'pattern', blurb: 'Racing checks.', unlock: { level: 9 } },
   { id: 'polka', name: 'Polka Dots', kind: 'pattern', blurb: 'Dots. Lots of dots.', unlock: { level: 11 } },

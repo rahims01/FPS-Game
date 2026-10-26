@@ -884,7 +884,7 @@
 }
 .kc-label {
   position: absolute;
-  top: calc(9vh + 14px);
+  bottom: calc(9vh + 44px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -923,12 +923,22 @@
   color: var(--dim);
   font-size: 14px;
 }
-.in-killcam .minimap,
 .in-killcam .banner,
 .in-killcam .kd,
 .in-killcam .streak-picks,
 .in-killcam .leaderboard {
   display: none;
+}
+/* The replay's letterbox bars: keep the killer's HUD inside the picture. */
+.in-killcam .top,
+.in-killcam .minimap,
+.in-killcam .perf,
+.in-killcam .right-col {
+  margin-top: 9vh;
+}
+.in-killcam .vitals,
+.in-killcam .ammo {
+  margin-bottom: 9vh;
 }
 
 /* Spectating. */

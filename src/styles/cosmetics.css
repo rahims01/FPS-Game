@@ -68,3 +68,10 @@ i.camo-animated {
   background-size: 300% 100% !important;
   animation: st-slide 3s linear infinite;
 }
+.st-realmetal {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0 1px, rgba(0, 0, 0, 0.08) 1px 2px),
+    linear-gradient(180deg, #2a2c30 0%, #f4f6f8 46%, #6f7378 54%, #1c1e21 100%),
+    var(--c);
+  background-blend-mode: normal, multiply, normal;
+}

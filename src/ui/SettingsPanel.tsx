@@ -155,7 +155,7 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             <Slider label="Ragdolls at once" value={settings.graphics.maxRagdolls} min={2} max={24} step={1} onChange={(v) => setGfx({ maxRagdolls: v })} />
             <Toggle
               label="Simplified soldiers"
-              hint="Soldiers out of view skip their animation and distant ones animate less often. Big speed-up in big lobbies on weak devices."
+              hint="Lighter soldier models, and soldiers out of view skip their animation. Big speed-up in big lobbies on weak devices."
               value={settings.graphics.simpleSoldiers}
               onChange={(v) => setGfx({ simpleSoldiers: v })}
             />

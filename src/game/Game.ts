@@ -15,6 +15,7 @@ import { streakDef } from '../sim/killstreaks';
 import { hasPerk, type ThrowableId } from '../sim/gear';
 import { isBrMode } from '../sim/Match';
 import { thrownModel } from '../render/thrown';
+import { setMetalNight } from '../render/realMetal';
 import { Gamepads, type PadFrame } from './gamepad';
 import { BADGES, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
 import { tickSkins } from '../assets/skins';
@@ -210,6 +211,19 @@ interface Snap {
   hp: number;
   ammo: number;
   streak: number;
+  onGround: boolean;
+  weapons: WeaponId[];
+  slot: number;
+  grenades: number;
+  tacticals: number;
+  kills: number;
+  deaths: number;
+}
+
+/** World state the killcam replays besides soldiers: smoke and fire, and throwables in flight. */
+interface WorldSnap {
+  fields: { kind: 'fire' | 'smoke'; x: number; z: number; r: number; until: number }[];
+  grenades: { kind: ThrowableId; x: number; y: number; z: number; vx: number; vy: number; vz: number }[];
 }
 
 const KILLCAM_BEFORE = 3.5;
@@ -306,10 +320,9 @@ export class Game {
   private shake = 0;
   private grenadeGroup = new THREE.Group();
   private stride = new Map<number, number>();
-  /** Simplified soldiers: the camera's view volume (from the last drawn frame) and a frame counter to stagger far poses. */
+  /** Simplified soldiers: the camera's view volume (from the last drawn frame). */
   private frustum = new THREE.Frustum();
   private viewProj = new THREE.Matrix4();
-  private frameNo = 0;
   /** Auto quality: real seconds this match has run slowly, seconds since the last check or change, and frames in the current window. */
   private slowFor = 0;
   private qualityWatch = 0;
@@ -337,8 +350,25 @@ export class Game {
   private ticker: Worker | null = null;
   private lastSnapAt = performance.now();
   // Killcam (1v1 only): a short history of every agent plus the shots fired.
-  private history: { t: number; s: Snap[] }[] = [];
-  private shotLog: { t: number; shooter: number; ex: number; ey: number; ez: number }[] = [];
+  private history: { t: number; s: Snap[]; world: WorldSnap }[] = [];
+  /** Every shot (pellets included) for the killcam: tracers, impacts, blood and hit reactions. */
+  private shotLog: {
+    t: number;
+    shooter: number;
+    first: boolean;
+    weapon: WeaponId;
+    ox: number;
+    oy: number;
+    oz: number;
+    ex: number;
+    ey: number;
+    ez: number;
+    world: { nx: number; ny: number; nz: number } | null;
+    hit: number;
+    region: 'head' | 'torso' | 'legs';
+  }[] = [];
+  /** Explosions, flashbangs and shatters for the killcam. */
+  private fxLog: { t: number; type: 'explosion' | 'flash' | 'shatter'; x: number; y: number; z: number; kind: string }[] = [];
   /** Hits, for replaying the killer's hit markers and damage numbers in the killcam. */
   private hitLog: { t: number; attacker: number; target: number; amount: number; head: boolean; killed: boolean; x: number; y: number; z: number }[] = [];
   private pendingKillcam: { at: number; killer: number; victim: number; deathT: number } | null = null;
@@ -401,6 +431,7 @@ export class Game {
     this.spectator = client ? client.start.spectate : net?.role === 'host' ? !net.session.hostPlaying : false;
     this.party = client ? !!client.start.party : net?.role === 'host' ? net.session.party : false;
     this.night = client ? !!client.start.night : !!this.match.opts.night;
+    setMetalNight(this.night);
     if (client) {
       // Mirror the host's match: we steer our own soldier, everyone else comes from snapshots.
       sim.agents[0].control = 'remote';
@@ -1077,10 +1108,28 @@ export class Game {
   private handleEvents(events: SimEvent[]): void {
     const sim = this.match.sim;
     const player = this.match.player;
+    // While the killcam plays, the live match keeps running but stays invisible and silent:
+    // the replay draws only what was recorded at the time.
+    const live = !this.killcam;
     for (const e of events) {
       if (e.type === 'shot') {
         const shooter = sim.agents[e.shooter];
-        if (e.first) this.shotLog.push({ t: sim.time, shooter: e.shooter, ex: e.ex, ey: e.ey, ez: e.ez });
+        this.shotLog.push({
+          t: sim.time,
+          shooter: e.shooter,
+          first: e.first,
+          weapon: e.weapon,
+          ox: e.ox,
+          oy: e.oy,
+          oz: e.oz,
+          ex: e.ex,
+          ey: e.ey,
+          ez: e.ez,
+          world: e.world ? { nx: e.nx, ny: e.ny, nz: e.nz } : null,
+          hit: e.hit,
+          region: e.region ?? 'torso'
+        });
+        if (!live) continue;
         const end = this.tmpB.set(e.ex, e.ey, e.ez);
         let from: THREE.Vector3;
         if ((shooter === player && !this.spectator) || shooter.id === this.specShown) {
@@ -1156,7 +1205,7 @@ export class Game {
         const v = this.viewFor(victim);
         v.setVisible(true);
         v.die(victim, this.physics, sim.time);
-        if (e.attacker >= 0 && this.match.mode !== 'paintball') this.effects.bloodPool(victim.x, victim.z);
+        if (live && e.attacker >= 0 && this.match.mode !== 'paintball') this.effects.bloodPool(victim.x, victim.z);
         // No killcam for wave enemies (zombies, survival) or labelled bots: nothing worth replaying.
         const waveEnemy = this.match.mode === 'zombies' || this.match.mode === 'survival';
         if (victim === player && killer && killer !== victim && !this.spectator && !this.practice && !waveEnemy && !this.isLabelledBot(killer)) {
@@ -1190,7 +1239,7 @@ export class Game {
         const kind = e.kind === 'spear' ? 'spear' : 'tknife';
         if (e.target >= 0) {
           this.views.get(e.target)?.stick(kind, at, dir);
-          if (this.match.mode !== 'paintball') this.effects.blood(at, dir, e.region === 'head');
+          if (live && this.match.mode !== 'paintball') this.effects.blood(at, dir, e.region === 'head');
         } else {
           // Stuck in a wall or the floor for a while.
           const mesh = thrownModel(kind);
@@ -1198,23 +1247,30 @@ export class Game {
           mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
           this.scene.add(mesh);
           this.wallStuck.push({ mesh, until: sim.time + 15 });
-          this.effects.impact(at, dir.clone().negate());
+          if (live) this.effects.impact(at, dir.clone().negate());
         }
-        this.audio.knife();
+        if (live) this.audio.knife();
       } else if (e.type === 'flash') {
+        this.fxLog.push({ t: sim.time, type: 'flash', x: e.x, y: e.y, z: e.z, kind: '' });
+        if (!live) continue;
         this.effects.flashBurst(new THREE.Vector3(e.x, e.y, e.z));
         this.audio.explosion(this.distTo(e.x, e.z) + 6, this.panTo(e.x, e.z));
         if (this.settings.access.visualSound) this.soundCue(e.x, e.z, 'boom', 40);
       } else if (e.type === 'shatter') {
+        this.fxLog.push({ t: sim.time, type: 'shatter', x: e.x, y: e.y, z: e.z, kind: e.kind });
+        if (!live) continue;
         this.effects.shatter(new THREE.Vector3(e.x, e.y, e.z), e.kind === 'molotov');
         this.audio.knife();
       } else if (e.type === 'explosion') {
-        if (this.settings.access.visualSound) this.soundCue(e.x, e.z, 'boom', 60);
+        this.fxLog.push({ t: sim.time, type: 'explosion', x: e.x, y: e.y, z: e.z, kind: e.kind });
         const p = this.tmpA.set(e.x, e.y, e.z);
-        this.effects.explosion(p, e.kind === 'airstrike');
+        if (live) {
+          if (this.settings.access.visualSound) this.soundCue(e.x, e.z, 'boom', 60);
+          this.effects.explosion(p, e.kind === 'airstrike');
+          this.audio.explosion(this.distTo(e.x, e.z), this.panTo(e.x, e.z));
+        }
         const d = this.distTo(e.x, e.z);
-        this.audio.explosion(d, this.panTo(e.x, e.z));
-        if (!this.settings.access.reduceMotion) this.shake = Math.max(this.shake, Math.max(0, 1 - d / 25) * (e.kind === 'airstrike' ? 1 : 0.7));
+        if (live && !this.settings.access.reduceMotion) this.shake = Math.max(this.shake, Math.max(0, 1 - d / 25) * (e.kind === 'airstrike' ? 1 : 0.7));
         // Knock nearby corpses around.
         for (const v of this.views.values()) {
           if (!v.ragdoll) continue;
@@ -1225,7 +1281,7 @@ export class Game {
       } else if (e.type === 'melee') {
         const a = sim.agents[e.agent];
         if (a === player) this.viewmodel.swing();
-        if (a === player || this.distTo(a.x, a.z) < 12) this.audio.knife();
+        if (live && (a === player || this.distTo(a.x, a.z) < 12)) this.audio.knife();
       } else if (e.type === 'switch') {
         if (e.agent === player.id) this.audio.weaponSwitch();
       } else if (e.type === 'airstrike') {
@@ -1540,13 +1596,33 @@ export class Game {
         reloadDur: a.reloadDur,
         hp: a.hp,
         ammo: a.ammo,
-        streak: a.streak
-      }))
+        streak: a.streak,
+        onGround: a.onGround,
+        weapons: a.weapons,
+        slot: a.slot,
+        grenades: a.grenades,
+        tacticals: a.tacticals,
+        kills: a.kills,
+        deaths: a.deaths
+      })),
+      world: {
+        fields: sim.fields.map((f) => ({ kind: f.kind, x: f.x, z: f.z, r: f.r, until: f.until })),
+        grenades: sim.grenades.map((g) => ({ kind: g.kind, x: g.x, y: g.y, z: g.z, vx: g.vx, vy: g.vy, vz: g.vz }))
+      }
     });
     const keep = sim.time - (KILLCAM_BEFORE + KILLCAM_AFTER + KILLCAM_DELAY + 1);
     while (this.history.length && this.history[0].t < keep) this.history.shift();
     while (this.shotLog.length && this.shotLog[0].t < keep) this.shotLog.shift();
     while (this.hitLog.length && this.hitLog[0].t < keep) this.hitLog.shift();
+    while (this.fxLog.length && this.fxLog[0].t < keep) this.fxLog.shift();
+  }
+
+  /** Recorded smoke, fire and throwables nearest to time `t`. */
+  private worldAt(t: number): WorldSnap | null {
+    const h = this.history;
+    if (!h.length) return null;
+    const i = h.findIndex((f) => f.t >= t);
+    return h[i < 0 ? h.length - 1 : i].world;
   }
 
   /** Recorded state of agent `id` at time `t`, interpolated. */
@@ -1607,6 +1683,7 @@ export class Game {
       this.endKillcam();
       return false;
     }
+    const killerTeam = sim.agents[kc.killer]?.team ?? -1;
     // Ghosts for everyone near the killer at this moment (the 12 closest).
     const near = sim.agents
       .filter((a) => a.id !== kc.killer)
@@ -1622,11 +1699,21 @@ export class Game {
       let ghost = kc.ghosts.get(a.id);
       if (!ghost) {
         ghost = new SoldierView(this.assets, { ...a, life: -1 }, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none');
+        // Dressed and tagged as the killer saw them.
+        ghost.setStyle(this.styleFor(a), this.colorOf(a.id));
+        const cos = this.cosmetics[a.id];
+        const title = cos && cos.title !== 'none' ? titleDef(cos.title).text : null;
+        ghost.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === killerTeam, cos?.nametag ?? 'plain', title);
         this.scene.add(ghost.root);
         kc.ghosts.set(a.id, ghost);
       }
       ghost.setVisible(true);
       const fake = { ...a, ...s, weapons: [s.weapon], slot: 0, alive: true };
+      const ghostDist = Math.hypot(s.x - killer.x, s.z - killer.z);
+      // Teammates' tags always show; enemies' only when the killer could see them.
+      const tagShown =
+        a.team === killerTeam || (ghostDist < 45 && sim.arena.lineOfSight(killer.x, killer.y + eyeHeight(killer), killer.z, s.x, s.y + 1.7, s.z));
+      ghost.showTag(s.alive && tagShown, ghostDist);
       if (a.id === kc.victim && !kc.victimDead && kc.clock >= kc.deathT) {
         kc.victimDead = true;
         ghost.die({ ...a, ...s }, this.physics, sim.time);
@@ -1657,31 +1744,69 @@ export class Game {
       if (this.settings.hitSounds) this.audio.hitMarker(h.head, h.killed);
       if (this.settings.damageNumbers) this.damageNumber(h.target, h.amount, h.head, h.killed, h);
     }
-    // Replay the shots fired in this slice of time.
+    // Replay the shots fired in this slice of time: tracers, flashes, impacts, blood and hit reactions.
+    const paintball = this.match.mode === 'paintball';
     for (const sh of this.shotLog) {
       if (sh.t <= prev || sh.t > kc.clock) continue;
       const end = new THREE.Vector3(sh.ex, sh.ey, sh.ez);
+      let from: THREE.Vector3;
       if (sh.shooter === kc.killer) {
-        this.viewmodel.fire();
-        const from = this.camera.localToWorld(this.viewmodel.muzzleLocal(new THREE.Vector3()));
-        this.effects.tracer(from, end, this.tracerColor(sh.shooter));
-        this.audio.gunshot(0, 0, true, killer.weapon);
+        from = this.camera.localToWorld(this.viewmodel.muzzleLocal(new THREE.Vector3()));
+        if (sh.first) {
+          this.viewmodel.fire();
+          this.audio.gunshot(0, 0, true, killer.weapon);
+        }
       } else {
         const g = kc.ghosts.get(sh.shooter);
         if (!g || !g.root.visible) continue;
-        const from = g.muzzle(new THREE.Vector3());
-        this.effects.tracer(from, end, this.tracerColor(sh.shooter));
-        this.effects.muzzleFlash(from, true);
-        this.audio.gunshot(this.distTo(from.x, from.z), 0, false);
+        from = g.muzzle(new THREE.Vector3());
+        if (sh.first) {
+          const fl = flashDef(this.cosmetics[sh.shooter]?.flash ?? 'default');
+          this.effects.muzzleFlash(from, true, fl.scale, fl.color);
+          this.audio.gunshot(this.distTo(from.x, from.z), this.panTo(from.x, from.z), false, sh.weapon);
+        }
+      }
+      this.effects.tracer(from, end, this.tracerColor(sh.shooter));
+      const paint = paintball ? this.colorOf(sh.shooter) : 0;
+      if (sh.world) {
+        const n = new THREE.Vector3(sh.world.nx, sh.world.ny, sh.world.nz);
+        if (paintball) this.effects.paint(end, n, paint);
+        else this.effects.impact(end, n);
+      }
+      if (sh.hit >= 0) {
+        const dir = new THREE.Vector3(sh.ex - sh.ox, sh.ey - sh.oy, sh.ez - sh.oz).normalize();
+        if (paintball) this.effects.paint(end, dir.clone().negate(), paint);
+        else this.effects.blood(end, dir, sh.region === 'head');
+        const g = kc.ghosts.get(sh.hit);
+        const vs = this.snapAt(sh.hit, sh.t);
+        if (g && vs) {
+          const side = Math.sign(Math.sin(wrapAngle(Math.atan2(dir.x, dir.z) - vs.yaw))) || 1;
+          const w = WEAPONS[sh.weapon];
+          g.hit(side, sh.region, THREE.MathUtils.clamp((w.damage.torso * w.pellets) / 40, 0.5, 1.5));
+        }
+      }
+    }
+    // Explosions, flashbangs and shattering molotovs from the same moment.
+    for (const fx of this.fxLog) {
+      if (fx.t <= prev || fx.t > kc.clock) continue;
+      const at = new THREE.Vector3(fx.x, fx.y, fx.z);
+      if (fx.type === 'explosion') {
+        this.effects.explosion(at, fx.kind === 'airstrike');
+        this.audio.explosion(this.distTo(fx.x, fx.z), this.panTo(fx.x, fx.z));
+      } else if (fx.type === 'flash') {
+        this.effects.flashBurst(at);
+        this.audio.explosion(this.distTo(fx.x, fx.z) + 6, this.panTo(fx.x, fx.z));
+      } else {
+        this.effects.shatter(at, fx.kind === 'molotov');
       }
     }
     this.viewmodel.update(dt, {
       speed: Math.hypot(killer.vx, killer.vz),
       aiming: killer.aiming,
       sprinting: killer.sprinting,
-      reload: 0,
+      reload: killer.reloadT > 0 && killer.reloadDur > 0 ? 1 - killer.reloadT / killer.reloadDur : 0,
       switching: 0,
-      onGround: true,
+      onGround: killer.onGround,
       lookDX: 0,
       lookDY: 0,
       visible: true,
@@ -1934,17 +2059,14 @@ export class Game {
   private _sphere = new THREE.Sphere();
   /**
    * Simplified soldiers: whether this soldier gets a full pose this frame.
-   * Out of view: never (it still moves). Far away: every 2nd or 3rd frame,
-   * staggered so they don't all pose on the same frame.
+   * Out of view: no (it still moves, and catches up when seen).
    */
   private needsPose(a: Agent, x: number, y: number, z: number): boolean {
     if (a.id === this.specShown || this.killcam) return true;
     this._sphere.center.set(x, y + 1, z);
     this._sphere.radius = 1.6 * a.scale;
-    if (!this.frustum.intersectsSphere(this._sphere)) return false;
-    const d = this.camera.position.distanceTo(this._sphere.center);
-    const every = d > 45 ? 3 : d > 22 ? 2 : 1;
-    return (this.frameNo + a.id) % every === 0;
+    // Everyone on screen poses every frame: skipping frames for distant soldiers read as robotic, choppy movement.
+    return this.frustum.intersectsSphere(this._sphere);
   }
 
   /**
@@ -1994,7 +2116,6 @@ export class Game {
 
     const simple = this.settings.graphics.simpleSoldiers;
     if (simple) {
-      this.frameNo++;
       this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     }
     for (const a of sim.agents) {
@@ -2040,7 +2161,11 @@ export class Game {
     }
 
     // Throwables in flight: knives and spears point along their flight, the rest tumble.
-    sim.grenades.forEach((g, i) => {
+    // During the killcam they come from the recording, like the smoke and fire below.
+    const replayWorld = this.killcam ? this.worldAt(this.killcam.clock) : null;
+    const thrown = replayWorld ? replayWorld.grenades : sim.grenades;
+    const worldTime = this.killcam ? this.killcam.clock : sim.time;
+    thrown.forEach((g, i) => {
       let slot = this.thrownMeshes[i];
       if (!slot || slot.kind !== g.kind) {
         if (slot) this.grenadeGroup.remove(slot.mesh);
@@ -2055,15 +2180,15 @@ export class Game {
         const v = this.tmpB.set(g.vx, g.vy, g.vz);
         if (v.lengthSq() > 0.01) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize());
         // A thrown knife spins end over end.
-        if (g.kind === 'tknife') m.rotateX(sim.time * 25);
+        if (g.kind === 'tknife') m.rotateX(worldTime * 25);
       } else {
         m.rotation.x += dt * 8;
         m.rotation.z += dt * 5;
       }
     });
-    for (let i = sim.grenades.length; i < this.thrownMeshes.length; i++) this.thrownMeshes[i].mesh.visible = false;
+    for (let i = thrown.length; i < this.thrownMeshes.length; i++) this.thrownMeshes[i].mesh.visible = false;
     // Smoke clouds and fires, and thrown knives fading out of walls.
-    this.effects.syncFields(sim.fields, sim.time);
+    this.effects.syncFields(replayWorld ? replayWorld.fields : sim.fields, worldTime);
     for (let i = this.wallStuck.length - 1; i >= 0; i--) {
       if (sim.time < this.wallStuck[i].until) continue;
       this.scene.remove(this.wallStuck[i].mesh);
@@ -2472,6 +2597,7 @@ export class Game {
         : null
     };
     if (kcSnap) {
+      const killerAgent = sim.agents[this.killcam!.killer];
       const kw = WEAPONS[kcSnap.weapon];
       const moving = Math.hypot(kcSnap.vx, kcSnap.vz) > 0.6;
       Object.assign(state, {
@@ -2484,8 +2610,15 @@ export class Game {
         spread: (moving ? kw.spreadMoving : kw.spreadStill) * (kcSnap.aiming ? kw.adsSpread : 1),
         weaponName: kw.name,
         weaponId: kw.id,
-        loadout: [{ id: kw.id, name: kw.tag, active: true }],
-        grenades: 0,
+        loadout: kcSnap.weapons.map((id, i) => ({ id, name: WEAPONS[id].tag, active: i === kcSnap.slot })),
+        grenades: kcSnap.grenades,
+        throwables: { ...state.throwables, lethal: killerAgent?.lethal ?? state.throwables.lethal, tactical: killerAgent?.tactical ?? state.throwables.tactical, lethals: kcSnap.grenades, tacticals: kcSnap.tacticals },
+        kills: kcSnap.kills,
+        deaths: kcSnap.deaths,
+        // The kill feed as it stood at that moment of the replay.
+        feed: this.feed.filter((f) => f.at <= this.killcam!.clock && this.killcam!.clock - f.at < 7),
+        callouts: [],
+        medals: [],
         crouching: kcSnap.crouching,
         protected: false,
         streak: kcSnap.streak,
@@ -2579,6 +2712,10 @@ export class Game {
       ctx.fillRect(X(m.x) - 3, Z(m.z) - 1, 6, 2);
       ctx.fillRect(X(m.x) - 1, Z(m.z) - 3, 2, 6);
     }
+    if (this.killcam) {
+      this.drawKillcamMinimap(ctx, X, Z);
+      return;
+    }
     for (const a of sim.agents) {
       if (!a.alive || a === p) continue;
       const ally = a.team === p.team;
@@ -2613,6 +2750,36 @@ export class Game {
       ctx.closePath();
       ctx.fill();
     }
+  }
+
+  /** Killcam minimap: the killer's teammates, enemies who were firing, and the killer's arrow, all from the recording. */
+  private drawKillcamMinimap(ctx: CanvasRenderingContext2D, X: (x: number) => number, Z: (z: number) => number): void {
+    const kc = this.killcam!;
+    const sim = this.match.sim;
+    const me = this.snapAt(kc.killer, kc.clock);
+    const team = sim.agents[kc.killer]?.team ?? -1;
+    for (const a of sim.agents) {
+      if (a.id === kc.killer) continue;
+      const s = this.snapAt(a.id, kc.clock);
+      if (!s || !s.alive) continue;
+      if (a.team !== team && kc.clock - s.lastShotT > 1) continue;
+      ctx.fillStyle = cssColor(this.colorOf(a.id));
+      ctx.beginPath();
+      ctx.arc(X(s.x), Z(s.z), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (!me) return;
+    const px = X(me.x);
+    const pz = Z(me.z);
+    const fx = -Math.sin(me.yaw);
+    const fz = -Math.cos(me.yaw);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(px + fx * 7, pz + fz * 7);
+    ctx.lineTo(px - fx * 4 - fz * 4, pz - fz * 4 + fx * 4);
+    ctx.lineTo(px - fx * 4 + fz * 4, pz - fz * 4 - fx * 4);
+    ctx.closePath();
+    ctx.fill();
   }
 
   dispose(): void {

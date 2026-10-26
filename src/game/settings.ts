@@ -62,8 +62,8 @@ export interface Graphics {
   /** Bodies kept simulated as ragdolls at once. */
   maxRagdolls: number;
   /**
-   * Weak devices: soldiers out of view skip their animation and distant ones
-   * animate at a lower rate. Biggest saving in matches with many players.
+   * Weak devices: low-detail soldier models, and soldiers out of view skip
+   * their animation. Biggest saving in matches with many players.
    */
   simpleSoldiers: boolean;
 }

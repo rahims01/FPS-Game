@@ -14,6 +14,7 @@ import { animateStyle, applyStyle, drawNametag } from './soldierStyle';
 import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
 import { decimate } from './decimate';
+import { realMetalMaterial } from './realMetal';
 
 const DEG = Math.PI / 180;
 
@@ -219,6 +220,9 @@ export class SoldierView {
   private low = SoldierView.lowDetail;
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
+  /** The body's own (Phong) materials per mesh, kept so Real Metal can be swapped in and out. */
+  private bodyMeshes: { mesh: THREE.Mesh; own: THREE.Material | THREE.Material[] }[] = [];
+  private metalMats: THREE.Material[] = [];
 
   constructor(
     assets: LoadedAssets,
@@ -249,6 +253,7 @@ export class SoldierView {
         return c;
       });
       m.material = Array.isArray(m.material) ? cloned : cloned[0];
+      this.bodyMeshes.push({ mesh: m, own: m.material });
     });
     for (const name of [
       'Hips',
@@ -338,14 +343,31 @@ export class SoldierView {
   setStyle(style: string, base: number): void {
     this.style = style;
     this.styleBase = base;
+    if (style === 'realmetal') {
+      // A different kind of material: Phong can only fake metal as glossy plastic.
+      for (const m of this.metalMats) m.dispose();
+      this.metalMats = [];
+      for (const b of this.bodyMeshes) {
+        const n = Array.isArray(b.own) ? b.own.length : 1;
+        const mats = Array.from({ length: n }, () => realMetalMaterial(base));
+        this.metalMats.push(...mats);
+        b.mesh.material = Array.isArray(b.own) ? mats : mats[0];
+      }
+      return;
+    }
+    if (this.metalMats.length) {
+      for (const b of this.bodyMeshes) b.mesh.material = b.own;
+      for (const m of this.metalMats) m.dispose();
+      this.metalMats = [];
+    }
     applyStyle(this.materials, style, base);
   }
 
   setFrozen(on: boolean): void {
     if (on === this.frozen) return;
     this.frozen = on;
-    if (!on) applyStyle(this.materials, this.style, this.styleBase);
-    for (const m of this.materials) {
+    if (!on) this.setStyle(this.style, this.styleBase);
+    for (const m of this.metalMats.length ? this.metalMats : this.materials) {
       const mat = m as THREE.MeshPhongMaterial;
       if (!mat.emissive) continue;
       mat.emissive.setHex(on ? 0x3a7fc4 : 0x000000);
@@ -445,7 +467,7 @@ export class SoldierView {
     this.skipped = 0;
     this.root.position.set(x, y, z);
     if (this.root.scale.x !== agent.scale) this.root.scale.setScalar(agent.scale);
-    if (!this.frozen && this.style !== 'none') animateStyle(this.materials, this.style, this.styleBase, agent, time, this.styleSeed);
+    if (!this.frozen && this.style !== 'none' && this.style !== 'realmetal') animateStyle(this.materials, this.style, this.styleBase, agent, time, this.styleSeed);
     setReactive(this.rifle, agent.kills / 10);
     // Leg hits buckle the knees for a moment.
     if (this.flinch > 0 && this.flinchRegion === 'legs') this.root.position.y -= this.flinch * 0.07;
@@ -601,6 +623,7 @@ export class SoldierView {
     this.mixer.stopAllAction();
     this.root.removeFromParent();
     for (const m of this.materials) m.dispose();
+    for (const m of this.metalMats) m.dispose();
     if (this.tag) {
       this.tag.material.map?.dispose();
       this.tag.material.dispose();
