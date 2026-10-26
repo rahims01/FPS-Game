@@ -147,7 +147,10 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 
 ## Settings
 
-- **Graphics:** quality presets (Low, Medium, High, Ultra), with the first visit picking one to suit the device. Individual options: render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing. Low and Medium make a big difference on older laptops and integrated graphics.
+- **Graphics:** quality presets (Low, Medium, High, Ultra). The first visit picks one to suit the device (Chromebooks, low-memory devices and weak or software graphics start on Low). Individual options:
+  - render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing;
+  - **simplified soldiers** (on with Low): low-detail soldier bodies and guns (about 3,700 and 2,900 triangles instead of 50,000 and 22,000), no animation for soldiers out of view, and fewer animation updates for distant ones. This is the big one for 5v5 and bigger lobbies on weak devices.
+- **Adjust automatically** (on by default): if a match keeps running under about 40 fps, the game steps down by itself (High, then Medium, then Low, then a lower resolution), says so on screen and saves it. Fast devices never trigger it. Picking a preset yourself turns it off.
 - **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
 - **HUD:** optional FPS counter and online ping, damage numbers and hit marker sound.

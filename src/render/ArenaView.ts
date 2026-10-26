@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Arena, Box } from '../sim/Arena';
 import type { FpsSim } from '../sim/FpsSim';
 
@@ -140,12 +141,31 @@ export class ArenaView {
     const wallMat = new THREE.MeshStandardMaterial({ map: concrete, roughness: 0.9 });
     const pillarMat = new THREE.MeshStandardMaterial({ map: concrete, color: 0xc9c2b4, roughness: 0.85 });
     const crateMat = new THREE.MeshStandardMaterial({ map: crate, roughness: 0.8 });
-    for (const b of arena.boxes) g.add(this.boxMesh(b, b.kind === 'crate' ? crateMat : b.kind === 'pillar' ? pillarMat : wallMat));
+    // Boxes are merged per material within 40 m tiles: one draw call per tile
+    // instead of one per box (battle-royale maps have hundreds), while tiles
+    // off screen are still skipped.
+    const TILE = 40;
+    const batches = new Map<string, { mat: THREE.MeshStandardMaterial; geos: THREE.BufferGeometry[] }>();
+    for (const b of arena.boxes) {
+      const mat = b.kind === 'crate' ? crateMat : b.kind === 'pillar' ? pillarMat : wallMat;
+      const key = `${mat.uuid}:${Math.floor((b.minX + b.maxX) / 2 / TILE)}:${Math.floor((b.minZ + b.maxZ) / 2 / TILE)}`;
+      let batch = batches.get(key);
+      if (!batch) batches.set(key, (batch = { mat, geos: [] }));
+      batch.geos.push(this.boxGeometry(b));
+    }
+    for (const { mat, geos } of batches.values()) {
+      const m = new THREE.Mesh(mergeGeometries(geos), mat);
+      for (const geo of geos) geo.dispose();
+      m.castShadow = true;
+      m.receiveShadow = true;
+      g.add(m);
+    }
 
     this.medkitMat = new THREE.MeshStandardMaterial({ map: medkitTex(), roughness: 0.5, emissive: 0x330000 });
   }
 
-  private boxMesh(b: Box, mat: THREE.MeshStandardMaterial): THREE.Mesh {
+  /** One box in world space (for merging). */
+  private boxGeometry(b: Box): THREE.BufferGeometry {
     const w = b.maxX - b.minX;
     const d = b.maxZ - b.minZ;
     const geo = new THREE.BoxGeometry(w, b.h, d);
@@ -165,11 +185,8 @@ export class ArenaView {
       else if (nx > 0.5) uv.setXY(i, pz / tile, py / tile);
       else uv.setXY(i, px / tile, py / tile);
     }
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set((b.minX + b.maxX) / 2, b.h / 2, (b.minZ + b.maxZ) / 2);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    return m;
+    geo.translate((b.minX + b.maxX) / 2, b.h / 2, (b.minZ + b.maxZ) / 2);
+    return geo;
   }
 
   /** Graphics setting: shadows off, or a smaller / larger shadow map. */

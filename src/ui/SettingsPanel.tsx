@@ -53,7 +53,7 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
   const [binding, setBinding] = useState<KeyAction | null>(null);
   const set = (patch: Partial<GameSettings>) => onChange({ ...settings, ...patch });
   // Changing any single graphics option makes the preset "custom".
-  const setGfx = (patch: Partial<Graphics>) => onChange({ ...settings, quality: 'custom', graphics: { ...settings.graphics, ...patch } });
+  const setGfx = (patch: Partial<Graphics>) => onChange({ ...settings, quality: 'custom', autoQuality: false, graphics: { ...settings.graphics, ...patch } });
 
   // Rebinding: the next key pressed becomes the binding (Escape cancels).
   useEffect(() => {
@@ -122,9 +122,15 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
                 ['ultra', 'Ultra'],
                 ['custom', 'Custom']
               ]}
-              onChange={(q) => onChange({ ...settings, quality: q, graphics: q === 'custom' ? settings.graphics : { ...QUALITY_PRESETS[q] } })}
+              onChange={(q) => onChange({ ...settings, quality: q, autoQuality: false, graphics: q === 'custom' ? settings.graphics : { ...QUALITY_PRESETS[q] } })}
             />
-            <p className="set-hint">Low or Medium make a big difference on older laptops and integrated graphics.</p>
+            <p className="set-hint">Low or Medium make a big difference on older laptops, Chromebooks and integrated graphics.</p>
+            <Toggle
+              label="Adjust automatically"
+              hint="Lowers the preset by itself if matches run slowly on this device. Picking a preset turns this off."
+              value={settings.autoQuality}
+              onChange={(v) => set({ autoQuality: v })}
+            />
             <Slider label="Render resolution" value={settings.graphics.renderScale} min={0.4} max={1.5} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setGfx({ renderScale: v })} />
             <Choice
               label="Shadows"
@@ -147,6 +153,12 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             />
             <Slider label="View distance" value={settings.graphics.viewDistance} min={0.4} max={1.6} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setGfx({ viewDistance: v })} />
             <Slider label="Ragdolls at once" value={settings.graphics.maxRagdolls} min={2} max={24} step={1} onChange={(v) => setGfx({ maxRagdolls: v })} />
+            <Toggle
+              label="Simplified soldiers"
+              hint="Soldiers out of view skip their animation and distant ones animate less often. Big speed-up in big lobbies on weak devices."
+              value={settings.graphics.simpleSoldiers}
+              onChange={(v) => setGfx({ simpleSoldiers: v })}
+            />
             <Choice
               label="Frame rate limit"
               value={String(settings.fpsLimit)}

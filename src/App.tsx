@@ -222,6 +222,8 @@ export const App = () => {
       netRef.current
     );
     game.current = g;
+    // Auto quality: the match lowered the graphics on a slow device; keep that.
+    g.onSettings = (changed) => setSettings((prev) => ({ ...prev, quality: changed.quality, graphics: changed.graphics }));
     // Dev hook for scripts/shot.mjs (headless browsers cannot take pointer lock).
     if (import.meta.env.DEV) (window as unknown as { __fps: Game }).__fps = g;
     g.requestLock();

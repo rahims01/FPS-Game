@@ -61,13 +61,18 @@ export interface Graphics {
   viewDistance: number;
   /** Bodies kept simulated as ragdolls at once. */
   maxRagdolls: number;
+  /**
+   * Weak devices: soldiers out of view skip their animation and distant ones
+   * animate at a lower rate. Biggest saving in matches with many players.
+   */
+  simpleSoldiers: boolean;
 }
 
 export const QUALITY_PRESETS: Record<Exclude<Quality, 'custom'>, Graphics> = {
-  low: { renderScale: 0.6, shadows: 'off', antialias: false, effects: 'low', viewDistance: 0.6, maxRagdolls: 5 },
-  medium: { renderScale: 0.8, shadows: 'low', antialias: false, effects: 'low', viewDistance: 0.85, maxRagdolls: 9 },
-  high: { renderScale: 1, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1, maxRagdolls: 14 },
-  ultra: { renderScale: 1.25, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1.4, maxRagdolls: 20 }
+  low: { renderScale: 0.6, shadows: 'off', antialias: false, effects: 'low', viewDistance: 0.6, maxRagdolls: 4, simpleSoldiers: true },
+  medium: { renderScale: 0.8, shadows: 'low', antialias: false, effects: 'low', viewDistance: 0.85, maxRagdolls: 9, simpleSoldiers: false },
+  high: { renderScale: 1, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1, maxRagdolls: 14, simpleSoldiers: false },
+  ultra: { renderScale: 1.25, shadows: 'high', antialias: true, effects: 'high', viewDistance: 1.4, maxRagdolls: 20, simpleSoldiers: false }
 };
 
 export type Colorblind = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
@@ -143,6 +148,8 @@ export interface GameSettings {
   vsync: boolean;
   keys: KeyBinds;
   quality: Quality;
+  /** Step the quality down by itself when matches run slowly (turned off by picking a quality yourself). */
+  autoQuality: boolean;
   graphics: Graphics;
   crosshair: Crosshair;
   showFps: boolean;
@@ -178,6 +185,7 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   vsync: true,
   keys: { ...DEFAULT_KEYS },
   quality: 'high',
+  autoQuality: true,
   graphics: { ...QUALITY_PRESETS.high },
   crosshair: { color: '#ffffff', size: 9, gap: 6, thickness: 2, dot: false, dynamic: true },
   showFps: false,
@@ -189,6 +197,8 @@ export const loadSettings = (name: string, color: number): GameSettings => {
   const base = defaultSettings(name, color);
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem('fps-settings-v2') ?? '{}');
+    // Saves from before simplified soldiers existed: Low turns them on.
+    if (raw.graphics && raw.graphics.simpleSoldiers === undefined) raw.graphics.simpleSoldiers = raw.quality === 'low';
     return {
       ...base,
       ...raw,
@@ -242,11 +252,32 @@ export const keyLabel = (code: string): string => {
 /** A guess at a sensible preset for this device (weak/mobile GPUs and high-DPI laptops start lower). */
 export const suggestQuality = (): Exclude<Quality, 'custom'> => {
   const cores = navigator.hardwareConcurrency ?? 4;
-  const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-  if (mobile || cores <= 2) return 'low';
+  const ua = navigator.userAgent;
+  const mobile = /Android|iPhone|iPad/i.test(ua);
+  // Chromebooks (CrOS) and low-memory devices are mostly school-grade hardware.
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+  if (mobile || cores <= 2 || /CrOS/.test(ua) || memory <= 4 || weakGpu()) return 'low';
   if (cores <= 4) return 'medium';
   return 'high';
 };
+
+/** Integrated or software graphics that struggle with a full lobby. */
+const weakGpu = (): boolean => {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (!gl) return true;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /SwiftShader|llvmpipe|Software|Mali|PowerVR|Adreno \(TM\) [1-5]\d\d|Intel.*(\bHD Graphics|UHD Graphics 60[05])/i.test(name);
+  } catch {
+    return false;
+  }
+};
+
+/** The next preset down, for stepping quality down when a match runs slowly. */
+export const lowerQuality = (q: Quality): Exclude<Quality, 'custom'> | null =>
+  q === 'ultra' ? 'high' : q === 'high' ? 'medium' : q === 'medium' || q === 'custom' ? 'low' : null;
 
 /** True on phones and tablets (a coarse pointer and no hover). */
 export const isTouchDevice = (): boolean => {

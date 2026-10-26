@@ -50,6 +50,26 @@ export class PhysicsWorld {
       world.addBody(body);
     }
 
+    // The naive broadphase tests every pair of bodies, and big maps have
+    // hundreds of static boxes that can never touch each other. Only pairs
+    // with a moving (ragdoll) body can collide, so test just those.
+    const bp = world.broadphase;
+    bp.collisionPairs = (w: CANNON.World, p1: CANNON.Body[], p2: CANNON.Body[]): void => {
+      p1.length = 0;
+      p2.length = 0;
+      const bodies = w.bodies;
+      for (let i = 0; i < bodies.length; i++) {
+        const bi = bodies[i];
+        if (bi.type === CANNON.Body.STATIC) continue;
+        for (let j = 0; j < bodies.length; j++) {
+          const bj = bodies[j];
+          // Two moving bodies: once per pair (from the lower index).
+          if (j <= i && bj.type !== CANNON.Body.STATIC) continue;
+          if (!bp.needBroadphaseCollision(bi, bj)) continue;
+          bp.intersectionTest(bi, bj, p1, p2);
+        }
+      }
+    };
     const base = world.broadphase.needBroadphaseCollision.bind(world.broadphase);
     world.broadphase.needBroadphaseCollision = (a: CANNON.Body, b: CANNON.Body): boolean => {
       if (!base(a, b)) return false;

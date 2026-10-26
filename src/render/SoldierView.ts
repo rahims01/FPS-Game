@@ -13,6 +13,7 @@ import { ownReactive, setReactive, skinned, type SkinChoice, type SkinId } from 
 import { animateStyle, applyStyle, drawNametag } from './soldierStyle';
 import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
+import { decimate } from './decimate';
 
 const DEG = Math.PI / 180;
 
@@ -62,14 +63,19 @@ const orientProp = (obj: THREE.Object3D, pos: THREE.Vector3, yDir: THREE.Vector3
 const _q = new THREE.Quaternion();
 const _pq = new THREE.Quaternion();
 const _pqi = new THREE.Quaternion();
-/** Applies a WORLD-space rotation to a bone, after the mixer has posed it. */
+/**
+ * Applies a WORLD-space rotation to a bone, after the mixer has posed it.
+ * No matrix refresh here: every read below goes through getWorldPosition /
+ * getWorldQuaternion, which rebuild the ancestor chain on demand, and the
+ * renderer refreshes the whole skeleton once before drawing. (Refreshing the
+ * subtree after each rotation was the single biggest per-soldier cost.)
+ */
 const rotateBoneWorldQ = (bone: THREE.Object3D, q: THREE.Quaternion): void => {
   if (!bone.parent) return;
   bone.parent.getWorldQuaternion(_pq);
   _pqi.copy(_pq).invert();
   // local' = parent^-1 * R * parent * local
   bone.quaternion.premultiply(_pqi.multiply(q).multiply(_pq));
-  bone.updateMatrixWorld(true);
 };
 const rotateBoneWorld = (bone: THREE.Object3D, axis: THREE.Vector3, angle: number): void => {
   if (angle === 0) return;
@@ -121,22 +127,37 @@ const solveArm = (arm: ArmChain, target: THREE.Vector3, pole: THREE.Vector3, wei
 
 const weaponCache = new Map<string, THREE.Object3D>();
 const THIRD_PERSON_SCALE = 1.35;
+
+/** Low-detail geometry (Simplified soldiers), built once per source geometry. */
+const lowGeo = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+const lowDetailOf = (geo: THREE.BufferGeometry, maxTris: number): THREE.BufferGeometry => {
+  let g = lowGeo.get(geo);
+  if (!g) {
+    g = decimate(geo, maxTris);
+    lowGeo.set(geo, g);
+  }
+  return g;
+};
+/** The body is ~50k triangles and a third-person gun ~22k: far more than a weak GPU can skin and draw for a full lobby. */
+const LOW_BODY_TRIS = 6000;
+const LOW_GUN_SHARE = 0.15;
 /**
  * Other players carry slightly oversized, lifted-brightness copies of their
  * weapons: real-scale dark guns all but vanish against the walls at range.
  */
-const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none', charm = 'none'): THREE.Object3D => {
+const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none', charm = 'none', low = false): THREE.Object3D => {
+  const lo = low ? ':lo' : '';
   if (skin !== 'none' || charm !== 'none') {
-    const key = `${id}:${skin}:${charm}`;
+    const key = `${id}:${skin}:${charm}${lo}`;
     let s = weaponCache.get(key);
     if (!s) {
       const c = charmDef(charm);
-      s = skinned(thirdPersonWeapon(assets, id), skin, { shape: c.shape, color: c.color, at: weaponModels(assets.rifle)[id].length * 0.45 });
+      s = skinned(thirdPersonWeapon(assets, id, 'none', 'none', low), skin, { shape: c.shape, color: c.color, at: weaponModels(assets.rifle)[id].length * 0.45 });
       weaponCache.set(key, s);
     }
     return s;
   }
-  let r = weaponCache.get(id);
+  let r = weaponCache.get(id + lo);
   if (!r) {
     r = weaponModels(assets.rifle)[id].object.clone(true);
     r.scale.setScalar(THIRD_PERSON_SCALE);
@@ -146,8 +167,13 @@ const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'n
       const mat = (m.material as THREE.MeshStandardMaterial).clone();
       if (mat.emissive) mat.emissive.setHex(0x303030);
       m.material = mat;
+      if (low) {
+        const g = m.geometry;
+        const tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
+        m.geometry = lowDetailOf(g, Math.max(120, Math.round(tris * LOW_GUN_SHARE)));
+      }
     });
-    weaponCache.set(id, r);
+    weaponCache.set(id + lo, r);
   }
   return r;
 };
@@ -188,6 +214,9 @@ export class SoldierView {
   diedAt = 0;
   /** Big Heads party mode. */
   static headScale = 1;
+  /** Simplified soldiers (weak devices): low-detail body and gun. Read when a soldier is created. */
+  static lowDetail = false;
+  private low = SoldierView.lowDetail;
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
 
@@ -202,6 +231,12 @@ export class SoldierView {
     this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
     this.model.scale.setScalar(STICKMAN_SCALE);
     this.root.add(this.model);
+    if (this.low) {
+      this.model.traverse((o) => {
+        const m = o as THREE.SkinnedMesh;
+        if (m.isSkinnedMesh) m.geometry = lowDetailOf(m.geometry, LOW_BODY_TRIS);
+      });
+    }
     const tint = new THREE.Color(color);
     this.model.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -283,7 +318,7 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm).clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm, this.low).clone(true));
     // Reactive camos change with this soldier's own kills.
     ownReactive(this.rifle);
     this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
@@ -386,6 +421,19 @@ export class SoldierView {
 
   private stuck: THREE.Object3D[] = [];
 
+  /** Animation time skipped by `follow`, caught up on the next full update. */
+  private skipped = 0;
+
+  /**
+   * Simplified soldiers: moves and turns the body without re-posing it (for
+   * soldiers out of view, or far-away ones between their less frequent poses).
+   */
+  follow(agent: Agent, x: number, y: number, z: number, dt: number): void {
+    this.root.position.set(x, y, z);
+    this.root.rotation.y = agent.yaw;
+    this.skipped = Math.min(0.25, this.skipped + dt);
+  }
+
   /** Poses the soldier for this frame. (x, y, z) is the interpolated position. */
   update(agent: Agent, x: number, y: number, z: number, dt: number, time: number): void {
     if (this.ragdoll) {
@@ -393,6 +441,8 @@ export class SoldierView {
       this.placeRifle(agent, false);
       return;
     }
+    if (dt > 0) dt += this.skipped;
+    this.skipped = 0;
     this.root.position.set(x, y, z);
     if (this.root.scale.x !== agent.scale) this.root.scale.setScalar(agent.scale);
     if (!this.frozen && this.style !== 'none') animateStyle(this.materials, this.style, this.styleBase, agent, time, this.styleSeed);
@@ -418,14 +468,12 @@ export class SoldierView {
     a.run.timeScale = THREE.MathUtils.clamp((dir * Math.max(speed, 1)) / this.speeds.run, -2, 2);
     this.mixer.update(dt);
     this.model.position.y = 0;
-    this.root.updateMatrixWorld(true);
     // Crouch: drop the hips and bend the knees so the feet stay planted.
     const wantCrouch = agent.crouching || agent.slideT > 0 ? 1 : 0;
     this.crouchT += (wantCrouch - this.crouchT) * Math.min(1, dt * 12);
     if (this.crouchT > 0.02 && this.legs.length === 2) {
       const feet = this.legs.map((l) => l.hand.getWorldPosition(new THREE.Vector3()));
       this.model.position.y = -0.42 * this.crouchT;
-      this.root.updateMatrixWorld(true);
       const knee = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw));
       this.legs.forEach((l, i) => solveArm(l, feet[i], knee, 1));
     }
@@ -495,7 +543,7 @@ export class SoldierView {
     const thumb = b.RightHandThumb1.getWorldPosition(new THREE.Vector3());
     const finger = mid.clone().sub(hand).normalize();
     const palm = hand.clone().addScaledVector(finger, 0.05);
-    this.root.updateMatrixWorld(true);
+    this.root.updateWorldMatrix(true, false);
     const toLocal = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
     const U = new THREE.Vector3(0, 1, 0);
     if (aiming && !this.ragdoll) {

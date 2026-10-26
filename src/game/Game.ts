@@ -25,7 +25,7 @@ import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Ma
 import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
-import { touchEnabled, type GameSettings } from './settings';
+import { lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
 import type { ClientSession, HostSession } from '../net/Session';
 import type { Snapshot, StartMsg } from '../net/protocol';
 import { applySnapshot, type NetTarget } from '../net/snapshot';
@@ -306,6 +306,18 @@ export class Game {
   private shake = 0;
   private grenadeGroup = new THREE.Group();
   private stride = new Map<number, number>();
+  /** Simplified soldiers: the camera's view volume (from the last drawn frame) and a frame counter to stagger far poses. */
+  private frustum = new THREE.Frustum();
+  private viewProj = new THREE.Matrix4();
+  private frameNo = 0;
+  /** Auto quality: real seconds this match has run slowly, seconds since the last check or change, and frames in the current window. */
+  private slowFor = 0;
+  private qualityWatch = 0;
+  private watchAt = 0;
+  private watchWindow = 0;
+  private watchFrames = 0;
+  /** Called when the game changes the player's settings by itself (auto quality), so they get saved. */
+  onSettings: ((s: GameSettings) => void) | null = null;
   // Progression.
   private medals: HudState['medals'] = [];
   private callouts: HudState['callouts'] = [];
@@ -445,6 +457,7 @@ export class Game {
     this.scene.add(this.camera);
 
     SoldierView.headScale = sim.headScale;
+    SoldierView.lowDetail = settings.graphics.simpleSoldiers;
     this.arenaView = new ArenaView(sim);
     this.scene.add(this.arenaView.group, this.effects.group);
     this.physics = new PhysicsWorld(sim.arena);
@@ -746,6 +759,15 @@ export class Game {
     this.camera.far = Math.max(60, fog.far + 20);
     this.camera.updateProjectionMatrix();
     this.setTouchMode(touchEnabled(s));
+    // Switching soldier detail rebuilds the living soldiers (corpses keep theirs).
+    if (SoldierView.lowDetail !== g.simpleSoldiers) {
+      SoldierView.lowDetail = g.simpleSoldiers;
+      for (const [id, v] of this.views) {
+        if (v.ragdoll) continue;
+        v.dispose();
+        this.views.delete(id);
+      }
+    }
     if (!s.toggleAim) this.aimToggled = false;
     if (!s.toggleCrouch) this.crouchToggled = false;
   }
@@ -1897,11 +1919,72 @@ export class Game {
     }
   }
 
+  private _sphere = new THREE.Sphere();
+  /**
+   * Simplified soldiers: whether this soldier gets a full pose this frame.
+   * Out of view: never (it still moves). Far away: every 2nd or 3rd frame,
+   * staggered so they don't all pose on the same frame.
+   */
+  private needsPose(a: Agent, x: number, y: number, z: number): boolean {
+    if (a.id === this.specShown || this.killcam) return true;
+    this._sphere.center.set(x, y + 1, z);
+    this._sphere.radius = 1.6 * a.scale;
+    if (!this.frustum.intersectsSphere(this._sphere)) return false;
+    const d = this.camera.position.distanceTo(this._sphere.center);
+    const every = d > 45 ? 3 : d > 22 ? 2 : 1;
+    return (this.frameNo + a.id) % every === 0;
+  }
+
+  /**
+   * Auto quality: if a match keeps running below ~40 fps, step the preset down
+   * (High -> Medium -> Low, then a lower resolution) and save it. Only slow
+   * devices ever trigger this; picking a preset yourself turns it off.
+   */
+  private watchFrameRate(dt: number): void {
+    const s = this.settings;
+    // Real time, not game time: game time is capped per frame, so on a very slow device it would barely move.
+    const now = performance.now();
+    const real = Math.min(1, (now - this.watchAt) / 1000);
+    this.watchAt = now;
+    if (!s.autoQuality || this.paused || dt <= 0 || this.killcam || this.match.phase === 'over') return;
+    this.qualityWatch += real;
+    // Let loading hitches settle first.
+    if (this.qualityWatch < 4) return;
+    // Frame rate over 2-second windows.
+    this.watchWindow += real;
+    this.watchFrames++;
+    if (this.watchWindow < 2) return;
+    const fps = this.watchFrames / this.watchWindow;
+    const span = this.watchWindow;
+    this.watchWindow = 0;
+    this.watchFrames = 0;
+    const target = s.fpsLimit > 0 ? Math.min(40, s.fpsLimit * 0.8) : 40;
+    if (fps < target) this.slowFor += span;
+    else this.slowFor = Math.max(0, this.slowFor - span);
+    if (this.slowFor < 6) return;
+    this.slowFor = 0;
+    this.qualityWatch = 0;
+    const next = lowerQuality(s.quality);
+    let changed: GameSettings | null = null;
+    if (next) changed = { ...s, quality: next, graphics: { ...QUALITY_PRESETS[next] } };
+    else if (s.graphics.renderScale > 0.45 || !s.graphics.simpleSoldiers) changed = { ...s, graphics: { ...s.graphics, renderScale: 0.45, simpleSoldiers: true } };
+    if (!changed) return;
+    this.applySettings(changed);
+    this.onSettings?.(changed);
+    this.callout(next ? `Graphics lowered to ${next[0].toUpperCase()}${next.slice(1)} to keep the game smooth` : 'Resolution lowered to keep the game smooth');
+  }
+
   private renderFrame(dt: number, alpha: number): void {
+    this.watchFrameRate(dt);
     const sim = this.match.sim;
     const player = this.match.player;
     const time = sim.time;
 
+    const simple = this.settings.graphics.simpleSoldiers;
+    if (simple) {
+      this.frameNo++;
+      this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    }
     for (const a of sim.agents) {
       let v = this.views.get(a.id);
       if (!a.alive && (!v || v.life !== a.life || !v.ragdoll)) continue;
@@ -1919,7 +2002,10 @@ export class Game {
       v.setVisible(((a !== player || this.spectator) && a.id !== this.specShown) || !a.alive);
       const frozen = sim.isFrozen(a);
       v.setFrozen(frozen);
-      if (dt > 0 || a !== player) v.update(a, x, y, z, frozen ? 0 : dt, time);
+      if (dt > 0 || a !== player) {
+        if (simple && a.alive && a !== player && !this.needsPose(a, x, y, z)) v.follow(a, x, y, z, frozen ? 0 : dt);
+        else v.update(a, x, y, z, frozen ? 0 : dt, time);
+      }
       if (a !== player) v.showTag(a.alive && this.tagVisible(a), this.camera.position.distanceTo(v.root.position));
       // Footsteps: one per stride, louder when sprinting, silent when crouched.
       if (a.alive && a.onGround && dt > 0) {
