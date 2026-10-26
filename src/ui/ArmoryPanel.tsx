@@ -10,6 +10,7 @@ import { SoldierView } from '../render/SoldierView';
 import { drawNametag } from '../render/soldierStyle';
 import { createAgent, setLoadout } from '../sim/Agent';
 import { LockIcon } from './icons';
+import { meleeDef } from '../assets/melees';
 
 /** A turning 3D view of your soldier: colour, style, gun, camo and charm. */
 const SoldierPreview = ({ assets, settings }: { assets: LoadedAssets | null; settings: GameSettings }) => {
@@ -82,7 +83,7 @@ const SoldierPreview = ({ assets, settings }: { assets: LoadedAssets | null; set
     s.view?.dispose();
     setLoadout(s.agent, [settings.primary, settings.secondary]);
     s.agent.kills = 6;
-    const v = new SoldierView(assets, s.agent, settings.playerColor, settings.skins, settings.cosmetics.charm);
+    const v = new SoldierView(assets, s.agent, settings.playerColor, settings.skins, settings.cosmetics.charm, meleeDef(settings.cosmetics.melee).id);
     v.setStyle(settings.cosmetics.style ?? 'none', settings.playerColor);
     s.scene.add(v.root);
     s.view = v;
@@ -115,7 +116,20 @@ interface Item {
 type Tab = 'colour' | 'style' | 'nametag' | 'tracer' | 'flash';
 
 /** Colours, soldier styles, name tags, tracers and muzzle flashes, with a 3D preview. */
-export const ArmoryPanel = ({ settings, onChange, profile, assets }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile; assets: LoadedAssets | null }) => {
+export const ArmoryPanel = ({
+  settings,
+  onChange,
+  profile,
+  assets,
+  onOpenLoadout
+}: {
+  settings: GameSettings;
+  onChange: (s: GameSettings) => void;
+  profile: Profile;
+  assets: LoadedAssets | null;
+  /** Gun camos and charms live in Loadout; Armory points there. */
+  onOpenLoadout?: () => void;
+}) => {
   const [tab, setTab] = useState<Tab>('colour');
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
@@ -150,6 +164,14 @@ export const ArmoryPanel = ({ settings, onChange, profile, assets }: { settings:
         <NametagPreview name={settings.playerName || 'You'} color={cssColor(settings.playerColor)} style={cos.nametag} />
       </div>
       <div className="armory-picks">
+        {onOpenLoadout && (
+          <p className="armory-elsewhere">
+            Looking for gun camos or charms? They're in Loadout, next to each gun.
+            <button className="chip" onClick={onOpenLoadout}>
+              Open Loadout
+            </button>
+          </p>
+        )}
         <div className="set-tabs">
           {(
             [

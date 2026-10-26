@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { weaponModels } from '../assets/weaponModels';
+import { meleeModel, type MeleeId } from '../assets/melees';
 import { setReactive, skinned, tickSkins, type SkinId } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
 import type { WeaponId } from '../sim/weapons';
 
 /** A slowly turning 3D view of a gun wearing a camo (and charm), for the loadout screen. */
-export const GunPreview = ({ assets, weapon, skin, charm }: { assets: LoadedAssets | null; weapon: WeaponId; skin: SkinId; charm: string }) => {
+export const GunPreview = ({ assets, weapon, skin, charm, melee = 'knife' }: { assets: LoadedAssets | null; weapon: WeaponId; skin: SkinId; charm: string; melee?: MeleeId }) => {
   const host = useRef<HTMLDivElement>(null);
   const state = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; holder: THREE.Group; raf: number } | null>(null);
 
@@ -64,7 +65,7 @@ export const GunPreview = ({ assets, weapon, skin, charm }: { assets: LoadedAsse
     const s = state.current;
     if (!s || !assets) return;
     s.holder.clear();
-    const m = weaponModels(assets.rifle)[weapon];
+    const m = weapon === 'knife' ? meleeModel(melee) : weaponModels(assets.rifle)[weapon];
     const c = charmDef(charm);
     const gun = skinned(m.object, skin, weapon === 'knife' ? undefined : { shape: c.shape, color: c.color, at: m.length * 0.45 });
     // Prop space (+Y barrel, +Z up) to a side view: barrel pointing right.
@@ -76,7 +77,7 @@ export const GunPreview = ({ assets, weapon, skin, charm }: { assets: LoadedAsse
     const center = new THREE.Box3().setFromObject(gun).getCenter(new THREE.Vector3());
     gun.position.sub(center);
     s.holder.add(gun);
-  }, [assets, weapon, skin, charm]);
+  }, [assets, weapon, skin, charm, melee]);
 
   return <div className="gun-preview" ref={host} />;
 };

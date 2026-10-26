@@ -7,15 +7,17 @@ import { SoldierView } from '../render/SoldierView';
 import { Viewmodel } from '../render/Viewmodel';
 import { eyeHeight, weaponOf, type Agent, type DeathCause } from '../sim/Agent';
 import { weaponModels } from '../assets/weaponModels';
-import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, PRIMARIES, type WeaponId } from '../sim/weapons';
+import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, PRIMARIES, SECONDARIES, type WeaponId } from '../sim/weapons';
 import { setLoadout } from '../sim/Agent';
 import { MEDALS, levelOf, loadProfile, saveProfile, type Medal } from './progression';
 import { SKINS } from '../assets/skins';
 import { streakDef } from '../sim/killstreaks';
-import { hasPerk, type ThrowableId } from '../sim/gear';
+import { hasPerk, THROWABLES, type ThrowableId } from '../sim/gear';
 import { isBrMode } from '../sim/Match';
 import { thrownModel } from '../render/thrown';
 import { setMetalNight } from '../render/realMetal';
+import { meleeDef } from '../assets/melees';
+import { Hints, type HintId } from './hints';
 import { Gamepads, type PadFrame } from './gamepad';
 import { BADGES, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
 import { tickSkins } from '../assets/skins';
@@ -26,7 +28,7 @@ import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Ma
 import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
-import { lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
+import { keyLabel, lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
 import type { ClientSession, HostSession } from '../net/Session';
 import type { Snapshot, StartMsg } from '../net/protocol';
 import { applySnapshot, type NetTarget } from '../net/snapshot';
@@ -187,6 +189,8 @@ export interface HudState {
   party: boolean;
   /** Public matchmaking with strangers (no chat). */
   publicMatch: boolean;
+  /** A first-match control hint: the keys or buttons, and what they do. */
+  hint: { keys: string[]; text: string } | null;
 }
 
 /** One recorded agent state for the killcam. */
@@ -329,6 +333,9 @@ export class Game {
   private watchAt = 0;
   private watchWindow = 0;
   private watchFrames = 0;
+  /** First-match control hints, and when the player last came alive (for their timing). */
+  private hints: Hints;
+  private aliveSince = -1;
   /** Called when the game changes the player's settings by itself (auto quality), so they get saved. */
   onSettings: ((s: GameSettings) => void) | null = null;
   // Progression.
@@ -419,6 +426,7 @@ export class Game {
     readonly net: NetRole | null = null
   ) {
     this.audio = audio;
+    this.hints = new Hints(settings.hints);
     const control = opts.botControl === 'learned' && learned ? 'learned' : 'heuristic';
     const client = net?.role === 'client' ? net : null;
     this.match = new Match({
@@ -571,6 +579,7 @@ export class Game {
 
   /** Touch: pauses (the on-screen pause button). */
   pause(): void {
+    this.hints.learn('pause');
     if (this.touchMode) {
       this.locked = false;
       this.paused = true;
@@ -635,11 +644,19 @@ export class Game {
   private nextPracticeGun(): void {
     const p = this.match.player;
     if (!p.alive) return;
-    const i = PRIMARIES.indexOf(p.weapons[0]);
-    const next = PRIMARIES[(i + 1) % PRIMARIES.length];
-    setLoadout(p, [next, p.weapons[1] ?? 'pistol']);
+    // Cycles whichever slot is in hand: primaries on the main gun, pistols on the sidearm.
+    const slot = p.slot === 1 ? 1 : 0;
+    const pool = slot === 1 ? SECONDARIES : PRIMARIES;
+    const held = p.weapons[slot];
+    const next = pool[(pool.indexOf(held) + 1) % pool.length];
+    const weapons = [p.weapons[0] ?? 'rifle', p.weapons[1] ?? 'pistol'];
+    weapons[slot] = next;
+    setLoadout(p, weapons);
+    p.slot = slot;
+    p.ammo = p.stash[slot];
     p.switchT = 0.45;
-    this.callout(WEAPONS[next].name);
+    const swapKey = keyLabel(slot === 1 ? this.settings.keys.weapon1 : this.settings.keys.weapon2);
+    this.callout(`${WEAPONS[next].name} · ${keyLabel(this.settings.keys.cycle)} next ${slot === 1 ? 'pistol' : 'gun'} · ${swapKey} for your ${slot === 1 ? 'main gun' : 'pistol'}`);
     this.audio.weaponSwitch();
   }
 
@@ -825,6 +842,12 @@ export class Game {
       tactical: this.tacticalQueued,
       switchSlot: this.switchQueued
     };
+    if (inp.switchSlot >= 0) this.hints.learn('swap');
+    if (inp.grenade) this.hints.learn('lethal');
+    if (inp.tactical) this.hints.learn('tactical');
+    if (inp.reload) this.hints.learn('reload');
+    if (inp.melee) this.hints.learn('knife');
+    if (inp.fire && (inp.forward !== 0 || inp.right !== 0)) this.hints.learn('move');
     this.tacticalQueued = false;
     this.jumpQueued = false;
     this.reloadQueued = false;
@@ -1087,7 +1110,7 @@ export class Game {
       v = undefined;
     }
     if (!v) {
-      v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none');
+      v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id);
       const cos = this.cosmetics[a.id];
       v.setStyle(this.styleFor(a), this.colorOf(a.id));
       if (a !== this.match.player || this.spectator) {
@@ -1196,7 +1219,7 @@ export class Game {
           killerColor: killer ? cssColor(this.colorOf(killer.id)) : '#4fb3ff',
           victimColor: cssColor(this.colorOf(victim.id)),
           headshot: e.region === 'head' && e.cause !== 'grenade' && e.cause !== 'airstrike',
-          weapon: causeTag(e.cause),
+          weapon: e.cause === 'knife' && killer ? meleeDef(this.cosmetics[killer.id]?.melee).tag : causeTag(e.cause),
           killerIsPlayer: killer === player,
           victimIsPlayer: victim === player,
           at: sim.time
@@ -1218,7 +1241,7 @@ export class Game {
           this.killedBy = {
             name: killer ? this.nameOf(killer.id) : causeName(e.cause),
             color: killer ? cssColor(this.colorOf(killer.id)) : '#4fb3ff',
-            weapon: causeName(e.cause),
+            weapon: e.cause === 'knife' && killer ? meleeDef(this.cosmetics[killer.id]?.melee).name : causeName(e.cause),
             distance: Math.round(e.distance),
             hp: e.attackerHp,
             headshot: e.region === 'head',
@@ -1698,7 +1721,7 @@ export class Game {
       shown.add(a.id);
       let ghost = kc.ghosts.get(a.id);
       if (!ghost) {
-        ghost = new SoldierView(this.assets, { ...a, life: -1 }, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none');
+        ghost = new SoldierView(this.assets, { ...a, life: -1 }, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id);
         // Dressed and tagged as the killer saw them.
         ghost.setStyle(this.styleFor(a), this.colorOf(a.id));
         const cos = this.cosmetics[a.id];
@@ -1708,7 +1731,7 @@ export class Game {
         kc.ghosts.set(a.id, ghost);
       }
       ghost.setVisible(true);
-      const fake = { ...a, ...s, weapons: [s.weapon], slot: 0, alive: true };
+      const fake = { ...a, ...s, weapons: [s.weapon], slot: 0, alive: true, meleeCd: 0 };
       const ghostDist = Math.hypot(s.x - killer.x, s.z - killer.z);
       // Teammates' tags always show; enemies' only when the killer could see them.
       const tagShown =
@@ -1734,7 +1757,7 @@ export class Game {
     }
     if (killer.weapon !== this.lastWeapon) {
       this.lastWeapon = killer.weapon;
-      this.viewmodel.setWeapon(killer.weapon, this.ids.skins[kc.killer] ?? {}, this.cosmetics[kc.killer]?.charm ?? 'none');
+      this.viewmodel.setWeapon(killer.weapon, this.ids.skins[kc.killer] ?? {}, this.cosmetics[kc.killer]?.charm ?? 'none', meleeDef(this.cosmetics[kc.killer]?.melee).id);
     }
     // The killer's hits: hit markers, the tick and damage numbers, as they saw them.
     for (const h of this.hitLog) {
@@ -2322,7 +2345,7 @@ export class Game {
     if (key !== this.lastSpecWeapon) {
       this.lastSpecWeapon = key;
       this.lastWeapon = null;
-      this.viewmodel.setWeapon(w.id, this.ids.skins[t.id] ?? {}, this.cosmetics[t.id]?.charm ?? 'none');
+      this.viewmodel.setWeapon(w.id, this.ids.skins[t.id] ?? {}, this.cosmetics[t.id]?.charm ?? 'none', meleeDef(this.cosmetics[t.id]?.melee).id);
     }
     this.viewmodel.update(dt, {
       speed: Math.hypot(t.vx, t.vz),
@@ -2415,7 +2438,7 @@ export class Game {
     this.lastSpecWeapon = '';
     if (pw.id !== this.lastWeapon) {
       this.lastWeapon = pw.id;
-      this.viewmodel.setWeapon(pw.id, this.settings.skins, this.settings.cosmetics.charm);
+      this.viewmodel.setWeapon(pw.id, this.settings.skins, this.settings.cosmetics.charm, meleeDef(this.settings.cosmetics.melee).id);
     }
     this.viewmodel.kills = player.kills;
     const myFlash = flashDef(this.settings.cosmetics.flash);
@@ -2488,7 +2511,19 @@ export class Game {
           onHill: p.alive && Math.hypot(p.x - sim.rally.x, p.z - sim.rally.z) < sim.rally.r
         }
       : null;
+    // First-match hints: only while actually playing (no killcam, lineup, pause or spectating).
+    if (p.alive && this.aliveSince < 0) this.aliveSince = sim.time;
+    if (!p.alive) this.aliveSince = -1;
+    if (this.showScores || this.keys.has(this.settings.keys.scores)) this.hints.learn('scores');
+    const hintId = this.hints.update({
+      aliveFor: this.aliveSince < 0 ? 0 : sim.time - this.aliveSince,
+      ammo: w.magazine > 0 ? p.ammo / w.magazine : 1,
+      reloading: p.reloadT > 0,
+      ok: p.alive && !this.spectator && !this.paused && !this.killcam && !this.introPending && performance.now() >= this.introUntil && m.phase !== 'over',
+      time: sim.time
+    });
     const state: HudState = {
+      hint: hintId ? this.hintFor(hintId) : null,
       mode: m.mode,
       modeName: m.def.name,
       hp: Math.max(0, Math.ceil(p.hp)),
@@ -2749,6 +2784,39 @@ export class Game {
       ctx.lineTo(px - fx * 4 + fz * 4, pz - fz * 4 - fx * 4);
       ctx.closePath();
       ctx.fill();
+    }
+  }
+
+  /** A hint's keys and words, for whatever the player is using: keyboard, controller or touch. */
+  private hintFor(id: HintId): { keys: string[]; text: string } {
+    const k = this.settings.keys;
+    const p = this.match.player;
+    const lethal = THROWABLES[p.lethal].name.toLowerCase();
+    const tactical = THROWABLES[p.tactical].name.toLowerCase();
+    const pad = this.padMode;
+    const touch = this.touchMode;
+    const key = (code: string) => keyLabel(code);
+    switch (id) {
+      case 'move':
+        if (touch) return { keys: ['LEFT STICK', 'FIRE'], text: 'Move with the left side, drag the right side to aim, FIRE to shoot' };
+        if (pad) return { keys: ['L-STICK', 'RT'], text: 'Move, aim with the right stick, RT to shoot' };
+        return { keys: [`${key(k.forward)}${key(k.left)}${key(k.back)}${key(k.right)}`, 'MOUSE'], text: 'Move, aim with the mouse, left click to shoot' };
+      case 'swap':
+        if (touch) return { keys: ['SWAP'], text: 'Switch weapons' };
+        if (pad) return { keys: ['Y'], text: 'Switch weapons' };
+        return { keys: [key(k.weapon1), key(k.weapon2), key(k.swap)], text: 'Switch weapons (or the mouse wheel)' };
+      case 'reload':
+        return { keys: [touch ? 'R' : pad ? 'X' : key(k.reload)], text: 'Reload' };
+      case 'lethal':
+        return { keys: [touch ? 'G' : pad ? 'RB' : key(k.grenade)], text: `Throw your ${lethal}` };
+      case 'tactical':
+        return { keys: [touch ? 'H' : pad ? 'LB' : key(k.tactical)], text: `Throw your ${tactical}` };
+      case 'knife':
+        return { keys: [touch ? 'KNIFE' : pad ? 'R3' : key(k.melee)], text: 'Quick knife: one stab up close' };
+      case 'scores':
+        return { keys: [touch ? 'SCORES' : pad ? 'BACK' : key(k.scores)], text: 'Hold for the scoreboard' };
+      case 'pause':
+        return { keys: [touch ? 'PAUSE' : pad ? 'START' : 'Esc'], text: 'Pause, settings and the full controls list' };
     }
   }
 

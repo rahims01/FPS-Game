@@ -8,6 +8,7 @@ import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../s
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
 import { GunPreview } from './GunPreview';
+import { MELEES, meleeDef } from '../assets/melees';
 import { LockIcon } from './icons';
 
 const BLURB: Record<string, string> = {
@@ -62,9 +63,11 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
   const picked = settings.streaks;
   const fw = WEAPONS[focus];
   const melee = fw.slot === 'melee';
+  const meleeOn = meleeDef(settings.cosmetics.melee);
   const st = statsOf(fw);
   const cmp = statsOf(WEAPONS[fw.slot === 'secondary' ? settings.secondary : settings.primary]);
   const mastery = masteryOf(kills(focus));
+  const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<Cosmetics>) => set({ cosmetics: { ...cos, ...patch } });
@@ -137,10 +140,10 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
       {tab === 'weapons' && (
         <>
           <div className="gun-showcase">
-            <GunPreview assets={assets} weapon={focus} skin={(settings.skins[focus] ?? 'none') as SkinId} charm={settings.cosmetics.charm} />
+            <GunPreview assets={assets} weapon={focus} skin={(settings.skins[focus] ?? 'none') as SkinId} charm={settings.cosmetics.charm} melee={meleeOn.id} />
             <div className="gun-stats">
               <h3>
-                {fw.name}
+                {melee ? meleeOn.name : fw.name}
                 <small>
                   {' '}
                   · {melee ? `melee · always carried · ${keyLabel(settings.keys.melee)} to use` : `${fw.slot} · ${fw.magazine} rounds · ${st.rpm} rpm${fw.burst ? ` (${fw.burst}-round burst)` : ''}`}
@@ -162,6 +165,14 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                 {melee ? `One stab kills at up to ${fw.range} m, and you move ${Math.round((fw.move - 1) * 100)}% faster with it out` : `Body-shot kill: ${st.shots} ${st.shots === 1 ? 'hit' : 'hits'} (${st.ttk} ms) · headshot ${fw.damage.head} damage`} · mastery {mastery.name}
                 {mastery.next !== null ? ` (${kills(focus)}/${mastery.next} kills to ${MASTERY[mastery.tier + 1].name})` : ''}
               </p>
+              <div className="showcase-jumps">
+                <button className="chip" onClick={() => jumpTo('camo-picker')}>
+                  Change camo · {SKINS.filter((sk) => kills(focus) >= sk.kills).length}/{SKINS.length} unlocked
+                </button>
+                <button className="chip" onClick={() => jumpTo('charm-picker')}>
+                  Charm
+                </button>
+              </div>
             </div>
           </div>
           <h3>Primary</h3>
@@ -169,9 +180,30 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <h3>Secondary</h3>
           <div className="gun-grid">{SECONDARIES.map((w) => gun(w, 'secondary'))}</div>
           <h3>Melee</h3>
-          <div className="gun-grid">{gun('knife', 'melee')}</div>
-          <h3>
-            Camo · {fw.name} <small>({kills(focus)} kills)</small>
+          <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Knife camos apply to all of them.</p>
+          <div className="streak-grid melee-grid">
+            {MELEES.map((d) => {
+              const ok = unlocked(d.unlock, profile, level);
+              const on = meleeOn.id === d.id;
+              return (
+                <button
+                  key={d.id}
+                  className={`streak-card ${on ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  title={ok ? d.name : unlockText(d.unlock)}
+                  onClick={() => {
+                    setFocus('knife');
+                    setCos({ melee: d.id });
+                  }}
+                >
+                  <b>{d.name}</b>
+                  <small>{ok ? d.blurb : <><LockIcon size={11} /> {unlockText(d.unlock)}</>}</small>
+                </button>
+              );
+            })}
+          </div>
+          <h3 id="camo-picker">
+            Camo · {fw.name} <small>({kills(focus)} kills; click a gun above to see its camos)</small>
           </h3>
           <div className="skin-grid">
             {SKINS.map((s) => {
@@ -194,7 +226,9 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
               );
             })}
           </div>
-          <h3>Charm <small>(hangs off every gun)</small></h3>
+          <h3 id="charm-picker">
+            Charm <small>(hangs off every gun)</small>
+          </h3>
           <div className="skin-grid">
             {CHARMS.map((c) => {
               const ok = unlocked(c.unlock, profile, level);

@@ -23,6 +23,12 @@ export const GearIcon = (p: { size?: number }) => (
   </Svg>
 );
 
+export const PauseIcon = (p: { size?: number; title?: string }) => (
+  <Svg {...p}>
+    <path d="M8 5v14M16 5v14" />
+  </Svg>
+);
+
 export const LockIcon = (p: { size?: number; title?: string }) => (
   <Svg {...p}>
     <rect x="5" y="11" width="14" height="10" />

@@ -73,9 +73,9 @@ export interface ModeDef {
 }
 
 export const MODES: ModeDef[] = [
-  { id: 'training', name: 'Training Range', blurb: 'Target dummies at 10, 25 and 45 m, some strafing. Nobody shoots back. Press B to try the next gun.', players: 1, teams: true, group: 'Practice' },
+  { id: 'training', name: 'Training Range', blurb: 'Target dummies at 10, 25 and 45 m, some strafing. Nobody shoots back. B tries the next gun, or the next pistol while holding your sidearm.', players: 1, teams: true, group: 'Practice' },
   { id: 'aimtrainer', name: 'Aim Trainer', blurb: '60 seconds: targets appear around the range, and each one you drop pops up somewhere else. Beat your best score.', players: 1, teams: true, group: 'Practice' },
-  { id: 'freeroam', name: 'Free Roam', blurb: 'A big random map with nobody hunting you. Explore, practise movement, try guns (B). Bring friends online.', players: 1, teams: true, group: 'Practice' },
+  { id: 'freeroam', name: 'Free Roam', blurb: 'A big random map with nobody hunting you. Explore, practise movement, try guns and pistols (B). Bring friends online.', players: 1, teams: true, group: 'Practice' },
   { id: 'tdm', name: 'Team Deathmatch', blurb: '5v5 with respawns. First team to 40 kills.', players: 10, teams: true, group: 'Team' },
   { id: 'kc', name: 'Kill Confirmed', blurb: "5v5. A kill only counts when someone grabs the dog tags. Grab your team's tags to deny. First to 30.", players: 10, teams: true, group: 'Team' },
   { id: '1v1', name: '1v1 Duel', blurb: 'Just you and one opponent. Rounds, first to 5.', players: 2, teams: true, group: 'Team' },

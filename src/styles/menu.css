@@ -216,24 +216,48 @@
 }
 
 .controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
   margin-top: 8px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 13px;
 }
-.controls kbd {
-  display: inline-block;
-  margin-right: 5px;
-  padding: 1px 6px 0;
+
+/* Every control in the player's own keys (Play tab and pause screen). */
+.controls-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px 24px;
+  margin: 0;
+}
+.controls-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  border-bottom: 1px solid var(--line);
+}
+.controls-list dt {
+  color: var(--dim);
+  font-size: 14px;
+}
+.controls-list dd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+}
+.controls-list kbd {
+  padding: 1px 7px 0;
   background: var(--panel-2);
   border: 1px solid var(--line-2);
   color: var(--fg);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
+}
+.controls-list .set-hint {
+  grid-column: 1 / -1;
+  margin-top: 6px;
 }
 
 /* Right rail. */
@@ -817,5 +841,75 @@
   }
   .lineup h2 span {
     font-size: 32px;
+  }
+}
+
+/* ---------- first-visit tour ---------- */
+/* Never blocks the page: only the caption takes clicks, so players can try the real controls. */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 10, 20, 0.74);
+}
+.tour-spot {
+  position: fixed;
+  box-shadow: 0 0 0 9999px rgba(6, 10, 20, 0.74);
+  outline: 2px solid var(--paper);
+  outline-offset: 0;
+  transition: left 0.3s var(--ease-out), top 0.3s var(--ease-out), width 0.3s var(--ease-out), height 0.3s var(--ease-out);
+}
+.tour-card {
+  position: fixed;
+  padding: 16px 18px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  animation: wipe 0.35s var(--ease-out) backwards;
+}
+.tour-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.tour-step {
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.tour-card h2 {
+  margin: 0;
+  font-size: 26px;
+}
+.tour-card p {
+  margin: 8px 0 14px;
+  color: var(--dim);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.play.tour-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  margin: 0 0 0 auto;
+  padding: 10px 34px 9px 18px;
+  font-size: 20px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot {
+    transition: none;
   }
 }

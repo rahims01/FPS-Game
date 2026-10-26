@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { WeaponModel } from '../assets/weaponModels';
 import { setReactive, skinned, type SkinChoice } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
+import { meleeModel, type MeleeId } from '../assets/melees';
 import type { WeaponId } from '../sim/weapons';
 
 interface Pose {
@@ -46,6 +47,8 @@ export class Viewmodel {
   private adsT = 0;
   private sprintT = 0;
   private swingT = 0;
+  /** Quick knife: the weapon to bring back once the slash is over. */
+  private swingFrom: WeaponId | null = null;
   private current: WeaponId | null = null;
   private pose: Pose = { hip: new THREE.Vector3(), ads: new THREE.Vector3(), tilt: 0 };
   private copies = new Map<string, THREE.Object3D>();
@@ -58,6 +61,8 @@ export class Viewmodel {
   /** Muzzle flash cosmetic: colour and size. */
   flashColor = 0xffffff;
   flashScale = 1;
+  /** Melee weapon drawn in the knife slot. */
+  melee: MeleeId = 'knife';
   /** Kills this match, for reactive camos. */
   kills = 0;
   /** Scoped weapons hide the gun once fully aimed (the HUD draws the scope). */
@@ -85,13 +90,20 @@ export class Viewmodel {
 
   private currentKey = '';
 
-  setWeapon(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm): void {
+  setWeapon(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm, melee: string = this.melee): void {
+    // A real weapon change ends any quick-knife slash.
+    this.swingFrom = null;
+    this.melee = melee as MeleeId;
+    this.show(id, skins, charm);
+  }
+
+  private show(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm): void {
     const skin = skins[id] ?? 'none';
-    const key = `${id}:${skin}:${charm}`;
+    const key = `${id}:${skin}:${charm}:${id === 'knife' ? this.melee : ''}`;
     if (key === this.currentKey) return;
     this.currentKey = key;
     this.current = id;
-    const m = this.models[id];
+    const m = id === 'knife' ? meleeModel(this.melee) : this.models[id];
     for (const c of this.copies.values()) c.visible = false;
     let copy = this.copies.get(key);
     if (!copy) {
@@ -101,6 +113,8 @@ export class Viewmodel {
         const mesh = o as THREE.Mesh;
         if (mesh.isMesh) mesh.castShadow = false;
       });
+      // Long melees (bat, katana) are shrunk in first person so they don't fill the screen.
+      if (id === 'knife') copy.scale.setScalar(Math.min(1, 0.3 / m.length));
       this.holder.add(copy);
       this.copies.set(key, copy);
     }
@@ -126,7 +140,12 @@ export class Viewmodel {
     this.flash.material.color.setHex(this.flashColor);
   }
 
+  /** Quick melee: the knife comes out for the slash, then the gun comes back (see update). */
   swing(): void {
+    if (this.current && this.current !== 'knife' && !this.swingFrom) {
+      this.swingFrom = this.current;
+      this.show('knife');
+    }
     this.swingT = 1;
   }
 
@@ -162,6 +181,11 @@ export class Viewmodel {
     this.kick = Math.max(0, this.kick - dt * 14);
     this.kickRot = Math.max(0, this.kickRot - dt * 9);
     this.swingT = Math.max(0, this.swingT - dt * 3.5);
+    if (this.swingT === 0 && this.swingFrom) {
+      const back = this.swingFrom;
+      this.swingFrom = null;
+      this.show(back);
+    }
     this.swayX += (THREE.MathUtils.clamp(-s.lookDX * 0.0006, -0.04, 0.04) - this.swayX) * Math.min(1, dt * 10);
     this.swayY += (THREE.MathUtils.clamp(s.lookDY * 0.0006, -0.04, 0.04) - this.swayY) * Math.min(1, dt * 10);
     if (s.onGround) this.bobT += dt * (s.sprinting ? 13 : 9) * Math.min(1, s.speed / 3);

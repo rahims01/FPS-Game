@@ -484,6 +484,43 @@
     opacity: 0;
   }
 }
+/* First-match control hint: a lower third centred above the vitals. */
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px calc(18px + 12px) 7px 10px;
+  background: var(--hud);
+  color: var(--fg);
+  font-size: 15px;
+  text-shadow: none;
+  --shape: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  clip-path: var(--shape);
+  animation: wipe 0.4s var(--ease-out) backwards;
+}
+.hint-keys {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.hint kbd {
+  padding: 2px 8px 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.hud.touch .hint {
+  top: 34%;
+  bottom: auto;
+}
+
 .warning,
 .protected {
   position: absolute;

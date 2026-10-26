@@ -185,6 +185,16 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           </div>
         ))}
       </div>
+      {hud.hint && (
+        <div className="hint" key={hud.hint.text} role="status">
+          <span className="hint-keys">
+            {hud.hint.keys.map((k) => (
+              <kbd key={k}>{k}</kbd>
+            ))}
+          </span>
+          <span>{hud.hint.text}</span>
+        </div>
+      )}
       {hud.protected && hud.alive && <div className="protected">Spawn protection</div>}
       {hud.outsideZone && <div className="warning">Outside the zone — get back in!</div>}
       {hud.blind !== null && (

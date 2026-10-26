@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import type { Game } from '../game/Game';
+import { PauseIcon } from './icons';
 
 const STICK_R = 56;
 
@@ -102,8 +103,8 @@ export const TouchControls = ({ game, onPause, onScores }: { game: Game; onPause
         </div>
       )}
       <div className="tc-top">
-        <button className="tc-small" onPointerDown={onPause}>
-          ❚❚
+        <button className="tc-small" onPointerDown={onPause} aria-label="Pause">
+          <PauseIcon size={18} />
         </button>
         <button className="tc-small" onPointerDown={() => onScores(true)} onPointerUp={() => onScores(false)} onPointerLeave={() => onScores(false)}>
           Scores

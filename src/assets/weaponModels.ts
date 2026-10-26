@@ -18,11 +18,11 @@ export interface WeaponModel {
   sightY: number;
 }
 
-const metal = new THREE.MeshStandardMaterial({ color: 0x2b2d30, metalness: 0.75, roughness: 0.38 });
-const polymer = new THREE.MeshStandardMaterial({ color: 0x1d1f21, metalness: 0.1, roughness: 0.7 });
-const wood = new THREE.MeshStandardMaterial({ color: 0x6e4a2b, metalness: 0, roughness: 0.75 });
+export const metal = new THREE.MeshStandardMaterial({ color: 0x2b2d30, metalness: 0.75, roughness: 0.38 });
+export const polymer = new THREE.MeshStandardMaterial({ color: 0x1d1f21, metalness: 0.1, roughness: 0.7 });
+export const wood = new THREE.MeshStandardMaterial({ color: 0x6e4a2b, metalness: 0, roughness: 0.75 });
 const tan = new THREE.MeshStandardMaterial({ color: 0x8a7a5a, metalness: 0.1, roughness: 0.75 });
-const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25 });
+export const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25 });
 const glass = new THREE.MeshStandardMaterial({ color: 0x223344, metalness: 0.2, roughness: 0.05, emissive: 0x0a1a2a });
 /** Small parts that keep their look under a weapon skin (sights, blades, lenses). */
 steel.userData.keep = true;
@@ -66,7 +66,7 @@ const openSight = (g: THREE.Group, kind: 'dot' | 'rings', y0: number, y1: number
 };
 
 /** Box sized (x width, y length, z height) centred at (0, y, z). */
-const box = (g: THREE.Group, w: number, l: number, h: number, y: number, z: number, mat: THREE.Material, rx = 0): THREE.Mesh => {
+export const box = (g: THREE.Group, w: number, l: number, h: number, y: number, z: number, mat: THREE.Material, rx = 0): THREE.Mesh => {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, l, h), mat);
   m.position.set(0, y, z);
   m.rotation.x = rx;
@@ -76,7 +76,7 @@ const box = (g: THREE.Group, w: number, l: number, h: number, y: number, z: numb
 };
 
 /** Cylinder along +Y from y0 to y1 at height z. */
-const tube = (g: THREE.Group, r: number, y0: number, y1: number, z: number, mat: THREE.Material): THREE.Mesh => {
+export const tube = (g: THREE.Group, r: number, y0: number, y1: number, z: number, mat: THREE.Material): THREE.Mesh => {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, y1 - y0, 12), mat);
   m.position.set(0, (y0 + y1) / 2, z);
   m.castShadow = true;

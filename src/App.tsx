@@ -24,8 +24,11 @@ import { playersOnline, startPresence } from './net/presence';
 import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
+import { ControlsList } from './ui/ControlsList';
 import { ArrowIcon, GearIcon, TrophyIcon } from './ui/icons';
-import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
+import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
+import { resetHints } from './game/hints';
+import { loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 import { PadMenus } from './game/gamepad';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' } | { kind: 'tourney' };
@@ -81,6 +84,15 @@ const NO_NIGHT: ModeId[] = ['1v1', '2v2', '3v3', 'gunfight', 'training', 'aimtra
 
 let chatId = 0;
 
+/** The first-visit menu tour: the five things new players couldn't find on their own. */
+const TOUR: TourStep[] = [
+  { target: '.mode-block', title: 'Pick a mode', body: 'Each bar is a game mode. Click one to pick it; your pick turns yellow.' },
+  { target: '.play.go', title: 'Find a match', body: 'Drops you into a full lobby in a few seconds.' },
+  { target: '.loadout-strip', title: 'Guns and gear', body: 'Your guns, camos, charm, grenades, perks and killstreaks. Click here or the Loadout tab to change them.' },
+  { target: '.bug-tabs .menu-tab:nth-child(3)', title: 'Your look', body: 'Colour, style, name tag, tracers and muzzle flash for your soldier.' },
+  { target: '.bug-tabs .menu-tab:nth-child(5)', title: 'Controls', body: 'Keys, mouse sensitivity, controller and graphics. In a match, press Esc for the full controls list.' }
+];
+
 /** The tag on a mode's bar: team size, player count or how it is played. */
 const modeTag = (m: ModeDef): string => {
   if (m.humansOnly) return 'FRIENDS';
@@ -104,6 +116,7 @@ export const App = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [settings, setSettings] = useState<GameSettings>(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
   // Ranked.
@@ -155,6 +168,15 @@ export const App = () => {
     root.classList.toggle('hc', settings.access.highContrast);
     root.classList.toggle('reduce-motion', settings.access.reduceMotion);
   }, [settings]);
+
+  // First visit: the menu tour, once the menu (and its targets) are on screen.
+  useEffect(() => {
+    if (screen.kind !== 'menu' || !assets || showTour || tourDone()) return;
+    setTab('play');
+    const t = window.setTimeout(() => setShowTour(true), 700);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen.kind, assets]);
 
   // Controller navigation in menus (in a match the game reads the controller itself).
   useEffect(() => {
@@ -619,52 +641,10 @@ export const App = () => {
                       </div>
                     </section>
                   ))}
-                  <div className="controls" aria-label="Controls">
-                    <span>
-                      <kbd>
-                        {keyLabel(settings.keys.forward)}
-                        {keyLabel(settings.keys.left)}
-                        {keyLabel(settings.keys.back)}
-                        {keyLabel(settings.keys.right)}
-                      </kbd>
-                      move
-                    </span>
-                    <span>
-                      <kbd>LMB</kbd> fire <kbd>RMB</kbd> aim
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.sprint)}</kbd> sprint
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.jump)}</kbd> jump
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.crouch)}</kbd> crouch / slide
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.reload)}</kbd> reload
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.melee)}</kbd> knife
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.grenade)}</kbd> lethal <kbd>{keyLabel(settings.keys.tactical)}</kbd> tactical
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.weapon1)}</kbd>
-                      <kbd>{keyLabel(settings.keys.weapon2)}</kbd>
-                      <kbd>{keyLabel(settings.keys.swap)}</kbd> switch
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.scores)}</kbd> scores
-                    </span>
-                    <span>
-                      <kbd>{keyLabel(settings.keys.chat)}</kbd> chat
-                    </span>
-                    <span>
-                      <kbd>Esc</kbd> pause · controllers work too
-                    </span>
-                  </div>
+                  <section className="controls" aria-label="Controls">
+                    <h2 className="mode-group">Controls</h2>
+                    <ControlsList settings={settings} />
+                  </section>
                 </div>
 
                 <aside className="desk-rail">
@@ -782,7 +762,7 @@ export const App = () => {
             ) : (
               <div className="desk single" key={tab}>
                 {tab === 'loadout' && <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
-                {tab === 'armory' && <ArmoryPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
+                {tab === 'armory' && <ArmoryPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} onOpenLoadout={() => setTab('loadout')} />}
                 {tab === 'profile' && (
                   <ProfilePanel
                     settings={settings}
@@ -793,12 +773,24 @@ export const App = () => {
                     }}
                   />
                 )}
-                {tab === 'settings' && <SettingsPanel settings={settings} onChange={setSettings} />}
+                {tab === 'settings' && (
+                  <SettingsPanel
+                    settings={settings}
+                    onChange={setSettings}
+                    onReplayTour={() => {
+                      resetHints();
+                      setTourDone(false);
+                      setTab('play');
+                      setShowTour(true);
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>
         </div>
       )}
+      {showTour && screen.kind === 'menu' && tab === 'play' && <Tour steps={TOUR} onClose={() => setShowTour(false)} />}
       {(screen.kind === 'host-lobby' || screen.kind === 'join-lobby') && lobby && (
         <div className="menu">
           <div className="menu-card lobby-card">
@@ -957,18 +949,24 @@ export const App = () => {
           )}
           {hud.paused && hud.phase !== 'over' && !showSettings && (
             <div className="overlay">
-              <div className="menu-card small pause-card">
-                <h2>Paused</h2>
-                <button className="play" onClick={resume}>
-                  RESUME
-                </button>
-                <button className="pause-btn" onClick={() => setShowSettings(true)}>
-                  <GearIcon /> Settings
-                </button>
-                <button className="pause-btn" onClick={toMenu}>
-                  {ranked && !hud.online ? 'Leave match (counts as a loss)' : 'Leave match'}
-                </button>
-                {hud.online && <p className="set-hint">Online matches keep running while you're paused.</p>}
+              <div className="menu-card pause-card">
+                <div className="pause-actions">
+                  <h2>Paused</h2>
+                  <button className="play" onClick={resume}>
+                    RESUME
+                  </button>
+                  <button className="pause-btn" onClick={() => setShowSettings(true)}>
+                    <GearIcon /> Settings
+                  </button>
+                  <button className="pause-btn" onClick={toMenu}>
+                    {ranked && !hud.online ? 'Leave match (counts as a loss)' : 'Leave match'}
+                  </button>
+                  {hud.online && <p className="set-hint">Online matches keep running while you're paused.</p>}
+                </div>
+                <section className="pause-controls" aria-label="Controls">
+                  <h3>Controls</h3>
+                  <ControlsList settings={settings} touch={hud.touch} />
+                </section>
               </div>
             </div>
           )}

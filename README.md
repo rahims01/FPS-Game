@@ -21,9 +21,9 @@ npm run build      # type-check + production build
 
 | Group | Mode | Rules |
 | --- | --- | --- |
-| Practice | Training Range | A 70 m range with target dummies at 10, 25 and 45 m (the middle lanes strafe), a bench to shoot from and crates to practise peeks. Nobody shoots back; B swaps to the next gun. |
+| Practice | Training Range | A 70 m range with target dummies at 10, 25 and 45 m (the middle lanes strafe), a bench to shoot from and crates to practise peeks. Nobody shoots back; B swaps to the next gun, or the next pistol while you hold your sidearm. |
 | Practice | Aim Trainer | 60 seconds: three targets around the range, and each one you drop reappears somewhere else. Your best score is saved. |
-| Practice | Free Roam | A big random map with nobody hunting you. Explore, practise movement, try guns (B). Friends can join online. |
+| Practice | Free Roam | A big random map with nobody hunting you. Explore, practise movement, try guns and pistols (B cycles whichever you hold). Friends can join online. |
 | Team | Team Deathmatch | 5v5 with respawns on a random map. First team to 40 kills. |
 | Team | Kill Confirmed | 5v5. A kill only counts when someone grabs the dropped dog tag. Grabbing your own team's tag denies it. First to 30. |
 | Team | 1v1 Duel / 2v2 / 3v3 Gunfight | No respawns within a round. First to 5 rounds. Sides swap every round. |
@@ -67,6 +67,7 @@ npm run build      # type-check + production build
   - **animated** camos that move on their own (Plasma, Digital Rain, Aurora Shift, Magma, Neon Pulse);
   - **reactive** camos that change with your kills this match (Bloodline turns red, Ember heats up, Frostbite ices over);
   - **mastery rewards:** Damascus at Gold mastery (200 kills) and an animated Dark Matter at Diamond (500).
+- **Melees:** carry the Combat Knife, Karambit, Machete, Baseball Bat, Fire Axe, Entrenching Tool, Katana or Sledgehammer (unlocked by level), or the Kunai (Knife Master badge). They're looks only: every one fights exactly like the knife, and knife camos apply to all of them. The kill feed names the one you used.
 - **Weapon charms** hang off your gun. Everyone sees your camos and charms.
 - **Throwables:** pick a lethal (frag, molotov, throwing knife, spear) and a tactical (flashbang, smoke). Knives and spears stick in whoever they hit, even through the ragdoll. Molotovs leave fire on the ground; smoke blocks sight; flashbangs white out anyone looking at them.
 - **Perks:** pick 3 of 11: Ghost, Quick Hands, Marathon, Ninja, Lightweight, Scavenger, Hardline, Cold-Blooded, Flak Jacket, Steady Aim, Tactical Mask.
@@ -186,6 +187,7 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
   - **simplified soldiers** (on with Low): low-detail soldier bodies and guns (about 3,700 and 2,900 triangles instead of 50,000 and 22,000), and no animation for soldiers out of view. This is the big one for 5v5 and bigger lobbies on weak devices.
 - **Adjust automatically** (on by default): if a match keeps running under about 40 fps, the game steps down by itself (High, then Medium, then Low, then a lower resolution), says so on screen and saves it. Fast devices never trigger it. Picking a preset yourself turns it off.
 - **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
+- **Help for new players:** the first visit runs a short tour of the menu (modes, Find Match, loadout, Armory, Settings), which can be replayed from Settings. In matches, **control hints** show the next thing worth knowing in your own keys (move, swap, scoreboard, grenades, knife, reload when low, pause) and stop once you've used each one; turn them off in Settings. Every control is listed on the pause screen and under the Play tab's modes.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
 - **HUD:** optional FPS counter and online ping, damage numbers and hit marker sound.
 - **Controllers:** Xbox, PlayStation and other standard gamepads, with aim assist, adjustable sensitivity and deadzone, and D-pad navigation in the menus.

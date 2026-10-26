@@ -7,13 +7,14 @@ import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { Agent } from '../sim/Agent';
 import { SOLDIER } from '../sim/config';
 import { wrapAngle } from '../sim/math';
-import type { WeaponId } from '../sim/weapons';
+import { WEAPONS, type WeaponId } from '../sim/weapons';
 import { weaponModels } from '../assets/weaponModels';
 import { ownReactive, setReactive, skinned, type SkinChoice, type SkinId } from '../assets/skins';
 import { animateStyle, applyStyle, drawNametag } from './soldierStyle';
 import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
 import { decimate } from './decimate';
+import { meleeModel, type MeleeId } from '../assets/melees';
 import { realMetalMaterial } from './realMetal';
 
 const DEG = Math.PI / 180;
@@ -146,21 +147,24 @@ const LOW_GUN_SHARE = 0.15;
  * Other players carry slightly oversized, lifted-brightness copies of their
  * weapons: real-scale dark guns all but vanish against the walls at range.
  */
-const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none', charm = 'none', low = false): THREE.Object3D => {
+const modelOf = (assets: LoadedAssets, id: WeaponId, melee: MeleeId) => (id === 'knife' ? meleeModel(melee) : weaponModels(assets.rifle)[id]);
+
+const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'none', charm = 'none', low = false, melee: MeleeId = 'knife'): THREE.Object3D => {
   const lo = low ? ':lo' : '';
+  const m = id === 'knife' ? `:${melee}` : '';
   if (skin !== 'none' || charm !== 'none') {
-    const key = `${id}:${skin}:${charm}${lo}`;
+    const key = `${id}:${skin}:${charm}${lo}${m}`;
     let s = weaponCache.get(key);
     if (!s) {
       const c = charmDef(charm);
-      s = skinned(thirdPersonWeapon(assets, id, 'none', 'none', low), skin, { shape: c.shape, color: c.color, at: weaponModels(assets.rifle)[id].length * 0.45 });
+      s = skinned(thirdPersonWeapon(assets, id, 'none', 'none', low, melee), skin, id === 'knife' ? undefined : { shape: c.shape, color: c.color, at: modelOf(assets, id, melee).length * 0.45 });
       weaponCache.set(key, s);
     }
     return s;
   }
-  let r = weaponCache.get(id + lo);
+  let r = weaponCache.get(id + lo + m);
   if (!r) {
-    r = weaponModels(assets.rifle)[id].object.clone(true);
+    r = modelOf(assets, id, melee).object.clone(true);
     r.scale.setScalar(THIRD_PERSON_SCALE);
     r.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -174,7 +178,7 @@ const thirdPersonWeapon = (assets: LoadedAssets, id: WeaponId, skin: SkinId = 'n
         m.geometry = lowDetailOf(g, Math.max(120, Math.round(tris * LOW_GUN_SHARE)));
       }
     });
-    weaponCache.set(id + lo, r);
+    weaponCache.set(id + lo + m, r);
   }
   return r;
 };
@@ -229,7 +233,8 @@ export class SoldierView {
     agent: Agent,
     color: THREE.ColorRepresentation,
     private skins: SkinChoice = {},
-    private charm = 'none'
+    private charm = 'none',
+    private melee: MeleeId = 'knife'
   ) {
     this.life = agent.life;
     this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
@@ -323,10 +328,10 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm, this.low).clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm, this.low, this.melee).clone(true));
     // Reactive camos change with this soldier's own kills.
     ownReactive(this.rifle);
-    this.muzzleLength = weaponModels(this.assets.rifle)[id].length * THIRD_PERSON_SCALE;
+    this.muzzleLength = modelOf(this.assets, id, this.melee).length * THIRD_PERSON_SCALE;
   }
 
   setVisible(v: boolean): void {
@@ -501,8 +506,11 @@ export class SoldierView {
     }
 
     // Rifle stance weight: off while sprinting (the run clip swings the arms).
-    this.setWeapon(agent.weapons[agent.slot] ?? 'rifle');
-    const wantUpper = agent.sprinting || agent.weapons[agent.slot] === 'knife' ? 0 : 1;
+    // A quick melee shows the knife for the slash, then the gun again.
+    const quickKnife = agent.meleeCd > WEAPONS.knife.interval - 0.35 && agent.weapons[agent.slot] !== 'knife';
+    const held = quickKnife ? 'knife' : (agent.weapons[agent.slot] ?? 'rifle');
+    this.setWeapon(held);
+    const wantUpper = agent.sprinting || held === 'knife' ? 0 : 1;
     this.upperWeight += (wantUpper - this.upperWeight) * Math.min(1, dt * 8);
     const u = this.upperWeight;
 

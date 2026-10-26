@@ -48,7 +48,7 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
 }
 
 /** Tabbed settings: gameplay, graphics (quality presets for slower computers), key bindings, crosshair and audio. */
-export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; onChange: (s: GameSettings) => void }) => {
+export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: GameSettings; onChange: (s: GameSettings) => void; onReplayTour?: () => void }) => {
   const [tab, setTab] = useState<Tab>('gameplay');
   const [binding, setBinding] = useState<KeyAction | null>(null);
   const set = (patch: Partial<GameSettings>) => onChange({ ...settings, ...patch });
@@ -98,6 +98,18 @@ export const SettingsPanel = ({ settings, onChange }: { settings: GameSettings; 
             <Toggle label="Show ping (online)" value={settings.showPing} onChange={(v) => set({ showPing: v })} />
             <Toggle label="Damage numbers" hint="Floating numbers on everyone you hit" value={settings.damageNumbers} onChange={(v) => set({ damageNumbers: v })} />
             <Toggle label="Hit marker sound" value={settings.hitSounds} onChange={(v) => set({ hitSounds: v })} />
+            <Toggle label="Control hints" hint="Short tips in your first matches (switching weapons, grenades, scoreboard...). Each one stops once you've used it." value={settings.hints} onChange={(v) => set({ hints: v })} />
+            {onReplayTour && (
+              <div className="set-row toggle">
+                <span>
+                  New here?
+                  <small>Shows the menu tour again and brings back the control hints.</small>
+                </span>
+                <button className="chip" onClick={onReplayTour}>
+                  Show the tour
+                </button>
+              </div>
+            )}
             <Choice
               label="Touch controls"
               value={settings.touchControls}

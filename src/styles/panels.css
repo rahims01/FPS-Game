@@ -134,11 +134,30 @@
 
 /* ---------- pause ---------- */
 .pause-card {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 28px;
+  width: min(880px, 100%);
+  text-align: left;
+}
+.pause-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(380px, 100%);
-  text-align: left !important;
+}
+.pause-controls h3 {
+  margin: 4px 0 12px;
+  font-size: 19px;
+  letter-spacing: 0.05em;
+}
+.pause-controls .controls-list {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+@media (max-width: 720px) {
+  .pause-card {
+    grid-template-columns: 1fr;
+  }
 }
 .pause-card h2 {
   margin-bottom: 10px;
@@ -266,6 +285,21 @@
 .streak-card.on small {
   color: var(--paper-ink);
 }
+.streak-card.locked {
+  color: var(--mute);
+  cursor: not-allowed;
+}
+.streak-card.locked:hover {
+  background: var(--panel);
+}
+.streak-card.locked b {
+  text-decoration: line-through 2px;
+}
+.streak-card.locked small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .gun-swatch {
   display: block;
   height: 6px;
@@ -339,6 +373,28 @@
 }
 .gun-showcase > * {
   min-width: 0;
+}
+.showcase-jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+#camo-picker,
+#charm-picker {
+  scroll-margin-top: 96px;
+}
+.armory-elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 14px;
 }
 @media (max-width: 640px) {
   .gun-showcase {

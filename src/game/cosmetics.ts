@@ -4,6 +4,8 @@
  * off your gun), plus the badges that unlock them and per-gun mastery.
  */
 
+import { MELEES } from '../assets/melees';
+
 export interface Cosmetics {
   card: string;
   emblem: string;
@@ -17,9 +19,11 @@ export interface Cosmetics {
   style?: string;
   /** Shown next to your level (0 = never prestiged). */
   prestige?: number;
+  /** Melee weapon in the knife slot (looks only; see assets/melees). */
+  melee?: string;
 }
 
-export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none' };
+export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none', melee: 'knife' };
 
 /**
  * What a cosmetic needs: free, a player level, a badge, a prestige, a
@@ -313,6 +317,7 @@ export const randomCosmetics = (level: number, rand: () => number = Math.random,
     tracer: pick(TRACERS, 0.6),
     flash: pick(FLASHES, 0.7),
     style: pick(STYLES, 0.6),
+    melee: pick(MELEES, 0.45),
     prestige
   };
 };

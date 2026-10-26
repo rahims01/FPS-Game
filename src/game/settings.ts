@@ -134,6 +134,8 @@ export interface GameSettings {
   damageNumbers: boolean;
   /** The hit marker "tick" sound. */
   hitSounds: boolean;
+  /** First-match control hints in the HUD. */
+  hints: boolean;
   /** On-screen touch controls: automatic on touch screens, or forced on / off. */
   touchControls: 'auto' | 'on' | 'off';
   lethal: ThrowableId;
@@ -174,6 +176,7 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   streaks: DEFAULT_STREAKS.slice(),
   damageNumbers: true,
   hitSounds: true,
+  hints: true,
   touchControls: 'auto',
   lethal: 'frag',
   tactical: 'flash',
