@@ -83,6 +83,42 @@
         ],
         "createdAt": "2026-10-26T13:05:25.616Z",
         "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/assigned.html"
+        ],
+        "createdAt": "2026-10-26T20:44:26.801Z",
+        "reason": "Claude decided: frozen decision-round sketch of an unchosen direction; uses that direction's fonts by design, not shipping UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-stream.html"
+        ],
+        "createdAt": "2026-10-26T20:44:28.885Z",
+        "reason": "Claude decided: frozen decision-round sketch of an unchosen direction; uses that direction's fonts by design, not shipping UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-gate.html"
+        ],
+        "createdAt": "2026-10-26T20:44:30.971Z",
+        "reason": "Claude decided: frozen decision-round sketch of an unchosen direction; uses that direction's fonts by design, not shipping UI"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-10-26T20:44:33.260Z",
+        "reason": "Claude decided: frozen decision-round sketch of an unchosen direction; uses that direction's fonts by design, not shipping UI"
       }
     ]
   }
