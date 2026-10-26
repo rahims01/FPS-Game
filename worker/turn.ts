@@ -1,29 +1,25 @@
 /**
- * Cloudflare Pages Function: GET /api/turn
+ * GET /api/turn: TURN relay servers for the browser, so two players on
+ * different networks (school Wi-Fi, mobile data, strict routers) can still
+ * connect when a direct peer-to-peer link is blocked. Every relay configured
+ * here is offered; the browser uses whichever works. Set these on the Worker
+ * (Settings > Variables and Secrets):
  *
- * Hands the browser TURN relay servers, so two players on different networks
- * (school Wi-Fi, mobile data, strict routers) can still connect when a direct
- * peer-to-peer link is blocked. Every relay you configure is offered; the
- * browser uses whichever works. Configure any of these in the Pages project
- * (Settings > Variables and Secrets), then redeploy:
- *
- *   Free, static login (e.g. ExpressTURN, 1000 GB/month free, port 3478):
+ *   ExpressTURN (free, 1000 GB/month, port 3478), the main relay:
  *     TURN_URLS        comma-separated, e.g. turn:relay1.expressturn.com:3478
  *     TURN_USERNAME
- *     TURN_CREDENTIAL
+ *     TURN_CREDENTIAL  (secret)
  *
- *   Free, API key (Metered Open Relay, 20 GB/month free, also ports 80/443,
- *   which get through more school firewalls):
+ *   Optional, Metered Open Relay (free, 20 GB/month, also ports 80/443):
  *     METERED_DOMAIN   e.g. yourapp.metered.live
- *     METERED_API_KEY
+ *     METERED_API_KEY  (secret)
  *
- *   Cloudflare Realtime TURN (paid beyond its free allowance):
- *     TURN_KEY_ID
- *     TURN_KEY_API_TOKEN
+ *   Optional, Cloudflare Realtime TURN (paid beyond its free allowance):
+ *     TURN_KEY_ID, TURN_KEY_API_TOKEN (secret)
  *
  * With none set this returns 404 and the game uses direct connections only.
  */
-interface Env {
+export interface TurnEnv {
   TURN_URLS?: string;
   TURN_USERNAME?: string;
   TURN_CREDENTIAL?: string;
@@ -51,13 +47,13 @@ const relaysOnly = (servers: IceServer[]): IceServer[] =>
     .map((s) => ({ ...s, urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => /^turns?:/.test(u) && !/:53(\?|$)/.test(u)) }))
     .filter((s) => s.urls.length > 0);
 
-const staticTurn = (env: Env): IceServer[] => {
+const staticTurn = (env: TurnEnv): IceServer[] => {
   if (!env.TURN_URLS || !env.TURN_USERNAME || !env.TURN_CREDENTIAL) return [];
   const urls = env.TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean);
   return urls.length ? [{ urls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL }] : [];
 };
 
-const metered = async (env: Env): Promise<IceServer[]> => {
+const metered = async (env: TurnEnv): Promise<IceServer[]> => {
   if (!env.METERED_DOMAIN || !env.METERED_API_KEY) return [];
   const domain = env.METERED_DOMAIN.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(env.METERED_API_KEY)}`, { signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -67,7 +63,7 @@ const metered = async (env: Env): Promise<IceServer[]> => {
   return Array.isArray(data) ? (data as IceServer[]) : [];
 };
 
-const cloudflare = async (env: Env): Promise<IceServer[]> => {
+const cloudflare = async (env: TurnEnv): Promise<IceServer[]> => {
   if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return [];
   const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
     method: 'POST',
@@ -80,7 +76,7 @@ const cloudflare = async (env: Env): Promise<IceServer[]> => {
   return ((await res.json()) as { iceServers: IceServer[] }).iceServers;
 };
 
-export const onRequestGet = async ({ env }: { env: Env }): Promise<Response> => {
+export const turn = async (env: TurnEnv): Promise<Response> => {
   // One provider failing (quota, outage) never hides the others.
   const results = await Promise.allSettled([Promise.resolve(staticTurn(env)), metered(env), cloudflare(env)]);
   const iceServers = relaysOnly(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));

@@ -5,7 +5,7 @@
  * out from the clock alone (a daily rhythm on US Eastern time, busier at
  * weekends, with minute-to-minute wobble from a hash of the minute rather than
  * Math.random), plus the real people who have the game open right now, counted
- * by the presence Durable Object behind /api/online when the site has it.
+ * by the presence Durable Object in the site's Worker (worker/presence.ts) behind /api/online.
  */
 
 /** 0..1 from an integer, the same on every device. */

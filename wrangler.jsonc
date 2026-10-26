@@ -1,0 +1,20 @@
+// Cloudflare Worker for the site: serves the built game (dist/) and the small
+// /api/* endpoints in worker/. "name" must match your Worker's name in the
+// Cloudflare dashboard (Workers & Pages); change it here if yours differs.
+{
+  "name": "fps-game",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Only the API runs the script; everything else is plain static files.
+    "run_worker_first": ["/api/*"]
+  },
+  // Live player counter. Free plan: Durable Objects must use the SQLite backend.
+  "durable_objects": {
+    "bindings": [{ "name": "PRESENCE", "class_name": "Presence" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Presence"] }]
+}

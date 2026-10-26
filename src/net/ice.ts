@@ -5,7 +5,7 @@
  * networks allow a direct link. Many don't (school and office Wi-Fi, mobile
  * data, carrier-grade NAT), and then traffic has to go through a TURN relay.
  * PeerJS's built-in relays no longer answer, so the relay comes from our own
- * Cloudflare Pages Function (functions/api/turn.ts) when it is configured.
+ * site's Cloudflare Worker (worker/turn.ts) when it is configured.
  */
 export type IceServer = { urls: string | string[]; username?: string; credential?: string };
 

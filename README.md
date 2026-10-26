@@ -137,39 +137,39 @@ Under **Play online**, click **Host game** to open a room. Send the 5-letter cod
   - No lag compensation: you shoot at where players are on the host.
   - Many networks (school and office Wi-Fi, mobile data, some home routers) block direct peer-to-peer links. Two tabs on one computer always connect; two devices often need a relay. See **Relay (TURN) setup** below.
 
+### Hosting: one Cloudflare Worker
+
+The site is a Cloudflare Worker with static assets. `wrangler.jsonc` points it at the built game (`dist/`) plus a small script in `worker/` that only runs for `/api/*`:
+
+- `/api/turn`: relay servers (`worker/turn.ts`);
+- `/api/online`: the live player counter (`worker/presence.ts`, a Durable Object).
+
+**`name` in `wrangler.jsonc` must match your Worker's name** in the Cloudflare dashboard (Workers & Pages). It's set to `fps-game`; change it if yours differs. The deploy command stays `npx wrangler deploy`, after `npm run build`.
+
 ### Relay (TURN) setup: free
 
-PeerJS's built-in relays no longer answer, so the game gets relay servers from its own Cloudflare Pages Function, `functions/api/turn.ts` (served at `/api/turn`). Without a relay, players on different networks often can't join each other's rooms (two tabs on one computer always can). ExpressTURN is the one to set up. The others are optional extras: the game offers every relay you configure, uses whichever gets through, and skips any that are down (each gets 2.5 s before it's left out).
+PeerJS's built-in relays no longer answer, so without a relay, players on different networks often can't join each other's rooms (two tabs on one computer always can). Add relay logins to the Worker under **Settings > Variables and Secrets**, then redeploy. ExpressTURN is the one to set up. The others are optional extras: the game offers every relay configured, uses whichever gets through, and skips any that are down (each gets 2.5 s before it's left out).
 
 **ExpressTURN (free, 1,000 GB a month, port 3478)**
 
 1. Sign up at [expressturn.com](https://www.expressturn.com/) (email, password and your site's address).
 2. From its dashboard, copy the TURN server address, username and password.
-3. In the Cloudflare dashboard, open this Pages project, **Settings > Variables and Secrets**, and add:
+3. Add to the Worker:
    - `TURN_URLS`: the server address, e.g. `turn:relay1.expressturn.com:3478` (several can be comma-separated);
    - `TURN_USERNAME`;
    - `TURN_CREDENTIAL` (as a secret).
 
 **Optional: Metered Open Relay (free, 20 GB a month, also ports 80 and 443)**
 
-Ports 80 and 443 get through school and office firewalls that block 3478. Its service has been unreliable, so treat it as a bonus, not the main relay.
+Ports 80 and 443 get through school and office firewalls that block 3478. Its service has been unreliable, so treat it as a bonus. Sign up at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/), then add `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret).
 
-1. Sign up for the free plan at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/) and create an app.
-2. Add `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret) the same way.
+Cloudflare's own relay also works: `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` from **Realtime > TURN Server**. It's paid beyond its free allowance.
 
-Redeploy, then open `https://<your-site>/api/turn`: it should list `iceServers`. With nothing configured it returns 404, and the game uses direct connections only.
-
-Cloudflare's own relay also works: set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` from **Realtime > TURN Server**. It's paid beyond its free allowance.
+Check `https://<your-site>/api/turn`: it lists `iceServers`. With nothing configured it returns 404, and the game uses direct connections only.
 
 ### Live player count
 
-The players-online number is the same for everyone at the same moment. It's a shared estimate worked out from the clock (US Eastern daily rhythm, busier at weekends), plus the real people with the game open right now. Real players are counted by a small free Cloudflare Worker with a Durable Object (`workers/presence`). Each open tab checks in every 2 minutes, which the free plan's 100,000 requests a day covers for about 70 people online at once. Beyond that the extra check-ins fail and the number shows the estimate alone.
-
-1. Deploy the Worker once: `cd workers/presence && npx wrangler deploy` (log in when asked).
-2. In the Pages project, go to **Settings > Bindings**, add a **Durable Object** binding named `PRESENCE`, and pick the Worker `fps-shooter-presence` and its class `Presence`.
-3. Redeploy. `https://<your-site>/api/online` should return `{"online": n}`.
-
-Without the binding, `/api/online` returns 404 and the count is the shared estimate alone.
+The players-online number is the same for everyone at the same moment. It's a shared estimate worked out from the clock (US Eastern daily rhythm, busier at weekends), plus the real people with the game open right now, counted by a Durable Object in the same Worker. Nothing to set up: `wrangler.jsonc` declares it, on the free plan (SQLite-backed). Each open tab checks in every 2 minutes, which the free plan's 100,000 requests a day covers for about 70 people online at once. Beyond that the extra check-ins fail and the number shows the estimate alone. `https://<your-site>/api/online` returns `{"online": n}`.
 
 Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in headless Edge.
 
