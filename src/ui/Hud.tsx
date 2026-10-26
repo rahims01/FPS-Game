@@ -4,6 +4,8 @@ import type { GameSettings } from '../game/settings';
 import { isDark } from '../game/identity';
 import { THROWABLES } from '../sim/gear';
 import { CallingCard, LevelBadge } from './ProfilePanel';
+import { inkOn } from './ink';
+import { HeadshotIcon } from './icons';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -74,8 +76,10 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
       <div className="top">
         <div className="mode-name">{hud.modeName}</div>
         {hud.showTeams && (
-          <div className="score">
-            <span className={isDark(mine) ? 'dark' : ''} style={{ color: mine }}>{Math.floor(hud.scores[0])}</span>
+          <div className="score teams">
+            <span className="team-score" style={{ background: mine, color: inkOn(mine) }}>
+              <em key={Math.floor(hud.scores[0])}>{Math.floor(hud.scores[0])}</em>
+            </span>
             <span className="alive">
               {hud.mode === 'infected'
                 ? `${hud.scores[0]} survivors · ${fmt(hud.infectedSeconds ?? 0)}`
@@ -83,7 +87,9 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
                   ? `first to ${hud.targetScore}`
                   : `${hud.teamCounts[0]} v ${hud.teamCounts[1]}`}
             </span>
-            <span className={isDark(theirs) ? 'dark' : ''} style={{ color: theirs }}>{Math.floor(hud.scores[1])}</span>
+            <span className="team-score" style={{ background: theirs, color: inkOn(theirs) }}>
+              <em key={Math.floor(hud.scores[1])}>{Math.floor(hud.scores[1])}</em>
+            </span>
           </div>
         )}
         {hud.flags.length > 0 && (
@@ -103,8 +109,14 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         {hud.modeStatus && <div className="mode-status">{hud.modeStatus}</div>}
         {hud.ctf && (
           <div className="ctf">
-            <span className={`ctf-flag us ${hud.ctf.ours}`} style={{ borderColor: mine }}>Your flag: {hud.ctf.ours === 'home' ? 'safe' : hud.ctf.ours}</span>
-            <span className={`ctf-flag them ${hud.ctf.theirs}`} style={{ borderColor: theirs }}>Enemy flag: {hud.ctf.theirs === 'home' ? 'at base' : hud.ctf.theirs}</span>
+            <span className={`ctf-flag us ${hud.ctf.ours}`}>
+              <i style={{ background: mine }} />
+              Your flag: {hud.ctf.ours === 'home' ? 'safe' : hud.ctf.ours}
+            </span>
+            <span className={`ctf-flag them ${hud.ctf.theirs}`}>
+              <i style={{ background: theirs }} />
+              Enemy flag: {hud.ctf.theirs === 'home' ? 'at base' : hud.ctf.theirs}
+            </span>
           </div>
         )}
         {hud.ctf?.carrying && <div className="carrying">You have the flag — return to base!</div>}
@@ -136,7 +148,9 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         )}
         {(hud.mode === 'ffa' || hud.mode === 'headshot' || hud.mode === 'instagib' || hud.mode === 'snipers') && (
           <div className="score">
-            <span>{hud.kills}</span>
+            <span>
+              <em key={hud.kills}>{hud.kills}</em>
+            </span>
             <span className="alive">first to {hud.targetScore}</span>
             <span className={leader && isDark(leader.color) ? 'dark' : ''} style={{ color: leader?.color }}>
               {leader?.kills ?? 0}
@@ -155,7 +169,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         )}
       </div>
 
-      {hud.banner && hud.phase !== 'over' && <div className="banner">{hud.banner}</div>}
+      {hud.banner && hud.phase !== 'over' && hud.intro === null && <div className="banner">{hud.banner}</div>}
       <div className="callouts">
         {hud.callouts.map((c) => (
           <div key={c.id} className="callout">
@@ -243,7 +257,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
               </span>
               <span className="gun">
                 {f.weapon}
-                {f.headshot ? ' ⌖' : ''}
+                {f.headshot && <HeadshotIcon size={13} title="Headshot" />}
               </span>
               <span className={`${f.victimIsPlayer ? 'me' : ''} ${isDark(f.victimColor) ? 'dark' : ''}`} style={{ color: f.victimColor }}>
                 {f.victim}
@@ -298,7 +312,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           </span>
           {hud.crouching && <span className="stance">crouched</span>}
         </div>
-        <div className="hp">
+        <div className={`hp ${hpLow ? 'low' : ''}`}>
           <span>{hud.hp}</span>
           <div className="bar">
             <div style={{ width: `${hud.hp}%` }} className={hpLow ? 'low' : ''} />
@@ -360,8 +374,10 @@ const Scoreboard = ({ hud }: { hud: HudState }) => {
       <h3>{hud.modeName}</h3>
       {groups.map((g) => (
         <div key={g.title} className="sb-group">
-          <div className="sb-head" style={{ borderColor: g.color }}>
-            <span>{g.title}</span>
+          <div className="sb-head">
+            <span className="sb-title" style={g.color ? { background: g.color, color: inkOn(g.color) } : undefined}>
+              {g.title}
+            </span>
             <span>K</span>
             <span>D</span>
             <span>Ping</span>

@@ -1,0 +1,70 @@
+/* Cosmetic previews: they show the item itself (name tags, soldier styles, camo kinds), so they keep the item's own colours. */
+.nt-chip {
+  padding: 2px 10px;
+  font-family: var(--f-cond);
+  font-weight: 800;
+}
+.nt-outline { -webkit-text-stroke: 1.5px #000; color: #fff; }
+.nt-gold { background: linear-gradient(#fff1a8, #d4a933, #8a6510); color: #1b1200; }
+.nt-neon { color: #fff; text-shadow: 0 0 8px #19e6ff, 0 0 14px #19e6ff; }
+.nt-ice { background: linear-gradient(#e6faff, #78c8f0); color: #0b2a3a; }
+.nt-flame { color: #ffb03b; text-shadow: 0 0 8px #ff6a00; }
+.nt-royal { background: #3a1c71; color: #ffe58a; border: 2px solid #ffd34d; }
+.nt-rainbow { background: linear-gradient(90deg, #ff3b3b, #ffb03b, #3bff6b, #3bb9ff, #a03bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nt-toxic { color: #c8ff8a; text-shadow: 0 0 10px #7dff2a; }
+
+/* Style previews: the same ideas as on the soldier, in CSS. */
+.arm-style { background: var(--c); }
+.st-matte { filter: saturate(0.8) brightness(0.9); }
+.st-metal { background: linear-gradient(135deg, #fff 0, var(--c) 30%, var(--c) 60%, #fff 75%, var(--c)); }
+.st-glow { box-shadow: 0 0 16px 2px var(--c); }
+.st-stripes { background: repeating-linear-gradient(45deg, var(--c) 0 6px, rgba(0, 0, 0, 0.45) 6px 10px), var(--c); }
+.st-checker { background: repeating-conic-gradient(var(--c) 0 25%, rgba(0, 0, 0, 0.5) 0 50%) 0 0 / 12px 12px; }
+.st-polka { background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 25%, transparent 27%) 0 0 / 10px 10px, var(--c); }
+.st-camo { background: radial-gradient(ellipse at 30% 40%, rgba(0, 0, 0, 0.45) 20%, transparent 22%), radial-gradient(ellipse at 70% 70%, rgba(255, 255, 255, 0.3) 18%, transparent 20%), var(--c); }
+.st-zebra { background: repeating-linear-gradient(100deg, #111 0 4px, var(--c) 4px 9px); }
+.st-tiger { background: repeating-linear-gradient(170deg, #141414 0 3px, var(--c) 3px 9px); }
+.st-digital { background: repeating-conic-gradient(var(--c) 0 25%, rgba(0, 0, 0, 0.35) 0 50%) 0 0 / 6px 6px; }
+.st-hex { background: radial-gradient(circle, transparent 55%, rgba(0, 0, 0, 0.5) 57%) 0 0 / 9px 9px, var(--c); }
+.st-circuit { background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(255, 255, 255, 0.6) 7px 8px), repeating-linear-gradient(0deg, transparent 0 7px, rgba(255, 255, 255, 0.4) 7px 8px), #111; }
+.st-stars { background: radial-gradient(circle, #fff 8%, transparent 10%) 0 0 / 7px 9px, #050816; }
+.st-pulse { animation: st-pulse 2s ease-in-out infinite; }
+@keyframes st-pulse { 50% { box-shadow: 0 0 18px 4px var(--c); filter: brightness(1.4); } }
+.st-rainbow { animation: st-hue 3s linear infinite; }
+@keyframes st-hue { to { filter: hue-rotate(360deg); } }
+.st-mono { animation: st-mono 2.4s ease-in-out infinite; }
+@keyframes st-mono { 0%, 100% { background: #111; } 50% { background: #f2f2f2; } }
+.st-holo { background: linear-gradient(120deg, #ff9ac8, #9ad7ff, #c8ff9a, #ffd59a); background-size: 300% 100%; animation: st-slide 2.5s linear infinite; }
+@keyframes st-slide { to { background-position: 300% 0; } }
+.st-glitch { animation: st-glitch 0.9s steps(1) infinite; }
+@keyframes st-glitch { 0% { filter: none; } 30% { filter: hue-rotate(140deg) brightness(1.6); transform: translateX(2px); } 35% { filter: none; transform: none; } 70% { filter: invert(1); } 75% { filter: none; } }
+.st-lava { background: linear-gradient(90deg, #140400, #ff4e00, #ffb000, #ff4e00, #140400); background-size: 300% 100%; animation: st-slide 3s linear infinite; }
+.st-electric { animation: st-flicker 0.4s steps(2) infinite; box-shadow: 0 0 12px #9ad7ff; }
+@keyframes st-flicker { 50% { filter: brightness(2.2); } }
+.st-aurora { background: linear-gradient(90deg, #2aff9a, #2a8aff, #b42aff, #2aff9a); background-size: 300% 100%; animation: st-slide 4s linear infinite; }
+.st-ghost { opacity: 0.45; animation: st-ghost 2s ease-in-out infinite; }
+@keyframes st-ghost { 50% { opacity: 0.2; } }
+.st-heartbeat { animation: st-beat 1s ease-in-out infinite; }
+@keyframes st-beat { 0%, 30%, 100% { box-shadow: none; } 15% { box-shadow: 0 0 16px 4px #ff2a2a; } }
+.st-streakheat { background: linear-gradient(90deg, var(--c), #ff8a1a, #fff3a0); }
+.st-chameleon { background: linear-gradient(90deg, var(--c), #5a5f4a); }
+.st-thermal { background: linear-gradient(90deg, #2a4aff, #2aff9a, #ffd02a, #ff2a2a); }
+.st-hitflash { animation: st-hit 1.4s steps(1) infinite; }
+@keyframes st-hit { 80% { background: #fff; } }
+.st-trophy { background: linear-gradient(90deg, var(--c), #e8b63a); }
+.st-voidwalker { background: radial-gradient(circle, #7a2bff, #05000c 70%); animation: st-pulse 2.5s ease-in-out infinite; }
+
+/* Camo kinds in the picker. */
+.camo-kind {
+  font-size: 9px !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 800;
+}
+.camo-kind.animated { color: #19e6ff !important; }
+.camo-kind.reactive { color: #ff7a1a !important; }
+.camo-kind.mastery { color: #ffd34d !important; }
+i.camo-animated {
+  background-size: 300% 100% !important;
+  animation: st-slide 3s linear infinite;
+}

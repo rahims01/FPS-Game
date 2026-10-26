@@ -1157,7 +1157,9 @@ export class Game {
         v.setVisible(true);
         v.die(victim, this.physics, sim.time);
         if (e.attacker >= 0 && this.match.mode !== 'paintball') this.effects.bloodPool(victim.x, victim.z);
-        if (victim === player && killer && killer !== victim && !this.spectator && !this.practice) {
+        // No killcam for wave enemies (zombies, survival) or labelled bots: nothing worth replaying.
+        const waveEnemy = this.match.mode === 'zombies' || this.match.mode === 'survival';
+        if (victim === player && killer && killer !== victim && !this.spectator && !this.practice && !waveEnemy && !this.isLabelledBot(killer)) {
           this.pendingKillcam = { at: sim.time + KILLCAM_DELAY, killer: killer.id, victim: victim.id, deathT: sim.time };
         }
         if (victim === player) {
@@ -1256,6 +1258,15 @@ export class Game {
       const tag = TAGS[Math.floor(Math.random() * TAGS.length)];
       for (const a of members) if (!this.ids.names[a.id].startsWith('[')) this.ids.names[a.id] = `${tag}${this.ids.names[a.id]}`.slice(0, 20);
     }
+  }
+
+  /**
+   * Shown as "Bot N" with a BOT tag: computer players in rooms with friends,
+   * the robotic bots that take over a leaver's slot, and practice dummies.
+   */
+  private isLabelledBot(a: Agent): boolean {
+    const roomBots = !!this.net && !this.party && !this.isPublic;
+    return (roomBots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id)) || a.robotic || !!a.dummy;
   }
 
   /** Public matchmaking with strangers: looks like any matchmade game (nobody is labelled). */
@@ -1724,8 +1735,9 @@ export class Game {
       const w = e.cause as WeaponId;
       this.weaponKills[w] = (this.weaponKills[w] ?? 0) + 1;
       const total = (this.baseWeaponKills[w] ?? 0) + this.weaponKills[w];
-      const unlocked = SKINS.find((s) => s.kills === total);
-      if (unlocked && unlocked.kills > 0) this.callout(`Unlocked: ${unlocked.name} camo for the ${WEAPONS[w].name}`);
+      // Several camos can unlock at the same kill count; name them all.
+      const unlocked = SKINS.filter((s) => s.kills > 0 && s.kills === total).map((s) => s.name);
+      if (unlocked.length) this.callout(`Unlocked: ${unlocked.join(' and ')} ${unlocked.length > 1 ? 'camos' : 'camo'} for the ${WEAPONS[w].name}`);
     }
     if (gun && e.region === 'head') this.medal(MEDALS.headshot);
     if (e.cause === 'knife') this.medal(MEDALS.knife);
@@ -2311,7 +2323,6 @@ export class Game {
     if (p.crouching) spread *= 0.75;
     const picks = m.streaksFor(p).map(streakDef);
     const next = picks.find((s) => s.kills > p.streak) ?? null;
-    const bots = !!this.net && !this.party && !this.isPublic;
     const myMastery = masteryOf(Math.max(0, ...Object.values({ ...this.baseWeaponKills })));
     const spec = this.specShown >= 0 ? sim.agents[this.specShown] : null;
     // During the killcam the HUD shows the killer's health, ammo and crosshair.
@@ -2332,7 +2343,7 @@ export class Game {
         accuracy: a.shots > 0 ? Math.round((a.hits / a.shots) * 100) : -1,
         headshots: a.headshots,
         bestStreak: a.bestStreak,
-        bot: (bots && a.control !== 'player' && a.control !== 'remote' && !this.isHumanId(a.id)) || a.robotic || !!a.dummy,
+        bot: this.isLabelledBot(a),
         level: a === p && !this.spectator ? this.myLevel : this.levelOfAgent(a),
         emblem: this.cosmetics[a.id] ? { glyph: emblemDef(this.cosmetics[a.id]!.emblem).glyph, color: emblemDef(this.cosmetics[a.id]!.emblem).color } : null,
         mastery: a === p && !this.spectator ? (myMastery.tier >= 0 ? myMastery.color : null) : this.botMastery(a),

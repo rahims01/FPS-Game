@@ -190,6 +190,8 @@ export interface ProfileLike {
   weaponKills: Record<string, number>;
   bestSr: number;
   rankedMatches: number;
+  duelBestSr?: number;
+  duelMatches?: number;
   stats: Partial<Record<StatKey, number>>;
 }
 
@@ -217,6 +219,10 @@ export const masteryOf = (kills: number): { tier: number; name: string; color: s
 };
 const bestMastery = (p: ProfileLike) => Math.max(0, ...Object.values(p.weaponKills));
 
+/** Best placed rating across both ranked queues (team and 1v1). */
+const bestRanked = (p: ProfileLike): number =>
+  Math.max(p.rankedMatches >= 5 ? p.bestSr : 0, (p.duelMatches ?? 0) >= 5 ? (p.duelBestSr ?? 0) : 0);
+
 export const BADGES: BadgeDef[] = [
   { id: 'firstblood', name: 'First Blood', blurb: 'Get your first kill.', icon: '🩸', progress: (p) => [p.kills, 1] },
   { id: 'centurion', name: 'Centurion', blurb: '100 kills.', icon: '💯', progress: (p) => [p.kills, 100] },
@@ -239,13 +245,13 @@ export const BADGES: BadgeDef[] = [
   { id: 'splat', name: 'Splat!', blurb: 'Win a paintball match.', icon: '🎨', progress: (p) => [stat(p, 'paintballWins'), 1] },
   { id: 'veteran', name: 'Veteran', blurb: 'Play 50 matches.', icon: '🎖', progress: (p) => [p.matches, 50] },
   { id: 'winner', name: 'Winner', blurb: 'Win 25 matches.', icon: '🥇', progress: (p) => [p.wins, 25] },
-  { id: 'rankedgold', name: 'Gold Standard', blurb: 'Reach Gold in ranked.', icon: '🥈', progress: (p) => [p.rankedMatches >= 5 ? p.bestSr : 0, 1200] },
-  { id: 'rankedchamp', name: 'Champion Rank', blurb: 'Reach Champion in ranked.', icon: '💠', progress: (p) => [p.rankedMatches >= 5 ? p.bestSr : 0, 2100] },
+  { id: 'rankedgold', name: 'Gold Standard', blurb: 'Reach Gold in ranked (team or 1v1).', icon: '🥈', progress: (p) => [bestRanked(p), 1200] },
+  { id: 'rankedchamp', name: 'Champion Rank', blurb: 'Reach Champion in ranked (team or 1v1).', icon: '💠', progress: (p) => [bestRanked(p), 2100] },
   { id: 'sharpshooter', name: 'Sharpshooter', blurb: 'Score 60 in the Aim Trainer.', icon: '🎯', progress: (p) => [stat(p, 'aimBest'), 60] },
   { id: 'clutch', name: 'Clutch', blurb: 'Win 5 rounds as the last one alive on your team.', icon: '😤', progress: (p) => [stat(p, 'clutches'), 5] },
-  { id: 'masterofarms', name: 'Master of Arms', blurb: 'Gold mastery with any gun (200 kills).', icon: '⭐', progress: (p) => [bestMastery(p), 200] },
-  { id: 'diamondhands', name: 'Diamond Hands', blurb: 'Diamond mastery with any gun (500 kills).', icon: '💎', progress: (p) => [bestMastery(p), 500] },
-  { id: 'maxed', name: 'Maxed Out', blurb: 'Reach level 55.', icon: '🔝', progress: (_p, level) => [level, 55] }
+  { id: 'masterofarms', name: 'Master of Arms', blurb: 'Gold mastery with any weapon (200 kills).', icon: '⭐', progress: (p) => [bestMastery(p), 200] },
+  { id: 'diamondhands', name: 'Diamond Hands', blurb: 'Diamond mastery with any weapon (500 kills).', icon: '💎', progress: (p) => [bestMastery(p), 500] },
+  { id: 'maxed', name: 'Maxed Out', blurb: 'Reach level 55.', icon: '🔝', progress: (p, level) => [effectiveLevel(p, level), 55] }
 ];
 
 export const earned = (b: BadgeDef, p: ProfileLike, level: number): boolean => {

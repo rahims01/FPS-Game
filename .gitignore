@@ -3,3 +3,11 @@ dist
 training/checkpoints/*.json
 training/*.log
 screenshots
+
+# Impeccable: local-only state (screenshots, caches, decision rounds)
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/questions/
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/build/

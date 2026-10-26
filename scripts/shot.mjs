@@ -25,7 +25,7 @@ const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 await page.goto('http://localhost:5190/', { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent === 'FIND MATCH'), { timeout: 120000 });
+await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent.startsWith('FIND MATCH')), { timeout: 120000 });
 await page.screenshot({ path: `${out}/${mode}-0-menu.png` });
 
 const names = { '1v1': '1v1 Duel', '2v2': '2v2', '3v3': '3v3', tdm: 'Team Deathmatch', koth: 'King of the Hill', ffa: 'Free-for-all', headshot: 'Headhunters', instagib: 'One Shot', survival: 'Survival', br: 'Battle Royale' };

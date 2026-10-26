@@ -1,0 +1,634 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T20:42:48.722Z",
+  "title": "Design System: FPS Shooter",
+  "extensions": {
+    "colorMeta": {
+      "navy": {
+        "role": "neutral",
+        "displayName": "Studio Navy",
+        "canonical": "#0b1220",
+        "oklch": "oklch(18.3% 0.031 263.4)",
+        "tonalRamp": [
+          "#050b18",
+          "#1c2433",
+          "#374050",
+          "#555e70",
+          "#778193",
+          "#9ba5b9",
+          "#c0cbdf",
+          "#e7effe"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel Navy",
+        "canonical": "#16213a",
+        "oklch": "oklch(25.1% 0.050 265.0)",
+        "tonalRamp": [
+          "#030920",
+          "#18233c",
+          "#333f5b",
+          "#505d7a",
+          "#72809f",
+          "#95a5c5",
+          "#bbcbec",
+          "#e7efff"
+        ]
+      },
+      "panel-2": {
+        "role": "neutral",
+        "displayName": "Panel Navy Raised",
+        "canonical": "#1e2c4b",
+        "oklch": "oklch(29.7% 0.060 264.6)",
+        "tonalRamp": [
+          "#020824",
+          "#152341",
+          "#303f60",
+          "#4d5d80",
+          "#6f80a5",
+          "#92a5cb",
+          "#b7cbf3",
+          "#e7effe"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Rule Line",
+        "canonical": "#26365a",
+        "oklch": "oklch(33.8% 0.067 264.9)",
+        "tonalRamp": [
+          "#010727",
+          "#142244",
+          "#2e3f63",
+          "#4b5d84",
+          "#6c80a9",
+          "#90a4d0",
+          "#b5cbf7",
+          "#e7effe"
+        ]
+      },
+      "line-2": {
+        "role": "neutral",
+        "displayName": "Rule Line Strong",
+        "canonical": "#3a4d75",
+        "oklch": "oklch(42.3% 0.071 264.2)",
+        "tonalRamp": [
+          "#010728",
+          "#122246",
+          "#2c3f65",
+          "#495d86",
+          "#6b80ab",
+          "#8ea5d2",
+          "#b3cbfa",
+          "#e7efff"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#f4f6f8",
+        "oklch": "oklch(97.2% 0.003 247.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3e4041",
+          "#5c5e5f",
+          "#7f8082",
+          "#a3a5a7",
+          "#c9cbcd",
+          "#edeff1"
+        ]
+      },
+      "paper-ink": {
+        "role": "neutral",
+        "displayName": "Paper Ink",
+        "canonical": "#3b4a60",
+        "oklch": "oklch(40.6% 0.042 257.9)",
+        "tonalRamp": [
+          "#020b1c",
+          "#172438",
+          "#324056",
+          "#4f5f76",
+          "#71819a",
+          "#95a6bf",
+          "#bacce6",
+          "#e5efff"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink (on paper and yellow)",
+        "canonical": "#0b1220",
+        "oklch": "oklch(18.3% 0.031 263.4)",
+        "tonalRamp": [
+          "#050b18",
+          "#1c2433",
+          "#374050",
+          "#555e70",
+          "#778193",
+          "#9ba5b9",
+          "#c0cbdf",
+          "#e7effe"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Foreground on Navy",
+        "canonical": "#f4f6f8",
+        "oklch": "oklch(97.2% 0.003 247.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3e4041",
+          "#5c5e5f",
+          "#7f8082",
+          "#a3a5a7",
+          "#c9cbcd",
+          "#edeff1"
+        ]
+      },
+      "dim": {
+        "role": "neutral",
+        "displayName": "Dim",
+        "canonical": "#a9b8cf",
+        "oklch": "oklch(77.8% 0.037 258.9)",
+        "tonalRamp": [
+          "#030b1a",
+          "#192436",
+          "#344053",
+          "#515e73",
+          "#738197",
+          "#97a6bc",
+          "#bccce3",
+          "#e5efff"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Mute",
+        "canonical": "#8798b4",
+        "oklch": "oklch(67.6% 0.046 260.4)",
+        "tonalRamp": [
+          "#020a1e",
+          "#17243a",
+          "#324058",
+          "#4f5e78",
+          "#71819c",
+          "#94a6c2",
+          "#bacce9",
+          "#e6efff"
+        ]
+      },
+      "yellow": {
+        "role": "primary",
+        "displayName": "Network Yellow",
+        "canonical": "#ffc400",
+        "oklch": "oklch(85.0% 0.174 86.6)",
+        "tonalRamp": [
+          "#110a00",
+          "#2f2200",
+          "#503c05",
+          "#75590b",
+          "#a07a06",
+          "#cb9d1a",
+          "#f9c223",
+          "#feedc6"
+        ]
+      },
+      "yellow-hi": {
+        "role": "primary",
+        "displayName": "Broadcast Yellow Hi",
+        "canonical": "#ffd23d",
+        "oklch": "oklch(87.9% 0.163 91.1)",
+        "tonalRamp": [
+          "#100a00",
+          "#2d2300",
+          "#4f3e00",
+          "#725b02",
+          "#9b7d0c",
+          "#c7a002",
+          "#f2c529",
+          "#ffeebe"
+        ]
+      },
+      "yellow-ink": {
+        "role": "primary",
+        "displayName": "Yellow Ink",
+        "canonical": "#4d3b00",
+        "oklch": "oklch(36.2% 0.074 89.3)",
+        "tonalRamp": [
+          "#100a00",
+          "#2e2201",
+          "#4f3d03",
+          "#6e5b28",
+          "#927e4b",
+          "#b7a36e",
+          "#dec993",
+          "#ffedc1"
+        ]
+      },
+      "red-slab": {
+        "role": "secondary",
+        "displayName": "Team Red Slab",
+        "canonical": "#d32f3a",
+        "oklch": "oklch(56.9% 0.199 23.2)",
+        "tonalRamp": [
+          "#1f0002",
+          "#4a0209",
+          "#7b0416",
+          "#af0a24",
+          "#de3b43",
+          "#fd7270",
+          "#ffb4b0",
+          "#ffe9e7"
+        ]
+      },
+      "blue-slab": {
+        "role": "secondary",
+        "displayName": "Team Blue Slab",
+        "canonical": "#2a6fdb",
+        "oklch": "oklch(55.9% 0.179 259.4)",
+        "tonalRamp": [
+          "#000924",
+          "#002054",
+          "#00398b",
+          "#0d56c0",
+          "#377ce9",
+          "#6fa5fb",
+          "#acccff",
+          "#e6effe"
+        ]
+      },
+      "red": {
+        "role": "secondary",
+        "displayName": "Signal Red",
+        "canonical": "#ff5d62",
+        "oklch": "oklch(69.3% 0.197 22.1)",
+        "tonalRamp": [
+          "#1f0002",
+          "#4a020b",
+          "#7a0619",
+          "#af0d28",
+          "#dd3c47",
+          "#fd7373",
+          "#feb5b1",
+          "#fee9e7"
+        ]
+      },
+      "blue": {
+        "role": "secondary",
+        "displayName": "Signal Blue",
+        "canonical": "#5aa0ff",
+        "oklch": "oklch(70.3% 0.157 256.6)",
+        "tonalRamp": [
+          "#000a21",
+          "#01224e",
+          "#013d81",
+          "#105bb3",
+          "#3a7fdc",
+          "#67a6fc",
+          "#abcdfd",
+          "#e5f0ff"
+        ]
+      },
+      "green": {
+        "role": "tertiary",
+        "displayName": "Live Green",
+        "canonical": "#45d483",
+        "oklch": "oklch(77.4% 0.168 154.2)",
+        "tonalRamp": [
+          "#001005",
+          "#022d15",
+          "#034d29",
+          "#09703e",
+          "#179857",
+          "#2bc272",
+          "#5fea97",
+          "#c6ffd7"
+        ]
+      },
+      "hud": {
+        "role": "neutral",
+        "displayName": "HUD Glass",
+        "canonical": "rgba(11, 18, 32, 0.86)",
+        "oklch": "oklch(18.3% 0.031 263.4)",
+        "tonalRamp": [
+          "#050b18",
+          "#1c2433",
+          "#374050",
+          "#555e70",
+          "#778193",
+          "#9ba5b9",
+          "#c0cbdf",
+          "#e7effe"
+        ],
+        "note": "Translucent; ramp is for the opaque navy base."
+      },
+      "tag-practice": {
+        "role": "tertiary",
+        "displayName": "Practice Tag Slate",
+        "canonical": "#4a5872",
+        "oklch": "oklch(45.9% 0.046 262.6)",
+        "tonalRamp": [
+          "#030a1e",
+          "#18243a",
+          "#334058",
+          "#505e78",
+          "#72819c",
+          "#95a5c2",
+          "#bbcbe9",
+          "#e6efff"
+        ]
+      },
+      "tag-freeforall": {
+        "role": "tertiary",
+        "displayName": "Free-for-all Tag Green",
+        "canonical": "#0e8460",
+        "oklch": "oklch(54.5% 0.111 165.2)",
+        "tonalRamp": [
+          "#000f08",
+          "#002c1d",
+          "#004c35",
+          "#026f4f",
+          "#2b9570",
+          "#57bb94",
+          "#7fe2b9",
+          "#c0ffe3"
+        ]
+      },
+      "tag-party": {
+        "role": "tertiary",
+        "displayName": "Party Tag Violet",
+        "canonical": "#7440c0",
+        "oklch": "oklch(50.3% 0.190 297.8)",
+        "tonalRamp": [
+          "#110027",
+          "#2f005d",
+          "#500c94",
+          "#6d38b8",
+          "#905fe1",
+          "#b28bfc",
+          "#d1bffd",
+          "#f0ebff"
+        ]
+      },
+      "tag-special": {
+        "role": "tertiary",
+        "displayName": "Special Tag Orange",
+        "canonical": "#c1501a",
+        "oklch": "oklch(57.2% 0.158 42.3)",
+        "tonalRamp": [
+          "#1a0400",
+          "#411300",
+          "#6d2601",
+          "#9c3a03",
+          "#cb5925",
+          "#f57f4e",
+          "#feb89c",
+          "#ffe9e1"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Final-result plate and pregame count; 44px on phones."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Overlay and pregame headings; lineup plate at 46px, network slab at 34px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Mode names on lower-third bars, calling-card names, rank names (19-23px)."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "Scores, stat values, level numbers (28-42px). Tabular; ticks on change."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Mode rules and explanatory sentences; long explanations cap at 70ch."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Sub-lines, settings hints and stat captions in dim (12-13px)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Chips, tabs, segments, table heads (15-19px, 0.04-0.08em, uppercase)."
+      },
+      "label-tracked": {
+        "displayName": "Label Tracked",
+        "purpose": "Names that title a real block: rail heads, mode groups, team tags, HUD mode name (13-17px, 0.12-0.16em, uppercase)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "overlay-lift",
+        "value": "0 24px 60px rgba(0, 0, 0, 0.45)",
+        "purpose": "Menu and overlay cards only; the one ambient lift in the system."
+      },
+      {
+        "name": "tab-underline",
+        "value": "inset 0 -4px 0 var(--yellow)",
+        "purpose": "Active main-menu tab mark."
+      },
+      {
+        "name": "hud-legibility",
+        "value": "text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7)",
+        "purpose": "Free-floating HUD text over the 3D scene; removed on solid plates."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Every wipe and tick."
+      },
+      {
+        "name": "wipe",
+        "value": "clip-path from a zero-width polygon to var(--shape), 0.3-0.5s ease-out",
+        "purpose": "Bars, tags, plates and rows slide in along their own slant; wipe-r enters from the right for away-side and right-rail pieces."
+      },
+      {
+        "name": "wipe-stagger-modes",
+        "value": "calc(var(--i) * 35ms)",
+        "purpose": "Lower-third mode bars on tab change."
+      },
+      {
+        "name": "wipe-stagger-lineup",
+        "value": "calc(0.25s + var(--i) * 70ms)",
+        "purpose": "Starting-lineup rows."
+      },
+      {
+        "name": "tick",
+        "value": "from translateY(45%) and opacity 0, 0.3-0.35s ease-out",
+        "purpose": "A changed number rolls up into place (scores, player counts)."
+      },
+      {
+        "name": "state",
+        "value": "0.12s",
+        "purpose": "Hover and selection colour changes."
+      },
+      {
+        "name": "reduced",
+        "value": "fade 0.15s, no delay, one iteration",
+        "purpose": "prefers-reduced-motion and the in-game reduce-motion setting replace every animation with a fade."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "640px"
+      },
+      {
+        "name": "lineup-stack",
+        "value": "760px"
+      },
+      {
+        "name": "single-column",
+        "value": "880px"
+      },
+      {
+        "name": "rail-narrow",
+        "value": "1120px"
+      },
+      {
+        "name": "short",
+        "value": "max-height: 640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Slab",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one yellow primary action per screen, cut on its trailing edge.",
+      "html": "<button class=\"ds-slab\">Play again</button>",
+      "css": ".ds-slab { padding: 14px 36px 14px 22px; border: 0; border-radius: 0; background: var(--yellow, #ffc400); color: var(--ink, #0b1220); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 24px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); transition: background 0.12s; } .ds-slab:hover { background: var(--yellow-hi, #ffd23d); } .ds-slab:active { background: #e6b000; } .ds-slab:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: 2px; } .ds-slab:disabled { background: var(--line, #26365a); color: var(--dim, #a9b8cf); cursor: not-allowed; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Secondary actions and options: outlined, square; selected turns paper; disabled goes dashed.",
+      "html": "<div style=\"display:flex;gap:8px;flex-wrap:wrap\"><button class=\"ds-chip\">Create party</button><button class=\"ds-chip ds-on\">Standard</button><button class=\"ds-chip\" disabled>Join</button></div>",
+      "css": ".ds-chip { padding: 7px 14px 6px; border: 2px solid var(--line-2, #3a4d75); border-radius: 0; background: transparent; color: var(--fg, #f4f6f8); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: border-color 0.12s, background 0.12s; } .ds-chip:hover:not(:disabled) { border-color: var(--paper, #f4f6f8); } .ds-chip:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: 2px; } .ds-chip.ds-on { background: var(--paper, #f4f6f8); border-color: var(--paper, #f4f6f8); color: var(--ink, #0b1220); } .ds-chip:disabled { border-style: dashed; color: var(--mute, #8798b4); cursor: not-allowed; }"
+    },
+    {
+      "name": "Name Field",
+      "kind": "input",
+      "refersTo": "input-name",
+      "description": "Navy well with a bottom rule that turns yellow on focus.",
+      "html": "<label class=\"ds-field\"><span>Name</span><input value=\"BravoBoss\"></label>",
+      "css": ".ds-field { display: grid; gap: 4px; width: 320px; } .ds-field span { color: var(--dim, #a9b8cf); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; } .ds-field input { padding: 6px 8px 4px; border: 0; border-bottom: 2px solid var(--line-2, #3a4d75); border-radius: 0; background: var(--navy, #0b1220); color: var(--fg, #f4f6f8); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 22px; font-weight: 700; outline: none; caret-color: var(--yellow, #ffc400); } .ds-field input:focus { border-bottom-color: var(--yellow, #ffc400); }"
+    },
+    {
+      "name": "Scorebug Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Network slab and slanted tab plate; the active tab carries the yellow underline.",
+      "html": "<nav class=\"ds-bug\"><b class=\"ds-net\">FPS Shooter</b><div class=\"ds-tabs\"><button class=\"ds-tab ds-on\">Play</button><button class=\"ds-tab\">Loadout</button><button class=\"ds-tab\">Armory</button></div></nav>",
+      "css": ".ds-bug { display: flex; align-items: stretch; height: 64px; background: var(--navy, #0b1220); } .ds-net { display: flex; align-items: center; padding: 0 40px 0 22px; background: var(--yellow, #ffc400); color: var(--ink, #0b1220); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 34px; font-weight: 800; text-transform: uppercase; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); } .ds-tabs { display: flex; margin-left: -10px; padding: 0 32px 0 24px; background: var(--panel, #16213a); clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%); } .ds-tab { padding: 4px 16px 0; border: 0; background: none; color: var(--dim, #a9b8cf); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 19px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; box-shadow: inset 0 -4px 0 transparent; transition: color 0.12s, box-shadow 0.12s; } .ds-tab:hover { color: var(--fg, #f4f6f8); } .ds-tab:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: -4px; } .ds-tab.ds-on { color: var(--fg, #f4f6f8); box-shadow: inset 0 -4px 0 var(--yellow, #ffc400); }"
+    },
+    {
+      "name": "Lower-third Mode Bar",
+      "kind": "custom",
+      "refersTo": "lower-third",
+      "description": "Team-size tag interlocked with a paper bar; the selected bar turns yellow.",
+      "html": "<div style=\"display:grid;gap:8px;width:420px\"><button class=\"ds-mode\"><span class=\"ds-mtag\" style=\"--tag:#2a6fdb\">5v5</span><span class=\"ds-mbar\"><strong>Team Deathmatch</strong><span>5v5 with respawns. First team to 40 kills.</span></span></button><button class=\"ds-mode ds-on\"><span class=\"ds-mtag\" style=\"--tag:#2a6fdb\">1v1</span><span class=\"ds-mbar\"><strong>1v1 Duel</strong><span>Just you and one opponent. Rounds, first to 5.</span></span></button></div>",
+      "css": ".ds-mode { display: flex; align-items: stretch; min-height: 60px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; } .ds-mode:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: 3px; } .ds-mtag { position: relative; z-index: 1; display: grid; place-items: center; width: 96px; padding-right: 10px; background: var(--tag, #4a5872); color: #fff; font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 19px; font-weight: 800; text-transform: uppercase; clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); } .ds-mbar { display: flex; flex-direction: column; justify-content: center; flex: 1; margin-left: -12px; padding: 7px 16px 7px 26px; background: var(--paper, #f4f6f8); color: var(--ink, #0b1220); clip-path: polygon(12px 0, 100% 0, 100% 100%, 0 100%); transition: background 0.12s; } .ds-mbar strong { font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 21px; font-weight: 800; line-height: 1.05; text-transform: uppercase; } .ds-mbar span { color: var(--paper-ink, #3b4a60); font-family: Saira, system-ui, sans-serif; font-size: 13px; line-height: 1.3; } .ds-mode:hover .ds-mbar { background: #fff; } .ds-mode.ds-on .ds-mbar { background: var(--yellow, #ffc400); } .ds-mode.ds-on .ds-mbar span { color: var(--yellow-ink, #4d3b00); }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "custom",
+      "refersTo": "segmented-option-selected",
+      "description": "Three equal options on a panel plate; the selected option fills paper.",
+      "html": "<div class=\"ds-seg\"><button>Casual</button><button class=\"ds-on\">Standard</button><button>Pro</button></div>",
+      "css": ".ds-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 380px; padding: 4px; background: var(--panel, #16213a); } .ds-seg button { padding: 10px 0 9px; border: 0; background: none; color: var(--dim, #a9b8cf); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; } .ds-seg button:hover { color: var(--fg, #f4f6f8); } .ds-seg button:focus-visible { outline: 2px solid var(--yellow, #ffc400); outline-offset: 2px; } .ds-seg button.ds-on { background: var(--paper, #f4f6f8); color: var(--ink, #0b1220); }"
+    },
+    {
+      "name": "Rail Card",
+      "kind": "card",
+      "refersTo": "rail-card",
+      "description": "Square panel plate with a tracked condensed head and the yellow XP bar that marks the player.",
+      "html": "<div class=\"ds-rail\"><div class=\"ds-rail-head\">Ranked <span>Season 1</span></div><div class=\"ds-xp\"><div style=\"width:62%\"></div></div><small>2,480 / 4,000 XP to level 56</small></div>",
+      "css": ".ds-rail { width: 380px; padding: 16px 18px; background: var(--panel, #16213a); color: var(--fg, #f4f6f8); font-family: Saira, system-ui, sans-serif; } .ds-rail-head { display: flex; justify-content: space-between; margin: 0 0 10px; font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 15px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1; } .ds-rail-head span { color: var(--dim, #a9b8cf); font-size: 14px; letter-spacing: 0.06em; } .ds-xp { height: 8px; margin: 14px 0 6px; background: var(--line, #26365a); } .ds-xp div { height: 100%; background: var(--yellow, #ffc400); } .ds-rail small { color: var(--dim, #a9b8cf); font-size: 13px; }"
+    },
+    {
+      "name": "Team Tag and Lineup Row",
+      "kind": "custom",
+      "refersTo": "team-tag",
+      "description": "Slanted team tag over level-tagged rows, as in the lineup and final score.",
+      "html": "<div class=\"ds-lu\"><span class=\"ds-team\" style=\"background:#d32f3a\">Red team</span><div class=\"ds-row\"><i class=\"ds-lvl\">55</i>BravoBoss<b>12</b></div><div class=\"ds-row\"><i class=\"ds-lvl\">18</i>Bubba<b>7</b></div></div>",
+      "css": ".ds-lu { display: flex; flex-direction: column; gap: 6px; width: 320px; } .ds-team { align-self: flex-start; padding: 5px 30px 3px 14px; background: var(--line-2, #3a4d75); color: #fff; font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 17px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); } .ds-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px 6px; background: var(--navy, #0b1220); color: var(--fg, #f4f6f8); font-family: \"Saira Condensed\", \"Arial Narrow\", sans-serif; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-row b { margin-left: auto; font-weight: 800; } .ds-lvl { min-width: 28px; padding: 1px 5px 0; background: var(--line-2, #3a4d75); font-size: 13px; font-style: normal; font-weight: 800; text-align: center; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Broadcast Package",
+    "overview": "Every match is a televised event. The menus and the in-match HUD are one sports-TV graphics set: a scorebug strip across the top of the menu, lower-third bars for the modes, a pregame roster that fills like a studio pre-show, a starting-lineup slam before the match, a scorebug over the game, and a final-score card at the end. The system rejects the dark, rounded-card web dashboard the game used before. Nothing is soft, floating or glowing. Graphics are flat plates of colour with hard edges that slide in.\n\nDensity is broadcast density. Big condensed numerals and names, short uppercase labels, and one sentence of plain prose where a rule needs explaining. The ground is deep navy. Information sits on paper-white plates with navy type, the way a lower third reads over any footage. Network yellow is scarce and always means \"this is the action\" or \"this is you\". Team red and blue appear only as tags and slabs.\n\nMotion is the signature. Bars, tags and lineup rows wipe in along their own slant, staggered. Numbers that change roll up into place. With reduced motion, every wipe becomes a short fade.",
+    "keyCharacteristics": [
+      "Navy ground, paper-white plates, one network-yellow action per screen.",
+      "Saira Condensed 700/800 uppercase for every label, name and numeral; Saira for prose.",
+      "Square corners everywhere; the slanted cut appears only on slabs, tags and bars.",
+      "State shown by form as well as colour: solid live, dashed pending, struck through locked.",
+      "The wipe and the number tick are the only motion vocabulary."
+    ],
+    "rules": [
+      {
+        "name": "The One Slab Rule",
+        "body": "Each screen carries exactly one yellow primary-action slab. Secondary actions are outlined chips, never a second yellow button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Yellow Means You Rule",
+        "body": "Outside the primary action and the active marks, yellow only ever marks the player: your row, your XP, your code. It never decorates.",
+        "section": "colors"
+      },
+      {
+        "name": "The Team Token Rule",
+        "body": "Team colour comes from red, blue, red-slab and blue-slab only, so the colourblind overrides reach every surface.",
+        "section": "colors"
+      },
+      {
+        "name": "The Condensed Voice Rule",
+        "body": "Anything a broadcaster would put on screen (labels, names, numbers, buttons) is Saira Condensed uppercase. Sentences are Saira in sentence case.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number is tabular (`font-variant-numeric: tabular-nums` is set on the root) so ticking scores never jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Plates Not Shadows Rule",
+        "body": "UI chrome separates by plate colour, not by shadow. The only lift is the overlay card.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Cut Belongs to Slabs Rule",
+        "body": "The slant is only for slabs, tags and bars. Cards, tiles, inputs and chips stay plain rectangles.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do set the outline of every slanted piece as `--shape` so the wipe opens along that same cut.",
+      "Do wipe new bars, tags and rows in with `cubic-bezier(0.16, 1, 0.3, 1)` over 0.3-0.5s, staggered, and tick changed numbers up over 0.3-0.35s.",
+      "Do show state by form as well as colour: solid for live, dashed for pending, struck through and greyed for locked.",
+      "Do draw UI icons from the shared set: a 24-unit grid, 2.2px square-capped mitred strokes, coloured by `currentColor`.",
+      "Do read team colour from the team tokens so colourblind modes and the high-contrast HUD (solid black behind readouts) keep working.",
+      "Do let cosmetic previews and calling cards keep their item's own colours; they are player content, not chrome."
+    ],
+    "donts": [
+      "Don't round UI corners, use pills, or put gradients or glows on menu or HUD chrome. Full-screen effects (damage vignette, scope, zone tint, heal flash) and cosmetic previews keep their gradients and glows.",
+      "Don't put a second yellow button on a screen, or use yellow as decoration.",
+      "Don't apply the slanted cut to cards, tiles, inputs or chips.",
+      "Don't set a label, name or number in Saira body, or set prose in condensed uppercase.",
+      "Don't add a tracked label above a heading that only repeats it.",
+      "Don't use typed glyphs or emoji as UI icons."
+    ]
+  }
+}

@@ -24,7 +24,7 @@ const open = async (label) => {
     if (m.type() === 'error' && !m.text().includes('404')) console.log(`[${label}] ${m.text()}`);
   });
   await page.goto('http://localhost:5190/', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent === 'FIND MATCH'), { timeout: 120000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent.startsWith('FIND MATCH')), { timeout: 120000 });
   return page;
 };
 const clickText = (page, sel, text) => page.evaluate((sel, text) => [...document.querySelectorAll(sel)].find((b) => b.textContent.trim() === text).click(), sel, text);

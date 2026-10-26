@@ -1,0 +1,821 @@
+/* ---------- main menu shell ---------- */
+.shell {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+  padding: 0 32px 56px;
+}
+
+/* The scorebug strip: network slab, tab bar, live count. */
+.bug {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: stretch;
+  height: 64px;
+  margin: 0 -32px 28px;
+  padding: 18px 32px 0;
+  box-sizing: content-box;
+  background: var(--navy);
+}
+.bug-net {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 calc(var(--cut) + 26px) 0 22px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 34px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  --shape: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  clip-path: var(--shape);
+  animation: wipe 0.5s var(--ease-out) backwards;
+}
+.bug-tabs {
+  display: flex;
+  margin-left: calc(-1 * var(--cut) + 4px);
+  padding: 0 calc(var(--cut) + 18px) 0 calc(var(--cut) + 10px);
+  background: var(--panel);
+  --shape: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  clip-path: var(--shape);
+  overflow-x: auto;
+  scrollbar-width: none;
+  animation: wipe 0.5s 0.08s var(--ease-out) backwards;
+}
+.menu-tab {
+  padding: 4px 16px 0;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: inset 0 -4px 0 transparent;
+  transition: color 0.12s, box-shadow 0.12s;
+}
+.menu-tab:hover {
+  color: var(--fg);
+}
+.menu-tab.on {
+  color: var(--fg);
+  box-shadow: inset 0 -4px 0 var(--yellow);
+}
+.menu-tab:focus-visible {
+  outline-offset: -4px;
+}
+.bug-live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-left: 20px;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.bug-live b {
+  padding: 3px 9px 2px;
+  background: var(--red-slab);
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+}
+.live-short {
+  display: none;
+}
+.bug-live em {
+  display: inline-block;
+  font-style: normal;
+  color: var(--fg);
+  animation: tick 0.35s var(--ease-out);
+}
+
+/* Play tab: modes on the left, you and the big button on the right. */
+.desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 32px;
+  align-items: start;
+}
+.desk.single {
+  display: block;
+  animation: fade 0.25s ease-out;
+}
+
+.mode-block {
+  margin-bottom: 26px;
+}
+.mode-group {
+  margin: 0 0 10px;
+  color: var(--fg);
+  font-size: 16px;
+  letter-spacing: 0.16em;
+}
+.modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 8px 14px;
+}
+.mode {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 60px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  animation: wipe 0.45s var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+.mode-tag {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 96px;
+  padding-right: 10px;
+  background: var(--tag, #46546e);
+  color: #fff;
+  font-family: var(--f-cond);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+}
+.mode-bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  margin-left: -12px;
+  padding: 7px 16px 7px 26px;
+  background: var(--paper);
+  color: var(--ink);
+  clip-path: polygon(12px 0, 100% 0, 100% 100%, 0 100%);
+  transition: background 0.12s;
+}
+.mode-bar strong {
+  font-family: var(--f-cond);
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mode-bar span {
+  color: var(--paper-ink);
+  font-size: 13px;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+.mode:hover .mode-bar {
+  background: #fff;
+}
+.mode.on .mode-bar {
+  background: var(--yellow);
+}
+.mode.on .mode-bar span {
+  color: var(--yellow-ink);
+}
+.mode:focus-visible {
+  outline-offset: 3px;
+}
+.g-practice {
+  --tag: #4a5872;
+}
+.g-team {
+  --tag: var(--blue-slab);
+}
+.g-objective {
+  --tag: var(--red-slab);
+}
+.g-freeforall {
+  --tag: #0e8460;
+}
+.g-party {
+  --tag: #7440c0;
+}
+.g-special {
+  --tag: #c1501a;
+}
+.g-onlineonly {
+  --tag: #4a5872;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 13px;
+}
+.controls kbd {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 6px 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Right rail. */
+.desk-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: wipe-r 0.5s 0.1s var(--ease-out) backwards;
+}
+.rail-card {
+  display: block;
+  width: 100%;
+  padding: 16px 18px;
+  border: 0;
+  background: var(--panel);
+  color: var(--fg);
+  text-align: left;
+}
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.rail-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+
+/* Your level card. */
+.pb-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.profile-bar .lvl-badge {
+  min-width: 78px;
+  height: 64px;
+  margin: 0;
+  padding: 0 12px;
+  border-width: 3px;
+  font-size: 40px;
+}
+.profile-bar .lvl-prestige {
+  font-size: 16px;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.profile-bar .rank {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.profile-bar .rank b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--f-cond);
+  font-size: 23px;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.profile-bar small {
+  color: var(--dim);
+  font-size: 13px;
+}
+.prestige-tag {
+  font-style: normal;
+  color: #c89bff;
+}
+.xpbar {
+  height: 8px;
+  margin: 14px 0 6px;
+  background: var(--line);
+}
+.xpbar div {
+  height: 100%;
+  background: var(--yellow);
+}
+.xp-line {
+  display: block;
+}
+.name-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+}
+.name-field > label {
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+}
+.color-chip {
+  padding: 0;
+  border: 3px solid var(--navy);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.color-chip:hover {
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.name-field input {
+  width: 100%;
+  padding: 6px 8px 4px;
+  border: 0;
+  border-bottom: 2px solid var(--line-2);
+  background: var(--navy);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 22px;
+  font-weight: 700;
+  outline: none;
+}
+.name-field input:focus {
+  border-bottom-color: var(--yellow);
+}
+
+/* Ranked. */
+.rank-queue {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.rank-queue em {
+  padding: 3px 0 2px;
+  border: 2px solid var(--line-2);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+.rank-queue.pending em {
+  border-style: dashed;
+}
+.rank-queue span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rank-queue b {
+  font-family: var(--f-cond);
+  font-size: 19px;
+  font-weight: 700;
+}
+.rank-queue small {
+  color: var(--dim);
+}
+.tourney-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Loadout summary. */
+.loadout-strip {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.loadout-strip:hover {
+  background: var(--panel-2);
+}
+.loadout-strip dl {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+}
+.loadout-strip dt {
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding-top: 1px;
+}
+.loadout-strip dd {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Lobby: a segmented control. */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+}
+.seg button {
+  padding: 10px 0 9px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.seg button:hover {
+  color: var(--fg);
+}
+.seg button.on {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.play.go {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 16px 28px 14px 22px;
+  font-size: 36px;
+  line-height: 1;
+  text-align: left;
+}
+.play.go small {
+  margin-top: 4px;
+  color: var(--yellow-ink);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.play.go:disabled small {
+  color: var(--dim);
+}
+
+/* Friends. */
+.online-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.join-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+.code-input {
+  min-width: 0;
+  padding: 6px 10px 4px;
+  border: 2px solid var(--line-2);
+  background: var(--navy);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-align: center;
+  outline: none;
+}
+.code-input::placeholder {
+  color: var(--mute);
+}
+.code-input:focus {
+  border-color: var(--yellow);
+}
+
+@media (max-width: 1120px) {
+  .desk {
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 24px;
+  }
+  .modes {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  }
+}
+@media (max-width: 880px) {
+  .desk {
+    grid-template-columns: 1fr;
+  }
+  .desk-rail {
+    order: -1;
+  }
+  .bug-live .live-full {
+    display: none;
+  }
+  .bug-live .live-short {
+    display: inline;
+  }
+}
+@media (max-width: 640px) {
+  .shell {
+    padding: 0 12px 40px;
+  }
+  .bug {
+    flex-wrap: wrap;
+    height: auto;
+    margin: 0 -12px 18px;
+    padding: 10px 12px 0;
+  }
+  .bug-net {
+    font-size: 26px;
+    height: 44px;
+  }
+  .bug-live {
+    padding-left: 10px;
+  }
+  .bug-tabs {
+    order: 3;
+    width: calc(100% + 24px);
+    height: 48px;
+    margin: 8px -12px 0;
+    padding: 0 6px;
+    clip-path: none;
+  }
+  .menu-tab {
+    padding: 4px 11px 0;
+    font-size: 17px;
+  }
+  .modes {
+    grid-template-columns: 1fr;
+  }
+  .mode-tag {
+    width: 80px;
+    font-size: 17px;
+  }
+  .mode-bar strong {
+    font-size: 19px;
+  }
+  .play.go {
+    font-size: 30px;
+  }
+}
+
+/* ---------- matchmaking: the pregame roster ---------- */
+.menu-card.small.pregame {
+  width: min(520px, 100%);
+  padding: 0 0 24px;
+  text-align: left;
+}
+.pg-head {
+  padding: 20px 24px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  animation: wipe 0.45s var(--ease-out) backwards;
+}
+.pg-head.found h2::after {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 12px;
+  background: var(--green);
+  vertical-align: 0.15em;
+}
+.pg-head h2 {
+  margin: 0 0 6px;
+  font-size: 34px;
+}
+.pg-head span {
+  color: var(--paper-ink);
+  font-size: 14px;
+}
+.pg-count {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 18px 24px 0;
+  font-family: var(--f-cond);
+}
+.pg-count b {
+  display: inline-block;
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 0.9;
+  animation: tick 0.3s var(--ease-out);
+}
+.pg-count span {
+  color: var(--dim);
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.lobby-bar {
+  height: 10px;
+  margin: 14px 24px 14px;
+  background: var(--line);
+}
+.lobby-bar div {
+  height: 100%;
+  background: var(--paper);
+  transition: width 0.2s var(--ease-out);
+}
+.pg-head.found ~ .lobby-bar div {
+  background: var(--green);
+}
+.joining {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 24px 14px;
+}
+.joining-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px 6px;
+  background: var(--navy);
+  font-family: var(--f-cond);
+  font-size: 17px;
+  font-weight: 600;
+}
+.joining-row span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.joining-row.new {
+  animation: wipe 0.35s var(--ease-out);
+}
+.joining .set-hint {
+  padding: 4px 2px 0;
+}
+.pregame > .set-hint {
+  padding: 0 24px;
+}
+.pregame .row {
+  justify-content: flex-start !important;
+  margin: 14px 24px 0;
+}
+
+/* Small level tags in lists. */
+.lvl {
+  display: inline-block;
+  min-width: 28px;
+  padding: 1px 5px 0;
+  background: var(--line-2);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
+}
+.ping {
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+}
+.ping.meh {
+  color: var(--yellow);
+}
+.ping.bad {
+  color: var(--red);
+}
+
+/* ---------- pre-match lineup: the starting lineups ---------- */
+.lineup {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 20px;
+  background: rgba(6, 10, 20, 0.9);
+  cursor: pointer;
+  animation: fade 0.3s ease-out;
+}
+.lineup h2 {
+  margin: 0;
+}
+.lineup h2 span {
+  display: inline-block;
+  padding: 8px calc(var(--cut) + 34px) 4px 24px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 46px;
+  --shape: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  clip-path: var(--shape);
+  animation: wipe 0.5s var(--ease-out) backwards;
+}
+.lineup-teams {
+  position: relative;
+  display: flex;
+  gap: 84px;
+  max-width: 100%;
+  overflow: auto;
+}
+.lineup-teams:not(.versus) .lineup-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  width: min(900px, 90vw);
+}
+.lineup-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 300px;
+}
+.lu-team {
+  align-self: flex-start;
+  margin-bottom: 4px;
+  padding: 5px 30px 3px 14px;
+  background: var(--line-2);
+  color: #fff;
+  font-family: var(--f-cond);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  --shape: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  clip-path: var(--shape);
+  animation: wipe 0.4s 0.15s var(--ease-out) backwards;
+}
+.lu-row {
+  animation: wipe 0.45s var(--ease-out) backwards;
+  animation-delay: calc(0.25s + var(--i, 0) * 70ms);
+}
+.lineup-col.away .lu-row,
+.lineup-col.away .lu-team {
+  animation-name: wipe-r;
+}
+.lineup-col.away .lu-team {
+  align-self: flex-end;
+}
+.lineup-col .calling-card {
+  min-height: 50px;
+}
+.lineup-vs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--paper);
+  font-family: var(--f-cond);
+  font-size: 46px;
+  font-weight: 800;
+  animation: fade 0.3s 0.5s both;
+}
+.lineup-skip {
+  color: var(--dim);
+  font-size: 14px;
+}
+@media (max-width: 760px) {
+  .lineup-teams.versus {
+    flex-direction: column;
+    gap: 24px;
+  }
+  .lineup-vs {
+    display: none;
+  }
+  .lineup h2 span {
+    font-size: 32px;
+  }
+}

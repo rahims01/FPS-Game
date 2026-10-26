@@ -76,7 +76,7 @@ npm run build      # type-check + production build
 - **Killstreaks:** pick any 3 in **Edit loadout**, earned by kills without dying: Adrenaline (2: full health and faster movement), UAV (3: enemies on your minimap for 30 s), Supply Drop (4: health, ammo and grenades), Counter-UAV (4: jams enemy minimaps), Airstrike (5), Cluster Strike (7: three airstrikes), Juggernaut (8: takes 45% damage) and Tactical Nuke (20: every enemy dies and your side wins).
 - **Medals and XP:** headshot, double / triple / multi kill, killing spree, first blood, revenge, longshot, point blank, frag, knife, afterlife, comeback, buzzkill, captures, confirms and denies. XP is saved in your browser, with 55 levels and ranks from Recruit to Legend.
 - **Feedback:** hit marker ticks and floating damage numbers (both can be turned off; headshots in yellow, kills in red), a "killed by" card (weapon, distance, the killer's remaining HP), spawn protection, positional footsteps (crouching is silent), synthesised per-weapon gunshots, explosions with smoke, scorch marks and screen shake, and ragdolls thrown by blasts.
-- **Lobby feel:** about 850 hand-picked gamer tags (recently seen names are avoided, so lobbies don't repeat), generated and real-name style tags, the odd `Player####` who never changed their name and rare players from abroad (other languages and scripts), a matchmaking screen where you watch the lobby fill (with each player's level and ping), a live players-online count, coloured nametags, and colours you pick for free-for-all modes.
+- **Lobby feel:** about 850 hand-picked gamer tags (recently seen names are avoided, so lobbies don't repeat), generated and real-name style tags, the odd `Player####` who never changed their name and rare players from abroad (other languages and scripts), a matchmaking screen where you watch the lobby fill (with each player's level and ping), a players-online count that everyone sees the same (see **Live player count**), coloured nametags, and colours you pick for free-for-all modes.
 - **Public-server life:** in matchmade games, pings drift on the scoreboard, a player or two is still loading in at the start, and, rarely, someone on a side that is getting crushed rage-quits after dying; a robotic "Bot N" plays their slot for the rest of the match (nobody joins mid-match). Players also teabag, check corners, and bunny-hop between fights. Now and then a smurf (a low level who plays like a pro) or a squad of friends with a shared clan tag turns up, and late in a long match someone may go AFK for a bit. (Online rooms with friends turn all of this off: bots there are labelled and robotic.)
 - **Spectating:** when you are out (no-respawn modes, out of lives), you watch your teammates through their eyes; click or Space for the next player.
 - **Post-match screen:** result, XP, your kills, deaths, damage, accuracy, headshots and best streak, the MVP, and a full scoreboard with all of those for everyone.
@@ -135,7 +135,41 @@ Under **Play online**, click **Host game** to open a room. Send the 5-letter cod
 - **Limitations:**
   - Up to 8 humans.
   - No lag compensation: you shoot at where players are on the host.
-  - Some strict networks (certain school or office firewalls, symmetric NAT) block direct peer-to-peer connections. That would need a TURN relay server.
+  - Many networks (school and office Wi-Fi, mobile data, some home routers) block direct peer-to-peer links. Two tabs on one computer always connect; two devices often need a relay. See **Relay (TURN) setup** below.
+
+### Relay (TURN) setup: free
+
+PeerJS's built-in relays no longer answer, so the game gets relay servers from its own Cloudflare Pages Function, `functions/api/turn.ts` (served at `/api/turn`). Without a relay, players on different networks often can't join each other's rooms (two tabs on one computer always can). Set up one or both free relays; the game offers every one you configure and uses whichever gets through.
+
+**ExpressTURN (free, 1,000 GB a month, port 3478)**
+
+1. Sign up at [expressturn.com](https://www.expressturn.com/) (email, password and your site's address).
+2. From its dashboard, copy the TURN server address, username and password.
+3. In the Cloudflare dashboard, open this Pages project, **Settings > Variables and Secrets**, and add:
+   - `TURN_URLS`: the server address, e.g. `turn:relay1.expressturn.com:3478` (several can be comma-separated);
+   - `TURN_USERNAME`;
+   - `TURN_CREDENTIAL` (as a secret).
+
+**Metered Open Relay (free, 20 GB a month, also ports 80 and 443)**
+
+These ports get through school and office firewalls that block 3478, so it's worth adding as well.
+
+1. Sign up for the free plan at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/) and create an app.
+2. Add `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret) the same way.
+
+Redeploy, then open `https://<your-site>/api/turn`: it should list `iceServers`. With nothing configured it returns 404, and the game uses direct connections only.
+
+Cloudflare's own relay also works: set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` from **Realtime > TURN Server**. It's paid beyond its free allowance.
+
+### Live player count
+
+The players-online number is the same for everyone at the same moment. It's a shared estimate worked out from the clock (US Eastern daily rhythm, busier at weekends), plus the real people with the game open right now. Real players are counted by a small free Cloudflare Worker with a Durable Object (`workers/presence`). Each open tab checks in every 2 minutes, which the free plan's 100,000 requests a day covers for about 70 people online at once. Beyond that the extra check-ins fail and the number shows the estimate alone.
+
+1. Deploy the Worker once: `cd workers/presence && npx wrangler deploy` (log in when asked).
+2. In the Pages project, go to **Settings > Bindings**, add a **Durable Object** binding named `PRESENCE`, and pick the Worker `fps-shooter-presence` and its class `Presence`.
+3. Redeploy. `https://<your-site>/api/online` should return `{"online": n}`.
+
+Without the binding, `/api/online` returns 404 and the count is the shared estimate alone.
 
 Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in headless Edge.
 

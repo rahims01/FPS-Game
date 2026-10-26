@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { SKINS, type SkinId } from '../assets/skins';
-import type { GameSettings } from '../game/settings';
-import type { Profile } from '../game/progression';
-import { masteryOf, MASTERY, RARITY } from '../game/cosmetics';
+import { keyLabel, type GameSettings } from '../game/settings';
+import { levelOf, type Profile } from '../game/progression';
+import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, type Cosmetics } from '../game/cosmetics';
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
 import { GunPreview } from './GunPreview';
+import { LockIcon } from './icons';
 
 const BLURB: Record<string, string> = {
   rifle: 'Accurate all-rounder',
@@ -25,7 +26,8 @@ const BLURB: Record<string, string> = {
   autoshotgun: 'Auto shotgun, room clearer',
   barrett: 'Semi-auto .50 cal, one-shot body',
   deagle: 'Hand cannon',
-  mpistol: 'Full-auto sidearm'
+  mpistol: 'Full-auto sidearm',
+  knife: 'Always carried · one stab kills'
 };
 
 /** Weapon stats, each 0..1 for the comparison bars, plus a few raw numbers. */
@@ -59,9 +61,13 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
   const kills = (w: WeaponId) => profile.weaponKills[w] ?? 0;
   const picked = settings.streaks;
   const fw = WEAPONS[focus];
+  const melee = fw.slot === 'melee';
   const st = statsOf(fw);
   const cmp = statsOf(WEAPONS[fw.slot === 'secondary' ? settings.secondary : settings.primary]);
   const mastery = masteryOf(kills(focus));
+  const level = levelOf(profile.xp).level;
+  const cos = settings.cosmetics;
+  const setCos = (patch: Partial<Cosmetics>) => set({ cosmetics: { ...cos, ...patch } });
 
   const toggleStreak = (id: StreakId) => {
     let next = picked.includes(id) ? picked.filter((s) => s !== id) : [...picked, id];
@@ -74,8 +80,8 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
     set({ perks: next.length === PERK_SLOTS ? normalizePerks(next) : next });
   };
 
-  const gun = (w: WeaponId, slot: 'primary' | 'secondary') => {
-    const on = settings[slot] === w;
+  const gun = (w: WeaponId, slot: 'primary' | 'secondary' | 'melee') => {
+    const on = slot === 'melee' || settings[slot] === w;
     const skin = SKINS.find((s) => s.id === (settings.skins[w] ?? 'none'))!;
     const m = masteryOf(kills(w));
     return (
@@ -83,7 +89,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
         key={w}
         className={`gun-card ${on ? 'on' : ''} ${focus === w ? 'focus' : ''}`}
         onClick={() => {
-          set({ [slot]: w } as Partial<GameSettings>);
+          if (slot !== 'melee') set({ [slot]: w } as Partial<GameSettings>);
           setFocus(w);
         }}
       >
@@ -137,23 +143,23 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                 {fw.name}
                 <small>
                   {' '}
-                  · {fw.slot} · {fw.magazine} rounds · {st.rpm} rpm{fw.burst ? ` (${fw.burst}-round burst)` : ''}
+                  · {melee ? `melee · always carried · ${keyLabel(settings.keys.melee)} to use` : `${fw.slot} · ${fw.magazine} rounds · ${st.rpm} rpm${fw.burst ? ` (${fw.burst}-round burst)` : ''}`}
                 </small>
               </h3>
-              {st.bars.map(([label, v], i) => {
+              {!melee && st.bars.map(([label, v], i) => {
                 const other = cmp.bars[i][1];
                 return (
                   <div key={label} className="stat-row">
                     <span>{label}</span>
                     <div className="stat-bar">
                       <i style={{ width: `${v * 100}%` }} />
-                      {focus !== settings[fw.slot === 'secondary' ? 'secondary' : 'primary'] && <b style={{ left: `${other * 100}%` }} title="Your equipped gun" />}
+                      {!melee && focus !== settings[fw.slot === 'secondary' ? 'secondary' : 'primary'] && <b style={{ left: `${other * 100}%` }} title="Your equipped gun" />}
                     </div>
                   </div>
                 );
               })}
               <p className="set-hint">
-                Body-shot kill: {st.shots} {st.shots === 1 ? 'hit' : 'hits'} ({st.ttk} ms) · headshot {fw.damage.head} damage · mastery {mastery.name}
+                {melee ? `One stab kills at up to ${fw.range} m, and you move ${Math.round((fw.move - 1) * 100)}% faster with it out` : `Body-shot kill: ${st.shots} ${st.shots === 1 ? 'hit' : 'hits'} (${st.ttk} ms) · headshot ${fw.damage.head} damage`} · mastery {mastery.name}
                 {mastery.next !== null ? ` (${kills(focus)}/${mastery.next} kills to ${MASTERY[mastery.tier + 1].name})` : ''}
               </p>
             </div>
@@ -162,6 +168,8 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <div className="gun-grid">{PRIMARIES.map((w) => gun(w, 'primary'))}</div>
           <h3>Secondary</h3>
           <div className="gun-grid">{SECONDARIES.map((w) => gun(w, 'secondary'))}</div>
+          <h3>Melee</h3>
+          <div className="gun-grid">{gun('knife', 'melee')}</div>
           <h3>
             Camo · {fw.name} <small>({kills(focus)} kills)</small>
           </h3>
@@ -181,7 +189,28 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                   <i style={{ background: s.swatch }} className={s.kind ? `camo-${s.kind}` : ''} />
                   <span>{s.name}</span>
                   {s.kind && <small className={`camo-kind ${s.kind}`}>{s.kind === 'mastery' ? (s.kills >= 500 ? 'Diamond mastery' : 'Gold mastery') : s.kind}</small>}
-                  {locked && <small>🔒 {s.kills}</small>}
+                  {locked && <small><LockIcon size={11} /> {s.kills}</small>}
+                </button>
+              );
+            })}
+          </div>
+          <h3>Charm <small>(hangs off every gun)</small></h3>
+          <div className="skin-grid">
+            {CHARMS.map((c) => {
+              const ok = unlocked(c.unlock, profile, level);
+              const hidden = c.secret && !ok;
+              return (
+                <button
+                  key={c.id}
+                  className={`skin ${cos.charm === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
+                  disabled={!ok}
+                  style={{ borderColor: RARITY[rarityOf(c)].color }}
+                  title={ok ? c.name : hidden ? 'Secret' : unlockText(c.unlock)}
+                  onClick={() => setCos({ charm: c.id })}
+                >
+                  <i style={{ background: c.shape === 'none' ? 'transparent' : `#${c.color.toString(16).padStart(6, '0')}`, borderRadius: c.shape === 'ball' || c.shape === 'heart' || c.shape === 'duck' ? '50%' : 6 }} />
+                  <span>{hidden ? '???' : c.name}</span>
+                  {!ok && <small><LockIcon size={11} /> {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
                 </button>
               );
             })}
@@ -195,7 +224,9 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <div className="streak-grid">{LETHALS.map(throwable)}</div>
           <h3>Tactical</h3>
           <div className="streak-grid">{TACTICALS.map(throwable)}</div>
-          <p className="set-hint">Lethal: G (RB on a controller). Tactical: H (LB). Throwing knives and spears stick in whoever they hit.</p>
+          <p className="set-hint">
+            Lethal: {keyLabel(settings.keys.grenade)} (RB on a controller). Tactical: {keyLabel(settings.keys.tactical)} (LB). Throwing knives and spears stick in whoever they hit.
+          </p>
         </>
       )}
 

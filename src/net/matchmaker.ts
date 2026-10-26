@@ -45,10 +45,10 @@ export const seekPlayers = async (mode: ModeId, difficulty: Difficulty, profile:
     // Someone holds this bucket: join their lobby (they may be full or already playing).
     let session: ClientSession | null = null;
     try {
-      session = await ClientSession.connect('', profile, id, 3000);
+      session = await ClientSession.connect('', profile, id, 7000);
       const s = session;
       const ok = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => resolve(false), 3000);
+        const timer = setTimeout(() => resolve(false), 5000);
         s.onLobby = () => {
           clearTimeout(timer);
           resolve(true);

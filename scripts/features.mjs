@@ -21,7 +21,7 @@ const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 await page.goto('http://localhost:5190/', { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent === 'FIND MATCH'), { timeout: 120000 });
+await page.waitForFunction(() => [...document.querySelectorAll('button.play')].some((b) => b.textContent.startsWith('FIND MATCH')), { timeout: 120000 });
 await page.screenshot({ path: `${out}/menu.png` });
 await page.evaluate((name) => [...document.querySelectorAll('button.mode')].find((b) => b.querySelector('strong').textContent.startsWith(name)).click(), names[mode]);
 await page.evaluate(() => document.querySelector('button.play').click());

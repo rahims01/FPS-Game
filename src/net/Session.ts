@@ -21,6 +21,7 @@ import {
   type StartMsg
 } from './protocol';
 import { buildSnapshot } from './snapshot';
+import { iceConfig } from './ice';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const makeCode = () => Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
@@ -30,10 +31,15 @@ const ROOM_MAX = 8;
 /** A client that has been silent this long has gone (closed tab, lost connection, app switched away). */
 const SILENT_MS = 15000;
 
-/** Opens a PeerJS peer (free public signalling server; the game traffic itself is peer-to-peer). */
-const openPeer = (id?: string): Promise<Peer> =>
-  new Promise((resolve, reject) => {
-    const peer = id ? new Peer(id, { debug: 0 }) : new Peer({ debug: 0 });
+/**
+ * Opens a PeerJS peer (free public signalling server; the game traffic itself
+ * is peer-to-peer, relayed through TURN when the two networks can't connect directly).
+ */
+const openPeer = async (id?: string): Promise<Peer> => {
+  const { iceServers } = await iceConfig();
+  return new Promise((resolve, reject) => {
+    const opts = { debug: 0 as const, config: { iceServers } };
+    const peer = id ? new Peer(id, opts) : new Peer(opts);
     const timer = setTimeout(() => {
       peer.destroy();
       reject(new Error('Could not reach the matchmaking server. Check your connection.'));
@@ -48,6 +54,7 @@ const openPeer = (id?: string): Promise<Peer> =>
       reject(e);
     });
   });
+};
 
 /** A chat line as the host relays it. */
 export type ChatMsg = Extract<HostMsg, { t: 'chat' }>;
@@ -549,18 +556,30 @@ export class ClientSession {
 
   private onPageHide = () => this.leave();
 
-  static async connect(code: string, profile: PlayerProfile, fullId?: string, timeoutMs = 12000): Promise<ClientSession> {
+  static async connect(code: string, profile: PlayerProfile, fullId?: string, timeoutMs = 20000): Promise<ClientSession> {
     const peer = await openPeer();
+    const { relay } = await iceConfig();
     const conn = peer.connect(fullId ?? PEER_PREFIX + code.trim().toUpperCase(), { reliable: true });
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('No game found with that code (or the host could not be reached).')), timeoutMs);
+      // A missing room fails fast ('peer-unavailable'); getting here means the room exists but no route to it was found.
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              relay
+                ? 'Found the room but could not connect to the host. Check both connections and try again.'
+                : "Found the room but couldn't connect: one of your networks blocks direct connections (common on school Wi-Fi and mobile data)."
+            )
+          ),
+        timeoutMs
+      );
       conn.on('open', () => {
         clearTimeout(timer);
         resolve();
       });
       peer.on('error', (e) => {
         clearTimeout(timer);
-        reject(new Error((e as { type?: string }).type === 'peer-unavailable' ? 'No game found with that code.' : 'Could not connect to the host.'));
+        reject(new Error((e as { type?: string }).type === 'peer-unavailable' ? 'No game found with that code. Check it and that the host is still in the room.' : 'Could not connect to the host.'));
       });
     }).catch((e) => {
       peer.destroy();

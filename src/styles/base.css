@@ -1,0 +1,373 @@
+/*
+ * Broadcast package: the game's menus and HUD as one sports-TV graphics set.
+ * Navy ground, paper-white lower thirds, network yellow for the one primary
+ * action per screen (and the active tab mark and your own identity).
+ * Square corners everywhere; the slanted cut is only on slabs, tags and bars.
+ */
+:root {
+  --navy: #0b1220;
+  --panel: #16213a;
+  --panel-2: #1e2c4b;
+  --line: #26365a;
+  --line-2: #3a4d75;
+  --paper: #f4f6f8;
+  --paper-ink: #3b4a60;
+  --ink: #0b1220;
+  --yellow: #ffc400;
+  --yellow-hi: #ffd23d;
+  --yellow-ink: #4d3b00;
+  --red-slab: #d32f3a;
+  --blue-slab: #2a6fdb;
+  --fg: #f4f6f8;
+  --dim: #a9b8cf;
+  --mute: #8798b4;
+  --green: #45d483;
+  /* Kept by name: game code and colourblind modes use these. */
+  --accent: var(--yellow);
+  --blue: #5aa0ff;
+  --red: #ff5d62;
+  --hud: rgba(11, 18, 32, 0.86);
+  --f-cond: 'Saira Condensed', 'Arial Narrow', sans-serif;
+  --f-body: 'Saira', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --cut: 14px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--f-body);
+  font-size: 15px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  scrollbar-color: var(--line-2) transparent;
+  accent-color: var(--yellow);
+  caret-color: var(--yellow);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--navy);
+  user-select: none;
+}
+
+::selection {
+  background: var(--yellow);
+  color: var(--ink);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mute);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.viewport {
+  position: fixed;
+  inset: 0;
+}
+.viewport canvas {
+  display: block;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--f-cond);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+h1 {
+  margin: 0;
+  font-size: 44px;
+}
+h2 {
+  margin: 0 0 14px;
+  font-size: 34px;
+}
+h2.win {
+  color: var(--yellow);
+}
+h2.lose {
+  color: var(--red);
+}
+.sub {
+  color: var(--dim);
+  margin: 6px 0 20px;
+}
+small {
+  font-size: 12px;
+}
+kbd {
+  font-family: var(--f-cond);
+}
+
+.icon {
+  flex: none;
+  vertical-align: -0.15em;
+}
+
+/* ---------- controls ---------- */
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+/* The primary action: one yellow slab per screen. */
+.play {
+  width: 100%;
+  margin-top: 6px;
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 0;
+  background: var(--yellow);
+  color: var(--ink);
+  font-family: var(--f-cond);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+  transition: background 0.12s;
+}
+.play:hover:not(:disabled) {
+  background: var(--yellow-hi);
+}
+.play:active:not(:disabled) {
+  background: #e6b000;
+}
+.play:disabled {
+  background: var(--line);
+  color: var(--dim);
+  cursor: not-allowed;
+}
+
+/* Secondary actions and options: outlined, square; selected turns paper white. */
+.chip {
+  padding: 7px 14px 6px;
+  border: 2px solid var(--line-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color 0.12s, background 0.12s;
+}
+.chip:hover:not(:disabled) {
+  border-color: var(--paper);
+}
+.chip.on {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+.chip:disabled {
+  border-style: dashed;
+  color: var(--mute);
+  cursor: not-allowed;
+}
+
+input[type='text'],
+input:not([type]),
+select {
+  font: inherit;
+  border-radius: 0;
+  user-select: text;
+}
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--line-2);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 20px;
+  margin-top: -7px;
+  background: var(--yellow);
+  border: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%);
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  background: var(--line-2);
+}
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--yellow);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+.row label {
+  width: 100px;
+  color: var(--dim);
+  font-size: 14px;
+}
+.set-hint,
+.policy-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+.net-error {
+  margin: 8px 0 0;
+  color: #ff9a9e;
+  font-size: 13px;
+}
+
+/* ---------- overlays and cards ---------- */
+.menu,
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.menu {
+  background: var(--navy);
+}
+.overlay {
+  padding: 16px;
+  background: rgba(6, 10, 20, 0.74);
+}
+.overlay > *,
+.menu > .menu-card {
+  margin: auto;
+  flex-shrink: 0;
+}
+.menu:has(> .menu-card) {
+  padding: 16px;
+}
+.menu-card {
+  width: min(860px, 100%);
+  padding: 28px;
+  background: var(--panel);
+  border-radius: 0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.menu-card.small {
+  width: min(460px, 100%);
+  text-align: center;
+}
+.menu-card.small .row {
+  justify-content: center;
+}
+.overlay .row .play,
+.menu-card.small .row .play {
+  width: auto;
+  margin: 0;
+  padding: 12px 34px 11px 24px;
+}
+
+/* ---------- the wipe: bars slide in along their slant ----------
+ * Each slanted element sets its outline as --shape (not inherited, so a plain
+ * box wipes as a rectangle) and the keyframes open into that same polygon,
+ * so the cut edge leads the wipe instead of popping in at the end. */
+@property --shape {
+  syntax: '*';
+  inherits: false;
+  initial-value: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+@keyframes wipe {
+  from {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  }
+  to {
+    clip-path: var(--shape);
+  }
+}
+@keyframes wipe-r {
+  from {
+    clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+  }
+  to {
+    clip-path: var(--shape);
+  }
+}
+/* A changed number rolls up into place. */
+@keyframes tick {
+  from {
+    transform: translateY(45%);
+    opacity: 0;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-name: fade !important;
+    animation-duration: 0.15s !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-name: fade !important;
+  animation-duration: 0.15s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* ---------- accessibility ---------- */
+.hud > *,
+.menu-card,
+.shell,
+.chat {
+  zoom: var(--ui-scale, 1);
+}
+:root[data-cb='protanopia'],
+:root[data-cb='deuteranopia'] {
+  --red: #f0a050;
+  --red-slab: #b8661c;
+  --blue: #5a97f0;
+}
+:root[data-cb='tritanopia'] {
+  --red: #ff6b6b;
+  --blue: #3fc7bf;
+  --blue-slab: #1f8a84;
+}

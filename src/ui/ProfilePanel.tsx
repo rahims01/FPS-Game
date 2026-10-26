@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { BADGES, CARDS, CHARMS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
+import { BADGES, CARDS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
 import type { GameSettings } from '../game/settings';
 import { canPrestige, divisionOf, levelLabel, levelOf, MAX_PRESTIGE, rankOf, type Profile } from '../game/progression';
 import { PRIMARIES, SECONDARIES, WEAPONS } from '../sim/weapons';
+import { LockIcon, StarIcon } from './icons';
 
 /** The banner shown when you kill someone (and on the end screen if you are MVP). */
 export const CallingCard = ({
@@ -54,7 +55,7 @@ export const LevelBadge = ({ level, prestige, frame }: { level: number; prestige
 
 type Tab = 'look' | 'badges' | 'mastery' | 'stats';
 
-/** Your calling card, emblem and weapon charm, badges, weapon mastery and lifetime stats. */
+/** Your calling card, title, frame and emblem, badges, weapon mastery and lifetime stats. */
 export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile; onPrestige: () => void }) => {
   const [tab, setTab] = useState<Tab>('look');
   const level = levelOf(profile.xp).level;
@@ -63,6 +64,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
   const earnedCount = BADGES.filter((b) => earned(b, profile, level)).length;
   const st = profile.stats;
   const div = divisionOf(profile);
+  const duel = divisionOf(profile, 'duel');
 
   return (
     <div className="profile-panel">
@@ -83,7 +85,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
       <div className="set-tabs">
         {(
           [
-            ['look', 'Card, emblem & charm'],
+            ['look', 'Card, title & emblem'],
             ['badges', `Badges ${earnedCount}/${BADGES.length}`],
             ['mastery', 'Weapon mastery'],
             ['stats', 'Stats']
@@ -112,7 +114,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
                   style={{ background: hidden ? '#111' : c.bg, color: c.ink, boxShadow: `inset 0 -3px 0 ${RARITY[rarityOf(c)].color}` }}
                 >
                   <span>{hidden ? '???' : c.name}</span>
-                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
+                  {!ok && <small><LockIcon size={11} /> {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
                 </button>
               );
             })}
@@ -132,7 +134,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
                   onClick={() => setCos({ title: t.id })}
                 >
                   <span>{hidden ? '???' : t.text}</span>
-                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(t.unlock)}</small>}
+                  {!ok && <small><LockIcon size={11} /> {hidden ? 'Secret' : unlockText(t.unlock)}</small>}
                 </button>
               );
             })}
@@ -152,7 +154,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
                 >
                   <LevelBadge level={level} prestige={profile.prestige} frame={f.id} />
                   <span>{f.name}</span>
-                  {!ok && <small>🔒 {unlockText(f.unlock)}</small>}
+                  {!ok && <small><LockIcon size={11} /> {unlockText(f.unlock)}</small>}
                 </button>
               );
             })}
@@ -172,28 +174,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
                   onClick={() => setCos({ emblem: e.id })}
                 >
                   <span style={{ color: e.color }}>{hidden ? '?' : e.glyph}</span>
-                  {!ok && <small>🔒</small>}
-                </button>
-              );
-            })}
-          </div>
-          <h3>Weapon charm</h3>
-          <div className="skin-grid">
-            {CHARMS.map((c) => {
-              const ok = unlocked(c.unlock, profile, level);
-              const hidden = c.secret && !ok;
-              return (
-                <button
-                  key={c.id}
-                  className={`skin ${cos.charm === c.id ? 'on' : ''} ${ok ? '' : 'locked'}`}
-                  disabled={!ok}
-                  style={{ borderColor: RARITY[rarityOf(c)].color }}
-                  title={ok ? c.name : hidden ? 'Secret' : unlockText(c.unlock)}
-                  onClick={() => setCos({ charm: c.id })}
-                >
-                  <i style={{ background: c.shape === 'none' ? 'transparent' : `#${c.color.toString(16).padStart(6, '0')}`, borderRadius: c.shape === 'ball' || c.shape === 'heart' || c.shape === 'duck' ? '50%' : 6 }} />
-                  <span>{hidden ? '???' : c.name}</span>
-                  {!ok && <small>🔒 {hidden ? 'Secret' : unlockText(c.unlock)}</small>}
+                  {!ok && <small><LockIcon size={11} /></small>}
                 </button>
               );
             })}
@@ -230,9 +211,9 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
       {tab === 'mastery' && (
         <div className="mastery-list">
           <p className="set-hint">
-            Kills with a gun earn its mastery badge: {MASTERY.map((m) => `${m.name} ${m.kills}`).join(' · ')}. Your best one shows next to your name on the scoreboard.
+            Kills with a weapon earn its mastery badge: {MASTERY.map((m) => `${m.name} ${m.kills}`).join(' · ')}. Your best one shows next to your name on the scoreboard.
           </p>
-          {[...PRIMARIES, ...SECONDARIES].map((w) => {
+          {[...PRIMARIES, ...SECONDARIES, 'knife' as const].map((w) => {
             const k = profile.weaponKills[w] ?? 0;
             const m = masteryOf(k);
             const next = m.next ?? MASTERY[MASTERY.length - 1].kills;
@@ -240,7 +221,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
             return (
               <div key={w} className="mastery-row">
                 <span className="mastery-badge" style={{ background: m.color, opacity: m.tier >= 0 ? 1 : 0.25 }}>
-                  {m.tier >= 0 ? '★'.repeat(m.tier + 1) : '–'}
+                  {m.tier >= 0 ? Array.from({ length: m.tier + 1 }, (_, i) => <StarIcon key={i} size={12} />) : '–'}
                 </span>
                 <b>{WEAPONS[w].name}</b>
                 <div className="badge-bar">
@@ -275,13 +256,14 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
               ['Longshots', st.longshots ?? 0],
               ['Nukes', st.nukes ?? 0],
               ['Flawless wins', st.flawlessWins ?? 0],
-              ['Ranked', `${div.name}${div.placed ? ` · ${profile.sr} SR` : ''}`],
+              ['Ranked team', `${div.name}${div.placed ? ` · ${profile.sr} SR` : ''}`],
+              ['Ranked 1v1', `${duel.name}${duel.placed ? ` · ${profile.duelSr} SR` : ''}`],
               ['Aim trainer best', st.aimBest ?? 0]
             ] as [string, string | number][]
           ).map(([k, v]) => (
             <div key={k} className="stat-tile">
               <small>{k}</small>
-              <b>{v}</b>
+              <b className={typeof v === 'string' && v.length > 8 ? 'wordy' : undefined}>{v}</b>
             </div>
           ))}
         </div>

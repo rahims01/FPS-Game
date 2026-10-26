@@ -1,0 +1,89 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "src/styles/cosmetics.css"
+        ],
+        "createdAt": "2026-10-26T12:59:29.106Z",
+        "reason": "Claude decided: .nt-rainbow previews the unlockable rainbow name tag cosmetic, so the gradient is the item being shown, not decoration"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/assigned.html"
+        ],
+        "createdAt": "2026-10-26T13:05:03.954Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/assigned.html"
+        ],
+        "createdAt": "2026-10-26T13:05:06.780Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-10-26T13:05:09.440Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-gate.html"
+        ],
+        "createdAt": "2026-10-26T13:05:12.333Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-gate.html"
+        ],
+        "createdAt": "2026-10-26T13:05:15.204Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-gate.html"
+        ],
+        "createdAt": "2026-10-26T13:05:18.756Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-stream.html"
+        ],
+        "createdAt": "2026-10-26T13:05:22.244Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/model-pick.html"
+        ],
+        "createdAt": "2026-10-26T13:05:25.616Z",
+        "reason": "Claude decided: frozen decision-round sketch the user already chose from; not shipping UI"
+      }
+    ]
+  }
+}

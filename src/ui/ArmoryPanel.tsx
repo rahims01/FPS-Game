@@ -9,6 +9,7 @@ import { levelOf, type Profile } from '../game/progression';
 import { SoldierView } from '../render/SoldierView';
 import { drawNametag } from '../render/soldierStyle';
 import { createAgent, setLoadout } from '../sim/Agent';
+import { LockIcon } from './icons';
 
 /** A turning 3D view of your soldier: colour, style, gun, camo and charm. */
 const SoldierPreview = ({ assets, settings }: { assets: LoadedAssets | null; settings: GameSettings }) => {
@@ -137,7 +138,7 @@ export const ArmoryPanel = ({ settings, onChange, profile, assets }: { settings:
         <span className="arm-preview">{hidden ? '?' : preview}</span>
         <b>{hidden ? '???' : item.name}</b>
         <small style={{ color: RARITY[r].color }}>{RARITY[r].name}</small>
-        {!ok && <small className="arm-lock">🔒 {hidden ? 'Secret' : unlockText(item.unlock)}</small>}
+        {!ok && <small className="arm-lock"><LockIcon size={11} /> {hidden ? 'Secret' : unlockText(item.unlock)}</small>}
       </button>
     );
   };

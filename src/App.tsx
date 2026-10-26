@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { loadAssets, type LoadedAssets } from './assets/AssetRegistry';
 import { GameAudio } from './game/Audio';
 import { Game, type GameSettings, type HudState, type NetRole } from './game/Game';
@@ -8,7 +8,7 @@ import type { ChatLine } from './net/chat';
 import { basePingFor, COLORS, cssColor, isDark, levelFor, prepareLobby, presetLobby } from './game/identity';
 import { loadPolicy } from './rl/PolicyBrain';
 import type { Brain } from './sim/FpsSim';
-import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeId } from './sim/Match';
+import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeDef, type ModeId } from './sim/Match';
 import { streakDef } from './sim/killstreaks';
 import { perkDef, THROWABLES } from './sim/gear';
 import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
@@ -20,9 +20,11 @@ import { CallingCard, LevelBadge, ProfilePanel } from './ui/ProfilePanel';
 import { ArmoryPanel } from './ui/ArmoryPanel';
 import { newTourney, opponent, recordMatch, roundDifficulty, ROUND_NAMES, tourneyXp, type Tourney } from './game/tournament';
 import { canMatchmake, seekPlayers, type MatchmakingResult } from './net/matchmaker';
+import { playersOnline, startPresence } from './net/presence';
 import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
+import { ArrowIcon, GearIcon, TrophyIcon } from './ui/icons';
 import { keyLabel, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 import { PadMenus } from './game/gamepad';
 
@@ -79,14 +81,17 @@ const NO_NIGHT: ModeId[] = ['1v1', '2v2', '3v3', 'gunfight', 'training', 'aimtra
 
 let chatId = 0;
 
-/** Players online right now: a daily rhythm (busy evenings, quiet mornings) plus noise. */
-const playersOnline = (): number => {
-  const d = new Date();
-  const h = d.getHours() + d.getMinutes() / 60;
-  const wave = 0.55 + 0.45 * Math.sin(((h - 13) / 24) * Math.PI * 2);
-  const weekend = d.getDay() === 0 || d.getDay() === 6 ? 1.25 : 1;
-  return Math.round((6000 + 15000 * wave) * weekend + (Math.random() - 0.5) * 400);
+/** The tag on a mode's bar: team size, player count or how it is played. */
+const modeTag = (m: ModeDef): string => {
+  if (m.humansOnly) return 'FRIENDS';
+  if (m.group === 'Practice') return 'SOLO';
+  if (m.id === 'br_duos') return 'DUOS';
+  if (m.id === 'br_trios') return 'TRIOS';
+  if (m.players === 1) return 'CO-OP';
+  if (m.teams) return `${m.players / 2}V${m.players / 2}`;
+  return `${m.players} FFA`;
 };
+
 
 export const App = () => {
   const [assets, setAssets] = useState<LoadedAssets | null>(null);
@@ -127,7 +132,7 @@ export const App = () => {
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [joined, setJoined] = useState(1);
   const [lobbyNames, setLobbyNames] = useState<string[]>([]);
-  const [online, setOnline] = useState(playersOnline);
+  const [online, setOnline] = useState(() => playersOnline());
   const [profile, setProfile] = useState<Profile>(loadProfile);
   const mount = useRef<HTMLDivElement>(null);
   const minimap = useRef<HTMLCanvasElement>(null);
@@ -148,6 +153,7 @@ export const App = () => {
     root.style.setProperty('--ui-scale', String(settings.access.uiScale));
     root.dataset.cb = settings.access.colorblind;
     root.classList.toggle('hc', settings.access.highContrast);
+    root.classList.toggle('reduce-motion', settings.access.reduceMotion);
   }, [settings]);
 
   // Controller navigation in menus (in a match the game reads the controller itself).
@@ -163,7 +169,9 @@ export const App = () => {
 
   // The online counter drifts.
   useEffect(() => {
-    const t = window.setInterval(() => setOnline((n) => Math.max(1000, Math.round(n * 0.9 + playersOnline() * 0.1 + (Math.random() - 0.5) * 60))), 4000);
+    // Same for everyone: the shared estimate plus real people online (no per-device randomness).
+    startPresence();
+    const t = window.setInterval(() => setOnline(playersOnline()), 4000);
     return () => window.clearInterval(t);
   }, []);
 
@@ -558,191 +566,236 @@ export const App = () => {
       <div ref={mount} className="viewport" />
       {screen.kind === 'menu' && (
         <div className="menu">
-          <div className="menu-card main-menu">
-            <header className="menu-head">
-              <h1>FPS SHOOTER</h1>
-              <span className="online-count">● {online.toLocaleString()} players online</span>
-            </header>
-            <div className="profile-row">
-              <ProfileBar profile={profile} frame={settings.cosmetics.frame} />
-              <div className="ranked-card">
-                <small>Ranked</small>
+          <div className="shell">
+            <header className="bug">
+              <h1 className="bug-net">FPS SHOOTER</h1>
+              <nav className="bug-tabs" aria-label="Menu">
                 {(
                   [
-                    ['team', 'Team', teamDiv],
-                    ['duel', '1v1', duelDiv]
-                  ] as [RankedQueue, string, Division][]
-                ).map(([q, label, d]) => {
-                  const qs = queueStats(profile, q);
-                  return (
-                    <div key={q} className="rank-queue">
-                      <span>
-                        <em>{label}</em> <b style={{ color: d.color }}>{d.name}</b>
-                        <small>
-                          {d.placed ? `${qs.sr} SR · ` : ''}
-                          {qs.wins}W {qs.matches - qs.wins}L
-                        </small>
-                      </span>
-                      <button className="chip ranked-btn" disabled={!assets} onClick={() => playRanked(q)}>
-                        PLAY
+                    ['play', 'Play'],
+                    ['loadout', 'Loadout'],
+                    ['armory', 'Armory'],
+                    ['profile', 'Profile'],
+                    ['settings', 'Settings']
+                  ] as [MenuTab, string][]
+                ).map(([id, label]) => (
+                  <button key={id} className={`menu-tab ${tab === id ? 'on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              <div className="bug-live">
+                <b>LIVE</b>
+                <span className="live-full">
+                  <em key={online}>{online.toLocaleString()}</em> players online
+                </span>
+                <span className="live-short">{(online / 1000).toFixed(1)}K online</span>
+              </div>
+            </header>
+
+            {tab === 'play' ? (
+              <div className="desk" key="play">
+                <div className="desk-main">
+                  {MODE_GROUPS.map((group) => (
+                    <section key={group} className="mode-block">
+                      <h2 className="mode-group">{group}</h2>
+                      <div className="modes">
+                        {MODES.filter((m) => m.group === group).map((m, i) => (
+                          <button
+                            key={m.id}
+                            className={`mode g-${group.toLowerCase().replace(/[^a-z]/g, '')} ${mode === m.id ? 'on' : ''}`}
+                            style={{ ['--i' as string]: i }}
+                            aria-pressed={mode === m.id}
+                            title={m.blurb}
+                            onClick={() => setMode(m.id)}
+                          >
+                            <span className="mode-tag">{modeTag(m)}</span>
+                            <span className="mode-bar">
+                              <strong>{m.name}</strong>
+                              <span>{m.blurb}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                  <div className="controls" aria-label="Controls">
+                    <span>
+                      <kbd>
+                        {keyLabel(settings.keys.forward)}
+                        {keyLabel(settings.keys.left)}
+                        {keyLabel(settings.keys.back)}
+                        {keyLabel(settings.keys.right)}
+                      </kbd>
+                      move
+                    </span>
+                    <span>
+                      <kbd>LMB</kbd> fire <kbd>RMB</kbd> aim
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.sprint)}</kbd> sprint
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.jump)}</kbd> jump
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.crouch)}</kbd> crouch / slide
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.reload)}</kbd> reload
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.melee)}</kbd> knife
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.grenade)}</kbd> lethal <kbd>{keyLabel(settings.keys.tactical)}</kbd> tactical
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.weapon1)}</kbd>
+                      <kbd>{keyLabel(settings.keys.weapon2)}</kbd>
+                      <kbd>{keyLabel(settings.keys.swap)}</kbd> switch
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.scores)}</kbd> scores
+                    </span>
+                    <span>
+                      <kbd>{keyLabel(settings.keys.chat)}</kbd> chat
+                    </span>
+                    <span>
+                      <kbd>Esc</kbd> pause · controllers work too
+                    </span>
+                  </div>
+                </div>
+
+                <aside className="desk-rail">
+                  <ProfileBar profile={profile} frame={settings.cosmetics.frame}>
+                    <div className="name-field">
+                      <label htmlFor="player-name">Name</label>
+                      <div className="name-row">
+                        <input
+                          id="player-name"
+                          value={settings.playerName}
+                          maxLength={16}
+                          spellCheck={false}
+                          onChange={(e) => setSettings({ ...settings, playerName: e.target.value.replace(/\s+/g, '_') })}
+                        />
+                        <button className="color-chip" style={{ background: cssColor(settings.playerColor) }} title="Your colour: change it in the Armory" aria-label="Change your colour in the Armory" onClick={() => setTab('armory')} />
+                      </div>
+                    </div>
+                  </ProfileBar>
+
+                  <div className="seg" role="group" aria-label="Lobby">
+                    {LOBBY.map((d) => (
+                      <button key={d.id} className={difficulty === d.id ? 'on' : ''} aria-pressed={difficulty === d.id} onClick={() => setDifficulty(d.id)}>
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button className="play go" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
+                    {!assets ? loadMsg : modeDef(mode).humansOnly ? 'FRIENDS ONLY' : PRACTICE_MODES.includes(mode) ? 'START PRACTICE' : 'FIND MATCH'}
+                    <small>{modeDef(mode).humansOnly ? 'Host a game below to play this mode' : `${modeDef(mode).name} · ${LOBBY.find((d) => d.id === difficulty)!.label} lobby`}</small>
+                  </button>
+
+                  <section className="rail-card online">
+                    <h2 className="rail-head">Play with friends</h2>
+                    <div className="online-actions">
+                      <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(true)} title="Queue into normal games together; you pick the mode">
+                        Create party
+                      </button>
+                      <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(false)} title="A private room with custom rules and friends-only modes">
+                        Host game
                       </button>
                     </div>
-                  );
-                })}
-                <button className="chip tourney-btn" disabled={!assets} onClick={startTourney}>
-                  🏆 Gunfight tournament
-                </button>
-              </div>
-            </div>
-            <nav className="menu-tabs">
-              {(
-                [
-                  ['play', 'Play'],
-                  ['loadout', 'Loadout'],
-                  ['armory', 'Armory'],
-                  ['profile', 'Profile'],
-                  ['settings', 'Settings']
-                ] as [MenuTab, string][]
-              ).map(([id, label]) => (
-                <button key={id} className={`menu-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
-                  {label}
-                </button>
-              ))}
-            </nav>
+                    <div className="join-row">
+                      <input
+                        className="code-input"
+                        placeholder="CODE"
+                        aria-label="Room code"
+                        maxLength={5}
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                      />
+                      <button className="chip" disabled={!assets || netBusy || joinCode.length === 0} onClick={joinGame}>
+                        Join
+                      </button>
+                    </div>
+                    {netBusy && <p className="set-hint">Connecting…</p>}
+                    {netError && <p className="net-error">{netError}</p>}
+                  </section>
 
-            {tab === 'play' && (
-              <>
-                <div className="profile">
-                  <label className="name-field">
-                    Username
-                    <input
-                      value={settings.playerName}
-                      maxLength={16}
-                      spellCheck={false}
-                      onChange={(e) => setSettings({ ...settings, playerName: e.target.value.replace(/\s+/g, '_') })}
-                    />
-                  </label>
-                  <div className="color-field">
-                    <span>
-                      Colour <small>(free-for-all modes; team modes use your team's colour)</small>
+                  <section className="rail-card ranked-card">
+                    <h2 className="rail-head">Ranked</h2>
+                    {(
+                      [
+                        ['team', 'Team', teamDiv],
+                        ['duel', '1v1', duelDiv]
+                      ] as [RankedQueue, string, Division][]
+                    ).map(([q, label, d]) => {
+                      const qs = queueStats(profile, q);
+                      return (
+                        <div key={q} className={`rank-queue ${d.placed ? '' : 'pending'}`}>
+                          <em>{label}</em>
+                          <span>
+                            <b style={d.placed ? { color: d.color } : undefined}>{d.name}</b>
+                            <small>
+                              {d.placed ? `${qs.sr} SR · ` : ''}
+                              {qs.wins}W {qs.matches - qs.wins}L
+                            </small>
+                          </span>
+                          <button className="chip" disabled={!assets} onClick={() => playRanked(q)}>
+                            Play
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <button className="chip tourney-btn" disabled={!assets} onClick={startTourney}>
+                      <TrophyIcon /> Gunfight tournament
+                    </button>
+                  </section>
+
+                  <button className="rail-card loadout-strip" onClick={() => setTab('loadout')}>
+                    <span className="rail-head">
+                      Loadout
+                      <span>
+                        Edit <ArrowIcon size={14} />
+                      </span>
                     </span>
-                    <div className="swatches">
-                      {COLORS.map((c) => (
-                        <button
-                          key={c.hex}
-                          title={c.name}
-                          className={`swatch ${settings.playerColor === c.hex ? 'on' : ''}`}
-                          style={{ background: cssColor(c.hex) }}
-                          onClick={() => setSettings({ ...settings, playerColor: c.hex })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <button className="loadout-strip" onClick={() => setTab('loadout')}>
-                  <span>
-                    <b>{WEAPONS[settings.primary].name}</b> + {WEAPONS[settings.secondary].name}
-                  </span>
-                  <span>
-                    {THROWABLES[settings.lethal].name} · {THROWABLES[settings.tactical].name}
-                  </span>
-                  <span>{settings.perks.map((p) => perkDef(p).name).join(' · ')}</span>
-                  <span>{settings.streaks.map((s) => streakDef(s).name).join(' / ')}</span>
-                  <em>Edit loadout ›</em>
-                </button>
-                {MODE_GROUPS.map((group) => (
-                  <div key={group}>
-                    <div className="mode-group">{group}</div>
-                    <div className="modes">
-                      {MODES.filter((m) => m.group === group).map((m) => (
-                        <button key={m.id} className={`mode ${mode === m.id ? 'on' : ''}`} onClick={() => setMode(m.id)}>
-                          <strong>
-                            {m.name}
-                            {m.humansOnly && <em className="tag-online">FRIENDS</em>}
-                          </strong>
-                          <span>{m.blurb}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <div className="row">
-                  <label>Lobby</label>
-                  {LOBBY.map((d) => (
-                    <button key={d.id} className={`chip ${difficulty === d.id ? 'on' : ''}`} onClick={() => setDifficulty(d.id)}>
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="online">
-                  <div className="online-head">
-                    <b>Play with friends</b>
-                    <span>
-                      <b>Create party</b>: queue into normal games together (the host picks the mode). <b>Host game</b>: a private room with custom rules and friends-only modes.
-                    </span>
-                  </div>
-                  <div className="row">
-                    <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(true)}>
-                      Create party
-                    </button>
-                    <button className="chip" disabled={!assets || netBusy} onClick={() => hostGame(false)}>
-                      Host game
-                    </button>
-                    <input
-                      className="code-input"
-                      placeholder="CODE"
-                      maxLength={5}
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                    />
-                    <button className="chip" disabled={!assets || netBusy} onClick={joinGame}>
-                      Join
-                    </button>
-                    {netBusy && <span className="policy-note">Connecting…</span>}
-                  </div>
-                  {netError && <div className="net-error">{netError}</div>}
-                </div>
-                <button className="play" disabled={!assets || !!modeDef(mode).humansOnly} onClick={findMatch}>
-                  {!assets ? loadMsg : modeDef(mode).humansOnly ? 'FRIENDS ONLY — HOST A GAME ABOVE' : PRACTICE_MODES.includes(mode) ? 'START PRACTICE' : 'FIND MATCH'}
-                </button>
-                <div className="controls">
-                  <span>
-                    {keyLabel(settings.keys.forward)}
-                    {keyLabel(settings.keys.left)}
-                    {keyLabel(settings.keys.back)}
-                    {keyLabel(settings.keys.right)} move
-                  </span>
-                  <span>LMB fire · RMB aim</span>
-                  <span>{keyLabel(settings.keys.sprint)} sprint</span>
-                  <span>{keyLabel(settings.keys.jump)} jump</span>
-                  <span>{keyLabel(settings.keys.crouch)} crouch/slide</span>
-                  <span>{keyLabel(settings.keys.reload)} reload</span>
-                  <span>{keyLabel(settings.keys.melee)} knife</span>
-                  <span>
-                    {keyLabel(settings.keys.grenade)} lethal · {keyLabel(settings.keys.tactical)} tactical
-                  </span>
-                  <span>
-                    {keyLabel(settings.keys.weapon1)}/{keyLabel(settings.keys.weapon2)}/{keyLabel(settings.keys.swap)}/wheel switch
-                  </span>
-                  <span>{keyLabel(settings.keys.scores)} scores</span>
-                  <span>{keyLabel(settings.keys.chat)} chat (online)</span>
-                  <span>Esc pause · controllers supported</span>
-                </div>
-              </>
+                    <dl>
+                      <dt>Guns</dt>
+                      <dd>
+                        {WEAPONS[settings.primary].name} · {WEAPONS[settings.secondary].name}
+                      </dd>
+                      <dt>Gear</dt>
+                      <dd>
+                        {THROWABLES[settings.lethal].name} · {THROWABLES[settings.tactical].name}
+                      </dd>
+                      <dt>Perks</dt>
+                      <dd>{settings.perks.map((p) => perkDef(p).name).join(' · ')}</dd>
+                      <dt>Streaks</dt>
+                      <dd>{settings.streaks.map((st) => streakDef(st).name).join(' · ')}</dd>
+                    </dl>
+                  </button>
+
+                </aside>
+              </div>
+            ) : (
+              <div className="desk single" key={tab}>
+                {tab === 'loadout' && <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
+                {tab === 'armory' && <ArmoryPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
+                {tab === 'profile' && (
+                  <ProfilePanel
+                    settings={settings}
+                    onChange={setSettings}
+                    profile={profile}
+                    onPrestige={() => {
+                      if (window.confirm('Prestige now? You go back to level 1 and keep all your unlocks.')) setProfile(prestigeUp());
+                    }}
+                  />
+                )}
+                {tab === 'settings' && <SettingsPanel settings={settings} onChange={setSettings} />}
+              </div>
             )}
-            {tab === 'loadout' && <LoadoutPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
-            {tab === 'armory' && <ArmoryPanel settings={settings} onChange={setSettings} profile={profile} assets={assets} />}
-            {tab === 'profile' && (
-              <ProfilePanel
-                settings={settings}
-                onChange={setSettings}
-                profile={profile}
-                onPrestige={() => {
-                  if (window.confirm('Prestige now? You go back to level 1 and keep all your unlocks.')) setProfile(prestigeUp());
-                }}
-              />
-            )}
-            {tab === 'settings' && <SettingsPanel settings={settings} onChange={setSettings} />}
           </div>
         </div>
       )}
@@ -836,17 +889,20 @@ export const App = () => {
       {screen.kind === 'tourney' && tourney && <TourneyScreen t={tourney} onPlay={playTourneyMatch} onMenu={() => { setTourney(null); toMenu(); }} onAgain={startTourney} />}
       {screen.kind === 'finding' && (
         <div className="menu">
-          <div className="menu-card small">
-            <h2>{lobbyFull ? 'Match found' : ranked ? 'Finding ranked match…' : 'Finding match…'}</h2>
-            <p className="sub">
-              {def.name} · {ranked ? <b style={{ color: division.color }}>Ranked · {division.name}</b> : `${LOBBY.find((d) => d.id === difficulty)!.label} lobby`}
-            </p>
-            <div className="lobby-bar">
+          <div className="menu-card small pregame">
+            <header className={`pg-head ${lobbyFull ? 'found' : ''}`}>
+              <h2>{lobbyFull ? 'Match found' : ranked ? 'Finding ranked match' : 'Finding match'}</h2>
+              <span>
+                {def.name} · {ranked ? <b style={{ color: division.color }}>Ranked · {division.name}</b> : `${LOBBY.find((d) => d.id === difficulty)!.label} lobby`}
+              </span>
+            </header>
+            <div className="pg-count">
+              <b key={joined}>{joined}</b>
+              <span>/ {def.players} players</span>
+            </div>
+            <div className="lobby-bar" role="progressbar" aria-label="Players joined" aria-valuenow={joined} aria-valuemax={def.players}>
               <div style={{ width: `${(joined / def.players) * 100}%` }} />
             </div>
-            <p>
-              {joined} / {def.players} players
-            </p>
             <div className="joining">
               {/* You and any real players stay pinned at the top; the rest scroll in as they join. */}
               {[settings.playerName.trim() || 'You', ...mmGuests, ...lobbyNames.slice(0, Math.max(0, joined - 1 - mmGuests.length)).slice(-Math.max(1, 7 - mmGuests.length))].map((n, i, arr) => (
@@ -907,7 +963,7 @@ export const App = () => {
                   RESUME
                 </button>
                 <button className="pause-btn" onClick={() => setShowSettings(true)}>
-                  ⚙ Settings
+                  <GearIcon /> Settings
                 </button>
                 <button className="pause-btn" onClick={toMenu}>
                   {ranked && !hud.online ? 'Leave match (counts as a loss)' : 'Leave match'}
@@ -956,24 +1012,29 @@ export const App = () => {
   );
 };
 
-const ProfileBar = ({ profile, frame }: { profile: Profile; frame: string }) => {
+const ProfileBar = ({ profile, frame, children }: { profile: Profile; frame: string; children?: ReactNode }) => {
   const { level, into, need } = levelOf(profile.xp);
+  const maxed = level >= 55 && profile.prestige < 10;
   return (
-    <div className="profile-bar">
-      <LevelBadge level={level} prestige={profile.prestige} frame={frame} />
-      <div className="rank">
-        <b>
-          {rankOf(level)}
-          {profile.prestige > 0 && <em className="prestige-tag"> · Prestige {profile.prestige}</em>}
-        </b>
-        <div className="xpbar">
-          <div style={{ width: `${(into / need) * 100}%` }} />
+    <section className="rail-card profile-bar">
+      <div className="pb-top">
+        <LevelBadge level={level} prestige={profile.prestige} frame={frame} />
+        <div className="rank">
+          <b>
+            {rankOf(level)}
+            {profile.prestige > 0 && <em className="prestige-tag"> · Prestige {profile.prestige}</em>}
+          </b>
+          <small>
+            {profile.matches} matches · {profile.wins} wins · {profile.kills} kills
+          </small>
         </div>
-        <small>
-          {level >= 55 && profile.prestige < 10 ? 'Max level: prestige from your Profile' : `${into} / ${need} XP`} · {profile.matches} matches · {profile.wins} wins · {profile.kills} kills
-        </small>
       </div>
-    </div>
+      <div className="xpbar" role="progressbar" aria-label="Level progress" aria-valuenow={maxed ? need : into} aria-valuemax={need}>
+        <div style={{ width: `${maxed ? 100 : (into / need) * 100}%` }} />
+      </div>
+      <small className="xp-line">{maxed ? 'Max level: prestige from your Profile' : `${into.toLocaleString()} / ${need.toLocaleString()} XP to level ${level + 1}`}</small>
+      {children}
+    </section>
   );
 };
 
@@ -1088,7 +1149,9 @@ const TourneyScreen = ({ t, onPlay, onMenu, onAgain }: { t: Tourney; onPlay: () 
   return (
     <div className="menu">
       <div className="menu-card tourney-card">
-        <h2>🏆 Gunfight Tournament</h2>
+        <h2>
+          <TrophyIcon size={26} /> Gunfight Tournament
+        </h2>
         <p className="sub">8 teams, 2v2 Gunfight Roulette, first to 3 rounds. Lose once and you're out.</p>
         <div className="bracket">
           {rounds.map((teams, r) => (
@@ -1133,7 +1196,7 @@ const TourneyScreen = ({ t, onPlay, onMenu, onAgain }: { t: Tourney; onPlay: () 
         ) : (
           <>
             <p className={`tourney-result ${won ? 'win' : 'lose'}`}>
-              {won ? 'Champions! +3000 XP, and tournament rewards in your Profile and Armory.' : `Knocked out in the ${ROUND_NAMES[t.outIn ?? 0].toLowerCase()} · +${tourneyXp(t)} XP`}
+              {won ? 'Champions! +3000 XP, and tournament rewards in your Profile, Armory and Loadout.' : `Knocked out in the ${ROUND_NAMES[t.outIn ?? 0].toLowerCase()} · +${tourneyXp(t)} XP`}
             </p>
             <div className="row">
               <button className="play" onClick={onAgain}>
@@ -1158,12 +1221,22 @@ const Lineup = ({ hud, onSkip }: { hud: HudState; onSkip: () => void }) => {
   const teams = hud.showTeams ? [hud.players.filter((p) => p.ally), hud.players.filter((p) => !p.ally)] : [hud.players];
   return (
     <div className="lineup" onClick={onSkip}>
-      <h2>{hud.modeName}</h2>
+      <h2>
+        <span>{hud.modeName}</span>
+      </h2>
       <div className={`lineup-teams ${teams.length === 2 ? 'versus' : ''}`}>
         {teams.map((list, i) => (
-          <div key={i} className="lineup-col" style={hud.teamColors ? { borderColor: hud.teamColors[i] } : undefined}>
-            {teams.length === 2 && <small style={{ color: hud.teamColors?.[i] }}>{i === 0 ? 'Your team' : 'Enemy team'}</small>}
-            {list.slice(0, 12).map(card)}
+          <div key={i} className={`lineup-col ${i === 1 ? 'away' : ''}`}>
+            {teams.length === 2 && (
+              <div className="lu-team" style={{ background: hud.teamColors?.[i] }}>
+                {i === 0 ? 'Your team' : 'Enemy team'}
+              </div>
+            )}
+            {list.slice(0, 12).map((p, k) => (
+              <div key={p.id} className="lu-row" style={{ ['--i' as string]: k }}>
+                {card(p)}
+              </div>
+            ))}
           </div>
         ))}
         {teams.length === 2 && <div className="lineup-vs">VS</div>}

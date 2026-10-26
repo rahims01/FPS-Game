@@ -3,6 +3,7 @@ import { isDark } from '../game/identity';
 import type { Division } from '../game/progression';
 import { BADGES } from '../game/cosmetics';
 import { CallingCard } from './ProfilePanel';
+import { inkOn } from './ink';
 
 const acc = (r: ScoreRow) => (r.accuracy < 0 ? '–' : `${r.accuracy}%`);
 const kd = (r: ScoreRow) => (r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2));
@@ -10,7 +11,7 @@ const kd = (r: ScoreRow) => (r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kill
 const Table = ({ rows, mvp, title, color }: { rows: ScoreRow[]; mvp: number; title?: string; color?: string }) => (
   <div className="end-table">
     {title && (
-      <div className="end-team" style={{ borderColor: color, color }}>
+      <div className="end-team" style={color ? { background: color, color: inkOn(color) } : undefined}>
         {title}
       </div>
     )}
@@ -78,12 +79,19 @@ export const EndScreen = ({
   return (
     <div className="overlay end">
       <div className="menu-card end-card">
-        <h2 className={hud.spectator ? '' : hud.result === 'win' ? 'win' : 'lose'}>{title}</h2>
-        <p className="end-sub">
-          {hud.modeName}
-          {hud.showTeams && ` · ${Math.floor(hud.scores[0])}–${Math.floor(hud.scores[1])}`}
-          {!hud.spectator && <b className="xp-earned"> · +{hud.xp} XP</b>}
-        </p>
+        <header className={`end-result ${hud.spectator ? '' : hud.result === 'win' ? 'win' : 'lose'}`}>
+          <h2>{title}</h2>
+          <div className="end-sub">
+            <span>Final · {hud.modeName}</span>
+            {hud.showTeams && (
+              <b className="end-score">
+                <span style={hud.teamColors ? { background: hud.teamColors[0], color: inkOn(hud.teamColors[0]) } : undefined}>{Math.floor(hud.scores[0])}</span>
+                <span style={hud.teamColors ? { background: hud.teamColors[1], color: inkOn(hud.teamColors[1]) } : undefined}>{Math.floor(hud.scores[1])}</span>
+              </b>
+            )}
+            {!hud.spectator && <b className="xp-earned">+{hud.xp.toLocaleString()} XP</b>}
+          </div>
+        </header>
         {ranked && (
           <div className="end-ranked" style={{ borderColor: ranked.division.color }}>
             <b style={{ color: ranked.division.color }}>{ranked.division.name}</b>
