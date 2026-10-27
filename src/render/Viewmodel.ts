@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { WeaponModel } from '../assets/weaponModels';
 import { setReactive, skinned, type SkinChoice } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
-import { meleeModel, type MeleeId } from '../assets/melees';
+import { camoKey, meleeModel, type MeleeId } from '../assets/melees';
 import type { WeaponId } from '../sim/weapons';
 
 interface Pose {
@@ -98,7 +98,7 @@ export class Viewmodel {
   }
 
   private show(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm): void {
-    const skin = skins[id] ?? 'none';
+    const skin = skins[camoKey(id, this.melee)] ?? 'none';
     const key = `${id}:${skin}:${charm}:${id === 'knife' ? this.melee : ''}`;
     if (key === this.currentKey) return;
     this.currentKey = key;

@@ -8,7 +8,7 @@ import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../s
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
 import { GunPreview } from './GunPreview';
-import { MELEES, meleeDef } from '../assets/melees';
+import { camoKey, MELEES, meleeDef } from '../assets/melees';
 import { LockIcon } from './icons';
 
 const BLURB: Record<string, string> = {
@@ -66,7 +66,11 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
   const meleeOn = meleeDef(settings.cosmetics.melee);
   const st = statsOf(fw);
   const cmp = statsOf(WEAPONS[fw.slot === 'secondary' ? settings.secondary : settings.primary]);
-  const mastery = masteryOf(kills(focus));
+  // In the knife slot, camos and kills belong to the chosen melee.
+  const slotKey = camoKey(focus, settings.cosmetics.melee);
+  const focusKills = profile.weaponKills[slotKey] ?? 0;
+  const focusName = melee ? meleeOn.name : fw.name;
+  const mastery = masteryOf(focusKills);
   const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
@@ -140,7 +144,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
       {tab === 'weapons' && (
         <>
           <div className="gun-showcase">
-            <GunPreview assets={assets} weapon={focus} skin={(settings.skins[focus] ?? 'none') as SkinId} charm={settings.cosmetics.charm} melee={meleeOn.id} />
+            <GunPreview assets={assets} weapon={focus} skin={(settings.skins[slotKey] ?? 'none') as SkinId} charm={settings.cosmetics.charm} melee={meleeOn.id} />
             <div className="gun-stats">
               <h3>
                 {melee ? meleeOn.name : fw.name}
@@ -163,11 +167,11 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
               })}
               <p className="set-hint">
                 {melee ? `One stab kills at up to ${fw.range} m, and you move ${Math.round((fw.move - 1) * 100)}% faster with it out` : `Body-shot kill: ${st.shots} ${st.shots === 1 ? 'hit' : 'hits'} (${st.ttk} ms) · headshot ${fw.damage.head} damage`} · mastery {mastery.name}
-                {mastery.next !== null ? ` (${kills(focus)}/${mastery.next} kills to ${MASTERY[mastery.tier + 1].name})` : ''}
+                {mastery.next !== null ? ` (${focusKills}/${mastery.next} kills to ${MASTERY[mastery.tier + 1].name})` : ''}
               </p>
               <div className="showcase-jumps">
                 <button className="chip" onClick={() => jumpTo('camo-picker')}>
-                  Change camo · {SKINS.filter((sk) => kills(focus) >= sk.kills).length}/{SKINS.length} unlocked
+                  Change camo · {SKINS.filter((sk) => focusKills >= sk.kills).length}/{SKINS.length} unlocked
                 </button>
                 <button className="chip" onClick={() => jumpTo('charm-picker')}>
                   Charm
@@ -180,7 +184,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <h3>Secondary</h3>
           <div className="gun-grid">{SECONDARIES.map((w) => gun(w, 'secondary'))}</div>
           <h3>Melee</h3>
-          <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Knife camos apply to all of them.</p>
+          <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Each has its own camos, unlocked by kills with it.</p>
           <div className="streak-grid melee-grid">
             {MELEES.map((d) => {
               const ok = unlocked(d.unlock, profile, level);
@@ -198,25 +202,26 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                 >
                   <b>{d.name}</b>
                   <small>{ok ? d.blurb : <><LockIcon size={11} /> {unlockText(d.unlock)}</>}</small>
+                  {ok && <small className="gun-kills">{profile.weaponKills[d.id] ?? 0} kills</small>}
                 </button>
               );
             })}
           </div>
           <h3 id="camo-picker">
-            Camo · {fw.name} <small>({kills(focus)} kills; click a gun above to see its camos)</small>
+            Camo · {focusName} <small>({focusKills} kills; click a gun or melee above to see its camos)</small>
           </h3>
           <div className="skin-grid">
             {SKINS.map((s) => {
-              const locked = kills(focus) < s.kills;
-              const on = (settings.skins[focus] ?? 'none') === s.id;
+              const locked = focusKills < s.kills;
+              const on = (settings.skins[slotKey] ?? 'none') === s.id;
               return (
                 <button
                   key={s.id}
                   className={`skin ${on ? 'on' : ''} ${locked ? 'locked' : ''}`}
                   style={{ borderColor: on ? undefined : RARITY[s.kind === 'mastery' || s.kills >= 400 ? 'mythic' : s.kind || s.kills >= 150 ? 'legendary' : s.kills >= 60 ? 'epic' : s.kills >= 15 ? 'rare' : 'common'].color }}
                   disabled={locked}
-                  title={locked ? `${s.kills} kills with the ${fw.name} to unlock` : s.name}
-                  onClick={() => set({ skins: { ...settings.skins, [focus]: s.id } })}
+                  title={locked ? `${s.kills} kills with the ${focusName} to unlock` : s.name}
+                  onClick={() => set({ skins: { ...settings.skins, [slotKey]: s.id } })}
                 >
                   <i style={{ background: s.swatch }} className={s.kind ? `camo-${s.kind}` : ''} />
                   <span>{s.name}</span>

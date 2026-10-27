@@ -16,7 +16,7 @@ import { hasPerk, THROWABLES, type ThrowableId } from '../sim/gear';
 import { isBrMode } from '../sim/Match';
 import { thrownModel } from '../render/thrown';
 import { setMetalNight } from '../render/realMetal';
-import { meleeDef } from '../assets/melees';
+import { camoKey, meleeDef } from '../assets/melees';
 import { Hints, type HintId } from './hints';
 import { Gamepads, type PadFrame } from './gamepad';
 import { BADGES, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
@@ -1880,12 +1880,14 @@ export class Game {
     this.medal(MEDALS.kill);
     const gun = e.cause !== 'grenade' && e.cause !== 'airstrike' && e.cause !== 'knife' && e.cause !== 'zone';
     if (WEAPONS[e.cause as WeaponId]) {
-      const w = e.cause as WeaponId;
+      // Knife kills count toward the melee in hand, which has its own camos.
+      const w = camoKey(e.cause, this.settings.cosmetics.melee);
       this.weaponKills[w] = (this.weaponKills[w] ?? 0) + 1;
       const total = (this.baseWeaponKills[w] ?? 0) + this.weaponKills[w];
+      const name = e.cause === 'knife' ? meleeDef(w).name : WEAPONS[e.cause as WeaponId].name;
       // Several camos can unlock at the same kill count; name them all.
       const unlocked = SKINS.filter((s) => s.kills > 0 && s.kills === total).map((s) => s.name);
-      if (unlocked.length) this.callout(`Unlocked: ${unlocked.join(' and ')} ${unlocked.length > 1 ? 'camos' : 'camo'} for the ${WEAPONS[w].name}`);
+      if (unlocked.length) this.callout(`Unlocked: ${unlocked.join(' and ')} ${unlocked.length > 1 ? 'camos' : 'camo'} for the ${name}`);
     }
     if (gun && e.region === 'head') this.medal(MEDALS.headshot);
     if (e.cause === 'knife') this.medal(MEDALS.knife);

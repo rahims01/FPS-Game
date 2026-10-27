@@ -1,4 +1,5 @@
 import { randomSkin, type SkinChoice } from '../assets/skins';
+import { MELEES } from '../assets/melees';
 import type { Match } from '../sim/Match';
 import { MORE_FIRST_NAMES, MORE_TAG_FIRST, MORE_TAG_SECOND, MORE_USERNAMES, TAG_ADJ, TAG_WORDS } from './usernames';
 
@@ -240,7 +241,7 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
   let next = 0;
   const names = agents.map((a) => (a === match.player ? playerName : tags[next++ % tags.length]));
   // Other players show off a camo on the gun they carry now and then.
-  const skins = agents.map((a): SkinChoice | null => (a === match.player ? playerSkins : Object.fromEntries(a.weapons.map((w) => [w, randomSkin()]))));
+  const skins = agents.map((a): SkinChoice | null => (a === match.player ? playerSkins : Object.fromEntries([...a.weapons, ...MELEES.map((m) => m.id)].map((w) => [w, randomSkin()]))));
   if (match.mode === 'zombies') {
     // Survivors in blue, the horde in rotten green.
     const teamColors: [number, number] = [0x3d7bd9, 0x5f8a2f];

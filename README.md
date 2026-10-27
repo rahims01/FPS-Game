@@ -67,7 +67,7 @@ npm run build      # type-check + production build
   - **animated** camos that move on their own (Plasma, Digital Rain, Aurora Shift, Magma, Neon Pulse);
   - **reactive** camos that change with your kills this match (Bloodline turns red, Ember heats up, Frostbite ices over);
   - **mastery rewards:** Damascus at Gold mastery (200 kills) and an animated Dark Matter at Diamond (500).
-- **Melees:** carry the Combat Knife, Karambit, Machete, Baseball Bat, Fire Axe, Entrenching Tool, Katana or Sledgehammer (unlocked by level), or the Kunai (Knife Master badge). They're looks only: every one fights exactly like the knife, and knife camos apply to all of them. The kill feed names the one you used.
+- **Melees:** carry the Combat Knife, Karambit, Machete, Baseball Bat, Fire Axe, Entrenching Tool, Katana or Sledgehammer (unlocked by level), or the Kunai (Knife Master badge). They're looks only: every one fights exactly like the knife. Each has its own 40 camos, unlocked by kills with that melee (your Combat Knife keeps its kills and camos). The kill feed names the one you used.
 - **Weapon charms** hang off your gun. Everyone sees your camos and charms.
 - **Throwables:** pick a lethal (frag, molotov, throwing knife, spear) and a tactical (flashbang, smoke). Knives and spears stick in whoever they hit, even through the ragdoll. Molotovs leave fire on the ground; smoke blocks sight; flashbangs white out anyone looking at them.
 - **Perks:** pick 3 of 11: Ghost, Quick Hands, Marathon, Ninja, Lightweight, Scavenger, Hardline, Cold-Blooded, Flak Jacket, Steady Aim, Tactical Mask.

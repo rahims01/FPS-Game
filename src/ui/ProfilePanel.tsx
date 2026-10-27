@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MELEES } from '../assets/melees';
 import { BADGES, CARDS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
 import type { GameSettings } from '../game/settings';
 import { canPrestige, divisionOf, levelLabel, levelOf, MAX_PRESTIGE, rankOf, type Profile } from '../game/progression';
@@ -213,7 +214,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           <p className="set-hint">
             Kills with a weapon earn its mastery badge: {MASTERY.map((m) => `${m.name} ${m.kills}`).join(' · ')}. Your best one shows next to your name on the scoreboard.
           </p>
-          {[...PRIMARIES, ...SECONDARIES, 'knife' as const].map((w) => {
+          {[...[...PRIMARIES, ...SECONDARIES].map((w) => [w, WEAPONS[w].name]), ...MELEES.map((d) => [d.id, d.name])].map(([w, name]) => {
             const k = profile.weaponKills[w] ?? 0;
             const m = masteryOf(k);
             const next = m.next ?? MASTERY[MASTERY.length - 1].kills;
@@ -223,7 +224,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
                 <span className="mastery-badge" style={{ background: m.color, opacity: m.tier >= 0 ? 1 : 0.25 }}>
                   {m.tier >= 0 ? Array.from({ length: m.tier + 1 }, (_, i) => <StarIcon key={i} size={12} />) : '–'}
                 </span>
-                <b>{WEAPONS[w].name}</b>
+                <b>{name}</b>
                 <div className="badge-bar">
                   <i style={{ width: `${m.next === null ? 100 : ((k - from) / Math.max(1, next - from)) * 100}%`, background: m.next === null ? m.color : undefined }} />
                 </div>

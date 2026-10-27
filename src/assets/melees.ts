@@ -33,6 +33,9 @@ export const MELEES: MeleeDef[] = [
 
 export const meleeDef = (id: string | undefined): MeleeDef => MELEES.find((m) => m.id === id) ?? MELEES[0];
 
+/** Where camos and kills are kept for a weapon slot: the melee's own id in the knife slot, else the weapon id. */
+export const camoKey = (weapon: string, melee: string | undefined): string => (weapon === 'knife' ? meleeDef(melee).id : weapon);
+
 const red = new THREE.MeshStandardMaterial({ color: 0xb3261e, metalness: 0.1, roughness: 0.6 });
 const wrap = new THREE.MeshStandardMaterial({ color: 0x24201c, metalness: 0, roughness: 0.9 });
 

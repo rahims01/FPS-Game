@@ -14,7 +14,7 @@ import { animateStyle, applyStyle, drawNametag } from './soldierStyle';
 import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
 import { decimate } from './decimate';
-import { meleeModel, type MeleeId } from '../assets/melees';
+import { camoKey, meleeModel, type MeleeId } from '../assets/melees';
 import { realMetalMaterial } from './realMetal';
 
 const DEG = Math.PI / 180;
@@ -328,7 +328,7 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[id] ?? 'none', this.charm, this.low, this.melee).clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[camoKey(id, this.melee)] ?? 'none', this.charm, this.low, this.melee).clone(true));
     // Reactive camos change with this soldier's own kills.
     ownReactive(this.rifle);
     this.muzzleLength = modelOf(this.assets, id, this.melee).length * THIRD_PERSON_SCALE;
