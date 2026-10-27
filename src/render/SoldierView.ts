@@ -21,30 +21,44 @@ const DEG = Math.PI / 180;
 
 /** Body speed (m/s) a death adds along the shot direction, by cause. */
 const DEATH_PUSH: Record<string, number> = {
-  pistol: 1.6,
-  smg: 1.8,
-  rifle: 2.2,
-  lmg: 2.4,
-  sniper: 3.3,
-  shotgun: 3.6,
-  knife: 1.4,
-  ak: 2.4,
-  burst: 2.2,
-  dmr: 3,
-  revolver: 2.6,
-  scar: 2.6,
-  uzi: 1.7,
-  autoshotgun: 3.2,
-  barrett: 4,
-  deagle: 2.4,
-  mpistol: 1.6,
+  pistol: 2.2,
+  mpistol: 2.2,
+  uzi: 2.3,
+  smg: 2.4,
+  rifle: 3,
+  ak: 3.3,
+  scar: 3.6,
+  lmg: 3.8,
+  revolver: 4,
+  burst: 4.2,
+  dmr: 4.2,
+  deagle: 4.5,
+  autoshotgun: 5.2,
+  sniper: 5.5,
+  shotgun: 6,
+  barrett: 6.5,
+  knife: 2,
   molotov: 1.5,
-  tknife: 2.2,
-  spear: 3.4,
-  grenade: 4.5,
-  airstrike: 5.5,
+  tknife: 2.8,
+  spear: 4.5,
+  grenade: 5.5,
+  airstrike: 6.5,
   zone: 0
 };
+
+/** Knife kills push by what was swung: a sledgehammer sends you further than a karambit. */
+const MELEE_PUSH: Record<string, number> = { knife: 2, karambit: 2, kunai: 2, machete: 3, katana: 3.5, shovel: 4, bat: 4.5, axe: 4.5, hammer: 5.5 };
+
+/** Shotguns hit hardest point blank, fading to about a third of that by 18 m. */
+const SHOTGUN_FULL = 4;
+const SHOTGUN_FADE = 18;
+
+export interface DeathPush {
+  /** Distance from the killer (shotguns fade with it). */
+  distance?: number;
+  /** The killer's melee, for knife kills. */
+  melee?: string;
+}
 
 const _y = new THREE.Vector3();
 const _z = new THREE.Vector3();
@@ -132,13 +146,41 @@ const THIRD_PERSON_SCALE = 1.35;
 
 /** Low-detail geometry (Simplified soldiers), built once per source geometry. */
 const lowGeo = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
-const lowDetailOf = (geo: THREE.BufferGeometry, maxTris: number): THREE.BufferGeometry => {
+const lowDetailOf = (geo: THREE.BufferGeometry, maxTris: number, groupOf?: (vertex: number) => number): THREE.BufferGeometry => {
   let g = lowGeo.get(geo);
   if (!g) {
-    g = decimate(geo, maxTris);
+    g = decimate(geo, maxTris, groupOf);
     lowGeo.set(geo, g);
   }
   return g;
+};
+
+/**
+ * Which limb a body vertex belongs to (by its most-weighted bone), so the
+ * low-detail body never merges one leg into the other, or an arm into the side.
+ */
+const limbGroups = (mesh: THREE.SkinnedMesh): ((vertex: number) => number) => {
+  const idx = mesh.geometry.attributes.skinIndex;
+  const wt = mesh.geometry.attributes.skinWeight;
+  const groupOfBone = mesh.skeleton.bones.map((b) => {
+    const n = b.name;
+    const side = n.includes('Left') ? 1 : n.includes('Right') ? 2 : 0;
+    if (!side) return 0;
+    return /Leg|Foot|Toe/.test(n) ? side : side + 2;
+  });
+  return (v) => {
+    if (!idx || !wt) return 0;
+    let best = 0;
+    let bone = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = wt.getComponent(v, k);
+      if (w > best) {
+        best = w;
+        bone = idx.getComponent(v, k);
+      }
+    }
+    return groupOfBone[bone] ?? 0;
+  };
 };
 /** The body is ~50k triangles and a third-person gun ~22k: far more than a weak GPU can skin and draw for a full lobby. */
 const LOW_BODY_TRIS = 6000;
@@ -243,7 +285,7 @@ export class SoldierView {
     if (this.low) {
       this.model.traverse((o) => {
         const m = o as THREE.SkinnedMesh;
-        if (m.isSkinnedMesh) m.geometry = lowDetailOf(m.geometry, LOW_BODY_TRIS);
+        if (m.isSkinnedMesh) m.geometry = lowDetailOf(m.geometry, LOW_BODY_TRIS, limbGroups(m));
       });
     }
     const tint = new THREE.Color(color);
@@ -596,7 +638,7 @@ export class SoldierView {
     return target.set(0, this.muzzleLength, 0).applyMatrix4(this.rifle.matrixWorld);
   }
 
-  die(agent: Agent, physics: PhysicsWorld, time: number): void {
+  die(agent: Agent, physics: PhysicsWorld, time: number, push: DeathPush = {}): void {
     if (this.ragdoll) return;
     this.model.updateMatrixWorld(true);
     this.ragdoll = createRagdoll(this.model, physics.world);
@@ -605,13 +647,17 @@ export class SoldierView {
     // the ragdoll's own speed cap (6 m/s) is the hard limit.
     const cause = agent.deathCause;
     const blast = cause === 'grenade' || cause === 'airstrike';
-    const speed = DEATH_PUSH[cause] ?? 2;
+    let speed = cause === 'knife' ? (MELEE_PUSH[push.melee ?? 'knife'] ?? 2) : (DEATH_PUSH[cause] ?? 2);
+    if ((cause === 'shotgun' || cause === 'autoshotgun') && push.distance !== undefined) {
+      speed *= Math.max(0.35, Math.min(1, 1 - (push.distance - SHOTGUN_FULL) / (SHOTGUN_FADE - SHOTGUN_FULL)));
+    }
     const dir = new THREE.Vector3(agent.deathDirX, 0, agent.deathDirZ);
     if (dir.lengthSq() < 1e-6) dir.set(-Math.sin(agent.yaw), 0, -Math.cos(agent.yaw));
     dir.normalize();
     const velocity = new THREE.Vector3(agent.vx * 0.6, blast ? 3 : 0.6, agent.vz * 0.6).addScaledVector(dir, speed);
     this.ragdoll.activate({
-      impulse: dir.clone().setY(0.25).normalize().multiplyScalar(blast ? 0 : agent.deathRegion === 'head' ? 5 : 7),
+      // The kick at the hit region scales with the weapon too, so heavy hits also twist the body more.
+      impulse: dir.clone().setY(0.25).normalize().multiplyScalar(blast ? 0 : (agent.deathRegion === 'head' ? 5 : 7) * Math.max(0.8, speed / 3)),
       region: agent.deathRegion,
       velocity
     });

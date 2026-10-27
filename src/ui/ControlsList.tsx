@@ -19,7 +19,7 @@ export const ControlsList = ({ settings, touch = false }: { settings: GameSettin
       ]
     : [
         ['Move', [`${key(k.forward)}${key(k.left)}${key(k.back)}${key(k.right)}`]],
-        ['Fire / aim', ['Left click', 'Right click']],
+        ['Fire / aim', [key(k.fire), key(k.aim)]],
         ['Sprint', [key(k.sprint)]],
         ['Jump', [key(k.jump)]],
         ['Crouch / slide', [key(k.crouch)]],

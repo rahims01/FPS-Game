@@ -88,6 +88,25 @@
   font-size: 13px;
   letter-spacing: 0.16em;
 }
+.bug-full {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+}
+.bug-full:hover {
+  background: var(--panel-2);
+}
+.bug-full + .bug-live {
+  margin-left: 0;
+}
 .live-short {
   display: none;
 }
@@ -579,6 +598,8 @@
     padding: 0 12px 40px;
   }
   .bug {
+    /* On a phone a pinned two-row header eats the screen: let it scroll away. */
+    position: static;
     flex-wrap: wrap;
     height: auto;
     margin: 0 -12px 18px;
@@ -911,5 +932,12 @@
 @media (prefers-reduced-motion: reduce) {
   .tour-spot {
     transition: none;
+  }
+}
+
+/* Phones on their side: barely any height, so the header scrolls away here too. */
+@media (max-height: 520px) {
+  .bug {
+    position: static;
   }
 }

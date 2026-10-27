@@ -8,23 +8,28 @@ import * as THREE from 'three';
  *
  * The cell size grows until the result is under `maxTris`, so it adapts to
  * whatever model is loaded.
+ *
+ * `groupOf` keeps parts apart: vertices only merge with others in the same
+ * group. Without it a skinned body's two legs, close together in the bind
+ * pose, got welded at the ankles and thighs, and the shared triangles
+ * stretched into a strip between the feet whenever the legs moved apart.
  */
-export const decimate = (geo: THREE.BufferGeometry, maxTris: number): THREE.BufferGeometry => {
+export const decimate = (geo: THREE.BufferGeometry, maxTris: number, groupOf?: (vertex: number) => number): THREE.BufferGeometry => {
   const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
   if (tris <= maxTris) return geo;
   geo.computeBoundingBox();
   const size = geo.boundingBox!.getSize(new THREE.Vector3());
   let cell = Math.max(size.x, size.y, size.z) / 160;
   for (let attempt = 0; attempt < 12; attempt++) {
-    const out = cluster(geo, cell);
+    const out = cluster(geo, cell, groupOf);
     if (out.index!.count / 3 <= maxTris) return out;
     out.dispose();
     cell *= 1.35;
   }
-  return cluster(geo, cell);
+  return cluster(geo, cell, groupOf);
 };
 
-const cluster = (geo: THREE.BufferGeometry, cell: number): THREE.BufferGeometry => {
+const cluster = (geo: THREE.BufferGeometry, cell: number, groupOf?: (vertex: number) => number): THREE.BufferGeometry => {
   const pos = geo.attributes.position;
   const n = pos.count;
   const rep = new Int32Array(n);
@@ -37,7 +42,7 @@ const cluster = (geo: THREE.BufferGeometry, cell: number): THREE.BufferGeometry 
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    const key = `${Math.round(x / cell)},${Math.round(y / cell)},${Math.round(z / cell)}`;
+    const key = `${Math.round(x / cell)},${Math.round(y / cell)},${Math.round(z / cell)},${groupOf ? groupOf(i) : 0}`;
     let r = cells.get(key);
     if (r === undefined) {
       r = kept.length;

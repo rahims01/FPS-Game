@@ -134,6 +134,12 @@ export interface Agent {
   deathT: number;
   /** What killed it: a weapon, a grenade, an airstrike or the zone. */
   deathCause: DeathCause;
+  /**
+   * Shotgun bots and a far target: close in ('push') or fight it with the
+   * sidearm ('secondary'). Kept for a few seconds so they don't flip-flop.
+   */
+  rangePlan: 'none' | 'push' | 'secondary';
+  rangePlanUntil: number;
 
   // Bot perception and memory.
   /** Ticks offset so bots don't all think on the same tick. */
@@ -265,6 +271,8 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   deathDirZ: 0,
   deathT: 0,
   deathCause: 'rifle',
+  rangePlan: 'none',
+  rangePlanUntil: 0,
   phase: id % 6,
   action: 0,
   prevAction: 0,

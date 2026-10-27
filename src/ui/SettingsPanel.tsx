@@ -55,24 +55,41 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
   // Changing any single graphics option makes the preset "custom".
   const setGfx = (patch: Partial<Graphics>) => onChange({ ...settings, quality: 'custom', autoQuality: false, graphics: { ...settings.graphics, ...patch } });
 
-  // Rebinding: the next key pressed becomes the binding (Escape cancels).
+  // Rebinding: the next key or mouse button pressed becomes the binding (Escape cancels).
   useEffect(() => {
     if (!binding) return;
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.code !== 'Escape') {
+    const bind = (code: string) => {
+      if (code !== 'Escape') {
         const keys = { ...settings.keys };
         // A key can only do one thing: swap with whatever used it before.
-        const clash = (Object.keys(keys) as KeyAction[]).find((a) => keys[a] === e.code && a !== binding);
+        const clash = (Object.keys(keys) as KeyAction[]).find((a) => keys[a] === code && a !== binding);
         if (clash) keys[clash] = keys[binding];
-        keys[binding] = e.code;
+        keys[binding] = code;
         onChange({ ...settings, keys });
       }
       setBinding(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bind(e.code);
+    };
+    const onMouse = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      bind(`Mouse${e.button}`);
+    };
+    // The click that opened the right-click menu would otherwise land on the page.
+    const noMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    window.addEventListener('mousedown', onMouse, true);
+    window.addEventListener('contextmenu', noMenu, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('mousedown', onMouse, true);
+      // Let the right click's own menu event pass first, then allow menus again.
+      setTimeout(() => window.removeEventListener('contextmenu', noMenu, true), 0);
+    };
   }, [binding, settings, onChange]);
 
   const c = settings.crosshair;
@@ -97,6 +114,7 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
             <Toggle label="Show FPS" value={settings.showFps} onChange={(v) => set({ showFps: v })} />
             <Toggle label="Show ping (online)" value={settings.showPing} onChange={(v) => set({ showPing: v })} />
             <Toggle label="Damage numbers" hint="Floating numbers on everyone you hit" value={settings.damageNumbers} onChange={(v) => set({ damageNumbers: v })} />
+            <Toggle label="Blood" hint="Off: hits kick up dust and nobody leaves a pool of blood" value={settings.blood} onChange={(v) => set({ blood: v })} />
             <Toggle label="Hit marker sound" value={settings.hitSounds} onChange={(v) => set({ hitSounds: v })} />
             <Toggle label="Control hints" hint="Short tips in your first matches (switching weapons, grenades, scoreboard...). Each one stops once you've used it." value={settings.hints} onChange={(v) => set({ hints: v })} />
             {onReplayTour && (
@@ -195,13 +213,13 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
         )}
         {tab === 'controls' && (
           <>
-            <p className="set-hint">Click a key, then press the new one (Esc cancels). Mouse: left fire, right aim, wheel switch weapon.</p>
+            <p className="set-hint">Click an action, then press a key or click a mouse button for it (Esc cancels). No mouse? Put Fire and Aim on keys, e.g. F and E. The wheel always switches weapon.</p>
             <div className="binds">
               {KEY_ACTIONS.map(([action, label]) => (
                 <div key={action} className="set-row">
                   <span>{label}</span>
                   <button className={`chip key ${binding === action ? 'on' : ''}`} onClick={() => setBinding(action)}>
-                    {binding === action ? 'Press a key…' : keyLabel(settings.keys[action])}
+                    {binding === action ? 'Press a key or click…' : keyLabel(settings.keys[action])}
                   </button>
                 </div>
               ))}

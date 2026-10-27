@@ -177,7 +177,9 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 ## Feel
 
 - **Per-gun recoil patterns:** sustained fire climbs and drifts in a fixed, learnable pattern for each weapon (the rifle drifts right then left, the SMG zig-zags, the LMG starts slow then climbs hard). Pull against it. The pattern resets when you stop firing.
-- **Ragdoll push:** bodies are carried along the shot and twisted at the hit point. Shotguns and snipers push harder, and explosions launch bodies, all within a speed cap.
+- **Ragdoll push:** bodies are carried along the shot and twisted at the hit point. The heaviest hits push hardest: the .50 cal, sniper, point-blank shotguns (fading with distance), burst rifle, DMR, Desert Eagle and heavy melees (sledgehammer, axe, bat). Explosions launch bodies, all within a speed cap.
+- **Ragdoll joints** follow a real body's range: hips bend about 100 degrees forward, 20 back and 50 to the side, knees and elbows only bend one way, and every joint has a hard stop behind the physics so a big hit can't fold a limb past it.
+- **Blood** sprays on hits and a pool spreads out under the body once it lands. It can be turned off in Settings (hits then kick up dust). Round-based modes start each round on a clean map: no bodies, blood, bullet holes or scorch marks (paintball keeps its paint).
 - **Killcam:** after another player kills you, a replay of the last few seconds from your killer's eyes. It shows their gun, shots, impacts, hit reactions, explosions, smoke and fire as they were then (nothing from the live match leaks in), with everyone's name tags and the killer's HUD (health, ammo, loadout, minimap, kill feed). There's none for zombies, survival enemies or labelled "Bot N" bots. Press Space or click to skip.
 
 ## Settings
@@ -186,7 +188,8 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
   - render resolution, shadows (off / low / high), effects density, view distance, how many ragdolls stay simulated, and anti-aliasing;
   - **simplified soldiers** (on with Low): low-detail soldier bodies and guns (about 3,700 and 2,900 triangles instead of 50,000 and 22,000), and no animation for soldiers out of view. This is the big one for 5v5 and bigger lobbies on weak devices.
 - **Adjust automatically** (on by default): if a match keeps running under about 40 fps, the game steps down by itself (High, then Medium, then Low, then a lower resolution), says so on screen and saves it. Fast devices never trigger it. Picking a preset yourself turns it off.
-- **Controls:** every key can be rebound (a clash swaps the two keys). Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
+- **Controls:** every action can be rebound to a key or a mouse button (a clash swaps the two), including fire and aim, so trackpad players can put them on keys. Also invert Y, aim-down-sights sensitivity, and toggle aim / toggle crouch.
+- **Full screen:** a button in the menu's top bar (handy on phones, where the browser's bars take up the screen). On phones the menu's top bar scrolls away instead of staying pinned.
 - **Help for new players:** the first visit runs a short tour of the menu (modes, Find Match, loadout, Armory, Settings), which can be replayed from Settings. In matches, **control hints** show the next thing worth knowing in your own keys (move, swap, scoreboard, grenades, knife, reload when low, pause) and stop once you've used each one; turn them off in Settings. Every control is listed on the pause screen and under the Play tab's modes.
 - **Crosshair:** colour, length, gap, thickness, centre dot, and dynamic (follows spread), with a live preview.
 - **HUD:** optional FPS counter and online ping, damage numbers and hit marker sound.
@@ -200,6 +203,7 @@ Test: `node scripts/mp-test.mjs "1v1 Duel"` drives a host tab and a guest tab in
 Opponents have personalities that change how they play around the trained tactics:
 
 - **Rusher:** shotgun or SMG, sprints at you and hops while strafing.
+- **Shotguns:** bots holding one close in on a far target and hold fire until they're in range. When closing in is too risky (hurt, a long open walk, being shot at from range, up against a sniper), they switch to their pistol instead, and put the shotgun back once they're close.
 - **Sniper:** holds angles after losing you, crouches and aims well.
 - **Flanker:** swings wide around you and creeps in silently.
 - **Tactician:** uses cover, grenades and retreats to heal.

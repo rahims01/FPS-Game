@@ -4,8 +4,10 @@ import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstr
 import { DEFAULT_PERKS, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { DEFAULT_COSMETICS, type Cosmetics } from './cosmetics';
 
-/** Rebindable actions (mouse buttons stay fire / aim). */
+/** Rebindable actions. Any of them can take a key or a mouse button ("Mouse0" = left, "Mouse2" = right). */
 export const KEY_ACTIONS = [
+  ['fire', 'Fire'],
+  ['aim', 'Aim down sights'],
   ['forward', 'Move forward'],
   ['back', 'Move back'],
   ['left', 'Strafe left'],
@@ -28,6 +30,8 @@ export type KeyAction = (typeof KEY_ACTIONS)[number][0];
 export type KeyBinds = Record<KeyAction, string>;
 
 export const DEFAULT_KEYS: KeyBinds = {
+  fire: 'Mouse0',
+  aim: 'Mouse2',
   forward: 'KeyW',
   back: 'KeyS',
   left: 'KeyA',
@@ -136,6 +140,8 @@ export interface GameSettings {
   hitSounds: boolean;
   /** First-match control hints in the HUD. */
   hints: boolean;
+  /** Blood sprays and pools (off: hits kick up dust). */
+  blood: boolean;
   /** On-screen touch controls: automatic on touch screens, or forced on / off. */
   touchControls: 'auto' | 'on' | 'off';
   lethal: ThrowableId;
@@ -177,6 +183,7 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   damageNumbers: true,
   hitSounds: true,
   hints: true,
+  blood: true,
   touchControls: 'auto',
   lethal: 'frag',
   tactical: 'flash',
@@ -249,6 +256,8 @@ export const keyLabel = (code: string): string => {
     ArrowRight: '→',
     Backquote: '`'
   };
+  const mouse = ['Left click', 'Middle click', 'Right click', 'Mouse 4', 'Mouse 5'];
+  if (code.startsWith('Mouse')) return mouse[+code.slice(5)] ?? `Mouse ${+code.slice(5) + 1}`;
   return named[code] ?? code;
 };
 

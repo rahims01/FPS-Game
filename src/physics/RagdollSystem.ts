@@ -27,8 +27,11 @@ interface RagdollBoneSpec {
   orientRef: string;
   mass: number;
   halfExtents: [number, number, number];
+  /** Aperture of the joint's cone, around its neutral direction (see JointNeutral). */
   swingAngle: number;
+  /** How far the limb may roll about its own length (see TwistLimit). */
   twistAngle: number;
+  neutral: JointNeutral;
   /**
    * Elbows and knees are NOT ball joints - they bend one way and stop, and a
    * ConeTwist cannot say that on its own: its cone is symmetric about its
@@ -51,30 +54,97 @@ interface RagdollBoneSpec {
   hingeAngle?: number;
 }
 
-// Bone list, masses, and joint limits follow ragdoll.json. cannon-es has no
-// capsule shape, so boxes are used as the spec's documented fallback.
+/**
+ * Where a joint's cone is centred.
+ *
+ * cannon's cone is measured from axisA in the PARENT body's frame, and every
+ * body's local Y runs along its own bone. Using the parent's Y as the centre
+ * (as this used to) only works where the child continues straight on from
+ * the parent. Anywhere the skeleton turns a corner it is badly wrong: the
+ * hip body points up the spine while the thigh points down, so the thigh
+ * started 180 degrees outside a 70 degree cone and the solver spent the
+ * whole fall dragging the legs up toward the head (measured: thighs at
+ * 145-175 degrees from the torso, where a real hip stops near 120). The
+ * shoulders and feet had the same problem at 90 degrees.
+ *
+ *  - straight: on along the parent (knees, elbows; their hinge does the rest).
+ *  - rest: the limb's direction in the pose it died in (spine, neck, collar
+ *    bones, hands, feet: joints whose resting angle is not straight).
+ *  - hip: down the torso, tilted forward by coneTilt. A circular cone cannot
+ *    hold a hip's lopsided range on its own axis, but tilted it gives about
+ *    100 degrees forward, 20 back and 50 out to the side.
+ *  - arm: out to the side and forward, wide enough for arms to hang, reach
+ *    forward or out, and not swing far behind the back or across the chest.
+ */
+type JointNeutral = 'straight' | 'rest' | 'hip' | 'arm';
+
+/** Forward tilt of the hip cone's centre from straight down the torso. */
+const HIP_TILT = 40 * DEG;
+
+// cannon-es has no capsule shape, so boxes are used as the spec's documented fallback.
+// Limits are set to a real body's passive range of motion.
 const RAGDOLL_BONES: RagdollBoneSpec[] = [
-  { name: 'mixamorigHips', parent: null, orientRef: 'mixamorigSpine', mass: 8, halfExtents: [0.14, 0.1, 0.1], swingAngle: 0, twistAngle: 0 },
-  { name: 'mixamorigSpine', parent: 'mixamorigHips', orientRef: 'mixamorigSpine1', mass: 5, halfExtents: [0.13, 0.1, 0.09], swingAngle: 15 * DEG, twistAngle: 10 * DEG },
-  { name: 'mixamorigSpine1', parent: 'mixamorigSpine', orientRef: 'mixamorigSpine2', mass: 5, halfExtents: [0.13, 0.09, 0.09], swingAngle: 15 * DEG, twistAngle: 10 * DEG },
-  { name: 'mixamorigSpine2', parent: 'mixamorigSpine1', orientRef: 'mixamorigNeck', mass: 5, halfExtents: [0.14, 0.09, 0.1], swingAngle: 15 * DEG, twistAngle: 10 * DEG },
-  { name: 'mixamorigNeck', parent: 'mixamorigSpine2', orientRef: 'mixamorigHead', mass: 1, halfExtents: [0.05, 0.05, 0.05], swingAngle: 35 * DEG, twistAngle: 25 * DEG },
-  { name: 'mixamorigHead', parent: 'mixamorigNeck', orientRef: 'mixamorigHeadTop_End', mass: 3, halfExtents: [0.1, 0.11, 0.1], swingAngle: 35 * DEG, twistAngle: 25 * DEG },
-  { name: 'mixamorigLeftShoulder', parent: 'mixamorigSpine2', orientRef: 'mixamorigLeftArm', mass: 1, halfExtents: [0.08, 0.05, 0.05], swingAngle: 20 * DEG, twistAngle: 10 * DEG },
-  { name: 'mixamorigLeftArm', parent: 'mixamorigLeftShoulder', orientRef: 'mixamorigLeftForeArm', mass: 2, halfExtents: [0.045, 0.13, 0.045], swingAngle: 90 * DEG, twistAngle: 45 * DEG },
-  { name: 'mixamorigLeftForeArm', parent: 'mixamorigLeftArm', orientRef: 'mixamorigLeftHand', mass: 1.5, halfExtents: [0.04, 0.12, 0.04], swingAngle: 80 * DEG, twistAngle: 8 * DEG, hinge: 'elbow', hingeAngle: 72 * DEG },
-  { name: 'mixamorigLeftHand', parent: 'mixamorigLeftForeArm', orientRef: 'mixamorigLeftHandMiddle1', mass: 0.5, halfExtents: [0.035, 0.06, 0.04], swingAngle: 45 * DEG, twistAngle: 30 * DEG },
-  { name: 'mixamorigRightShoulder', parent: 'mixamorigSpine2', orientRef: 'mixamorigRightArm', mass: 1, halfExtents: [0.08, 0.05, 0.05], swingAngle: 20 * DEG, twistAngle: 10 * DEG },
-  { name: 'mixamorigRightArm', parent: 'mixamorigRightShoulder', orientRef: 'mixamorigRightForeArm', mass: 2, halfExtents: [0.045, 0.13, 0.045], swingAngle: 90 * DEG, twistAngle: 45 * DEG },
-  { name: 'mixamorigRightForeArm', parent: 'mixamorigRightArm', orientRef: 'mixamorigRightHand', mass: 1.5, halfExtents: [0.04, 0.12, 0.04], swingAngle: 80 * DEG, twistAngle: 8 * DEG, hinge: 'elbow', hingeAngle: 72 * DEG },
-  { name: 'mixamorigRightHand', parent: 'mixamorigRightForeArm', orientRef: 'mixamorigRightHandMiddle1', mass: 0.5, halfExtents: [0.035, 0.06, 0.04], swingAngle: 45 * DEG, twistAngle: 30 * DEG },
-  { name: 'mixamorigLeftUpLeg', parent: 'mixamorigHips', orientRef: 'mixamorigLeftLeg', mass: 5, halfExtents: [0.07, 0.2, 0.07], swingAngle: 70 * DEG, twistAngle: 35 * DEG },
-  { name: 'mixamorigLeftLeg', parent: 'mixamorigLeftUpLeg', orientRef: 'mixamorigLeftFoot', mass: 4, halfExtents: [0.055, 0.19, 0.055], swingAngle: 75 * DEG, twistAngle: 5 * DEG, hinge: 'knee', hingeAngle: 67 * DEG },
-  { name: 'mixamorigLeftFoot', parent: 'mixamorigLeftLeg', orientRef: 'mixamorigLeftToeBase', mass: 1, halfExtents: [0.05, 0.04, 0.1], swingAngle: 35 * DEG, twistAngle: 20 * DEG },
-  { name: 'mixamorigRightUpLeg', parent: 'mixamorigHips', orientRef: 'mixamorigRightLeg', mass: 5, halfExtents: [0.07, 0.2, 0.07], swingAngle: 70 * DEG, twistAngle: 35 * DEG },
-  { name: 'mixamorigRightLeg', parent: 'mixamorigRightUpLeg', orientRef: 'mixamorigRightFoot', mass: 4, halfExtents: [0.055, 0.19, 0.055], swingAngle: 75 * DEG, twistAngle: 5 * DEG, hinge: 'knee', hingeAngle: 67 * DEG },
-  { name: 'mixamorigRightFoot', parent: 'mixamorigRightLeg', orientRef: 'mixamorigRightToeBase', mass: 1, halfExtents: [0.05, 0.04, 0.1], swingAngle: 35 * DEG, twistAngle: 20 * DEG }
+  { name: 'mixamorigHips', parent: null, orientRef: 'mixamorigSpine', mass: 8, halfExtents: [0.14, 0.1, 0.1], swingAngle: 0, twistAngle: 0, neutral: 'rest' },
+  { name: 'mixamorigSpine', parent: 'mixamorigHips', orientRef: 'mixamorigSpine1', mass: 5, halfExtents: [0.13, 0.1, 0.09], swingAngle: 18 * DEG, twistAngle: 12 * DEG, neutral: 'rest' },
+  { name: 'mixamorigSpine1', parent: 'mixamorigSpine', orientRef: 'mixamorigSpine2', mass: 5, halfExtents: [0.13, 0.09, 0.09], swingAngle: 18 * DEG, twistAngle: 12 * DEG, neutral: 'rest' },
+  { name: 'mixamorigSpine2', parent: 'mixamorigSpine1', orientRef: 'mixamorigNeck', mass: 5, halfExtents: [0.14, 0.09, 0.1], swingAngle: 18 * DEG, twistAngle: 12 * DEG, neutral: 'rest' },
+  { name: 'mixamorigNeck', parent: 'mixamorigSpine2', orientRef: 'mixamorigHead', mass: 1, halfExtents: [0.05, 0.05, 0.05], swingAngle: 35 * DEG, twistAngle: 30 * DEG, neutral: 'rest' },
+  { name: 'mixamorigHead', parent: 'mixamorigNeck', orientRef: 'mixamorigHeadTop_End', mass: 3, halfExtents: [0.1, 0.11, 0.1], swingAngle: 30 * DEG, twistAngle: 30 * DEG, neutral: 'rest' },
+  { name: 'mixamorigLeftShoulder', parent: 'mixamorigSpine2', orientRef: 'mixamorigLeftArm', mass: 1, halfExtents: [0.08, 0.05, 0.05], swingAngle: 15 * DEG, twistAngle: 10 * DEG, neutral: 'rest' },
+  { name: 'mixamorigLeftArm', parent: 'mixamorigLeftShoulder', orientRef: 'mixamorigLeftForeArm', mass: 2, halfExtents: [0.045, 0.13, 0.045], swingAngle: 110 * DEG, twistAngle: 100 * DEG, neutral: 'arm' },
+  { name: 'mixamorigLeftForeArm', parent: 'mixamorigLeftArm', orientRef: 'mixamorigLeftHand', mass: 1.5, halfExtents: [0.04, 0.12, 0.04], swingAngle: 80 * DEG, twistAngle: 35 * DEG, neutral: 'straight', hinge: 'elbow', hingeAngle: 72 * DEG },
+  { name: 'mixamorigLeftHand', parent: 'mixamorigLeftForeArm', orientRef: 'mixamorigLeftHandMiddle1', mass: 0.5, halfExtents: [0.035, 0.06, 0.04], swingAngle: 55 * DEG, twistAngle: 25 * DEG, neutral: 'rest' },
+  { name: 'mixamorigRightShoulder', parent: 'mixamorigSpine2', orientRef: 'mixamorigRightArm', mass: 1, halfExtents: [0.08, 0.05, 0.05], swingAngle: 15 * DEG, twistAngle: 10 * DEG, neutral: 'rest' },
+  { name: 'mixamorigRightArm', parent: 'mixamorigRightShoulder', orientRef: 'mixamorigRightForeArm', mass: 2, halfExtents: [0.045, 0.13, 0.045], swingAngle: 110 * DEG, twistAngle: 100 * DEG, neutral: 'arm' },
+  { name: 'mixamorigRightForeArm', parent: 'mixamorigRightArm', orientRef: 'mixamorigRightHand', mass: 1.5, halfExtents: [0.04, 0.12, 0.04], swingAngle: 80 * DEG, twistAngle: 35 * DEG, neutral: 'straight', hinge: 'elbow', hingeAngle: 72 * DEG },
+  { name: 'mixamorigRightHand', parent: 'mixamorigRightForeArm', orientRef: 'mixamorigRightHandMiddle1', mass: 0.5, halfExtents: [0.035, 0.06, 0.04], swingAngle: 55 * DEG, twistAngle: 25 * DEG, neutral: 'rest' },
+  { name: 'mixamorigLeftUpLeg', parent: 'mixamorigHips', orientRef: 'mixamorigLeftLeg', mass: 5, halfExtents: [0.07, 0.2, 0.07], swingAngle: 60 * DEG, twistAngle: 40 * DEG, neutral: 'hip' },
+  { name: 'mixamorigLeftLeg', parent: 'mixamorigLeftUpLeg', orientRef: 'mixamorigLeftFoot', mass: 4, halfExtents: [0.055, 0.19, 0.055], swingAngle: 75 * DEG, twistAngle: 8 * DEG, neutral: 'straight', hinge: 'knee', hingeAngle: 67 * DEG },
+  { name: 'mixamorigLeftFoot', parent: 'mixamorigLeftLeg', orientRef: 'mixamorigLeftToeBase', mass: 1, halfExtents: [0.05, 0.04, 0.1], swingAngle: 30 * DEG, twistAngle: 20 * DEG, neutral: 'rest' },
+  { name: 'mixamorigRightUpLeg', parent: 'mixamorigHips', orientRef: 'mixamorigRightLeg', mass: 5, halfExtents: [0.07, 0.2, 0.07], swingAngle: 60 * DEG, twistAngle: 40 * DEG, neutral: 'hip' },
+  { name: 'mixamorigRightLeg', parent: 'mixamorigRightUpLeg', orientRef: 'mixamorigRightFoot', mass: 4, halfExtents: [0.055, 0.19, 0.055], swingAngle: 75 * DEG, twistAngle: 8 * DEG, neutral: 'straight', hinge: 'knee', hingeAngle: 67 * DEG },
+  { name: 'mixamorigRightFoot', parent: 'mixamorigRightLeg', orientRef: 'mixamorigRightToeBase', mass: 1, halfExtents: [0.05, 0.04, 0.1], swingAngle: 30 * DEG, twistAngle: 20 * DEG, neutral: 'rest' }
 ];
+
+/**
+ * Twist limit with reference vectors chosen by us.
+ *
+ * ConeTwistConstraint builds its twist reference from axisA.tangents(), an
+ * arbitrary perpendicular that does not line up with the child's at rest once
+ * the cone is centred anywhere but straight on, so its twist is switched off
+ * and this replaces it. Both references start as the same world direction
+ * (across the limb, side to side), and the limb may roll that far from it.
+ * Rolling side to side also turns them, so this doubles as the limit on a
+ * knee bending sideways or a leg swinging out.
+ */
+class TwistLimit extends CANNON.Constraint {
+  private readonly eq: CANNON.RotationalEquation;
+  constructor(bodyA: CANNON.Body, bodyB: CANNON.Body, private readonly refA: CANNON.Vec3, private readonly refB: CANNON.Vec3, angle: number) {
+    super(bodyA, bodyB, { collideConnected: false });
+    this.eq = new CANNON.RotationalEquation(bodyA, bodyB);
+    this.eq.maxAngle = angle;
+    // One-sided, like ConeTwist's own: only pulls back toward the reference.
+    this.eq.maxForce = 0;
+    this.eq.minForce = -1e6;
+    this.equations.push(this.eq);
+  }
+  update(): void {
+    this.bodyA.vectorToWorldFrame(this.refA, this.eq.axisA);
+    this.bodyB.vectorToWorldFrame(this.refB, this.eq.axisB);
+  }
+}
+
+/** Every cone, for the hard backstop in clampCones. */
+interface ConeRuntime {
+  parent: CANNON.Body;
+  child: CANNON.Body;
+  /** Cone centre in the PARENT body's frame. */
+  axisLocal: THREE.Vector3;
+  angle: number;
+}
+
+/** How far past its cone a limb may sit before the clamp acts (same reasoning as the hinge tolerance). */
+const CONE_TOLERANCE = 5 * DEG;
 
 /**
  * A hinge the solver is allowed to get wrong, and the post-step clamp fixes.
@@ -211,6 +281,7 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
   const settledPose: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion }[] = [];
   let hipsBone: THREE.Object3D | null = null;
   let hinges: HingeRuntime[] = [];
+  let cones: ConeRuntime[] = [];
   let activatedAtStep = 0;
   /** stepnumber at which the current run of quiet began; -1 when not quiet. */
   let quietSinceStep = -1;
@@ -360,6 +431,21 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
     const parentQuatInv = new THREE.Quaternion();
     const tiltedAxis = new THREE.Vector3();
 
+    // The torso's frame at death, for the hip and arm cones.
+    const hipsBody = bodiesByName.get('mixamorigHips');
+    const chestBody = bodiesByName.get('mixamorigSpine2') ?? hipsBody;
+    const torsoUp = new THREE.Vector3(0, 1, 0);
+    if (hipsBody) torsoUp.applyQuaternion(new THREE.Quaternion(hipsBody.quaternion.x, hipsBody.quaternion.y, hipsBody.quaternion.z, hipsBody.quaternion.w));
+    const torsoForward = forwardWorld.clone().addScaledVector(torsoUp, -forwardWorld.dot(torsoUp));
+    if (torsoForward.lengthSq() < 1e-8) torsoForward.set(0, 0, 1);
+    torsoForward.normalize();
+    const parentQuat = new THREE.Quaternion();
+    const childQuat = new THREE.Quaternion();
+    const neutralWorld = new THREE.Vector3();
+    const limbWorld = new THREE.Vector3();
+    const acrossWorld = new THREE.Vector3();
+    const outward = new THREE.Vector3();
+
     RAGDOLL_BONES.forEach((spec) => {
       if (!spec.parent) return;
       const childBody = bodiesByName.get(spec.name);
@@ -373,13 +459,29 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
       const pivotA = parentBody.quaternion.inverse().vmult(jointWorld.vsub(parentBody.position));
       const pivotB = childBody.quaternion.inverse().vmult(jointWorld.vsub(childBody.position));
 
+      parentQuat.set(parentBody.quaternion.x, parentBody.quaternion.y, parentBody.quaternion.z, parentBody.quaternion.w);
+      childQuat.set(childBody.quaternion.x, childBody.quaternion.y, childBody.quaternion.z, childBody.quaternion.w);
+      limbWorld.set(0, 1, 0).applyQuaternion(childQuat);
+      if (spec.neutral === 'straight') neutralWorld.set(0, 1, 0).applyQuaternion(parentQuat);
+      else if (spec.neutral === 'hip') neutralWorld.copy(torsoUp).multiplyScalar(-Math.cos(HIP_TILT)).addScaledVector(torsoForward, Math.sin(HIP_TILT));
+      else if (spec.neutral === 'arm' && chestBody) {
+        // Out from the chest on this arm's side, flattened across the torso, then angled forward.
+        outward.set(boneWorldPos.x - chestBody.position.x, boneWorldPos.y - chestBody.position.y, boneWorldPos.z - chestBody.position.z);
+        outward.addScaledVector(torsoUp, -outward.dot(torsoUp)).addScaledVector(torsoForward, -outward.dot(torsoForward));
+        if (outward.lengthSq() < 1e-8) neutralWorld.copy(limbWorld);
+        else neutralWorld.copy(outward.normalize()).addScaledVector(torsoForward, 0.6).normalize();
+      } else neutralWorld.copy(limbWorld);
+      parentQuatInv.copy(parentQuat).invert();
+      const axisLocal = neutralWorld.clone().applyQuaternion(parentQuatInv);
+
       const constraint = new CANNON.ConeTwistConstraint(parentBody, childBody, {
         pivotA,
         pivotB,
-        axisA: new CANNON.Vec3(0, 1, 0),
+        axisA: new CANNON.Vec3(axisLocal.x, axisLocal.y, axisLocal.z),
         axisB: new CANNON.Vec3(0, 1, 0),
         angle: spec.swingAngle,
-        twistAngle: spec.twistAngle,
+        // Its own twist is replaced by TwistLimit below.
+        twistAngle: Math.PI,
         // Belt and braces under the group mask above. cannon defaults this to
         // TRUE, which is what has any constrained pair colliding in the first
         // place. The mask should already prevent it, but this independently
@@ -388,8 +490,23 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
         // outside createRagdoll, the worst offenders still cannot fight.
         collideConnected: false
       });
+      constraint.twistEquation.enabled = false;
       world.addConstraint(constraint);
       constraints.push(constraint);
+      cones.push({ parent: parentBody, child: childBody, axisLocal, angle: spec.swingAngle });
+
+      // Twist reference: across the limb, side to side. A limb pointing
+      // straight ahead (a foot) takes it from the torso's up instead.
+      acrossWorld.crossVectors(limbWorld, torsoForward);
+      if (acrossWorld.lengthSq() < 0.05) acrossWorld.crossVectors(limbWorld, torsoUp);
+      if (acrossWorld.lengthSq() > 1e-8) {
+        acrossWorld.normalize();
+        const refA = acrossWorld.clone().applyQuaternion(parentQuatInv);
+        const refB = acrossWorld.clone().applyQuaternion(childQuat.clone().invert());
+        const twist = new TwistLimit(parentBody, childBody, new CANNON.Vec3(refA.x, refA.y, refA.z), new CANNON.Vec3(refB.x, refB.y, refB.z), spec.twistAngle);
+        world.addConstraint(twist);
+        constraints.push(twist);
+      }
 
       if (!spec.hinge || spec.hingeAngle === undefined) return;
 
@@ -398,9 +515,6 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
       // arbitrary roll setFromUnitVectors happened to pick for this body.
       flexLocal.copy(forwardWorld);
       if (spec.hinge === 'knee') flexLocal.negate();
-      parentQuatInv
-        .set(parentBody.quaternion.x, parentBody.quaternion.y, parentBody.quaternion.z, parentBody.quaternion.w)
-        .invert();
       flexLocal.applyQuaternion(parentQuatInv);
       // Only the component across the bone can tilt the cone off it.
       flexLocal.addScaledVector(upAxisLocal, -flexLocal.dot(upAxisLocal));
@@ -469,6 +583,7 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
     constraints = [];
     runtimes = [];
     hinges = [];
+    cones = [];
     settled = true;
   };
 
@@ -530,6 +645,35 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
     }
   };
 
+  /**
+   * Hard backstop for every cone, as clampHinges is for elbows and knees: a
+   * hard enough hit drives a limb through a soft cone in one step. Rotates the
+   * limb back to the rim and removes the spin carrying it outward. Only ever
+   * takes energy out.
+   */
+  const clampCones = () => {
+    for (const cone of cones) {
+      hingeQuat.set(cone.parent.quaternion.x, cone.parent.quaternion.y, cone.parent.quaternion.z, cone.parent.quaternion.w);
+      hingeUp.copy(cone.axisLocal).applyQuaternion(hingeQuat);
+      hingeQuat.set(cone.child.quaternion.x, cone.child.quaternion.y, cone.child.quaternion.z, cone.child.quaternion.w);
+      hingeDown.set(0, 1, 0).applyQuaternion(hingeQuat);
+      const off = Math.acos(Math.max(-1, Math.min(1, hingeUp.dot(hingeDown))));
+      if (off <= cone.angle + CONE_TOLERANCE) continue;
+      hingeAxis.crossVectors(hingeDown, hingeUp);
+      if (hingeAxis.lengthSq() < 1e-12) continue;
+      hingeAxis.normalize();
+      hingeCorrection.setFromAxisAngle(hingeAxis, off - cone.angle - CONE_TOLERANCE);
+      hingeQuat.premultiply(hingeCorrection);
+      cone.child.quaternion.set(hingeQuat.x, hingeQuat.y, hingeQuat.z, hingeQuat.w);
+      hingeSpin.set(cone.child.angularVelocity.x, cone.child.angularVelocity.y, cone.child.angularVelocity.z);
+      const along = hingeSpin.dot(hingeAxis);
+      if (along < 0) {
+        hingeSpin.addScaledVector(hingeAxis, -along);
+        cone.child.angularVelocity.set(hingeSpin.x, hingeSpin.y, hingeSpin.z);
+      }
+    }
+  };
+
   const update = () => {
     if (!active) return;
 
@@ -545,6 +689,7 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
     }
 
     clampVelocities();
+    clampCones();
     clampHinges();
     runtimes.forEach(({ bone, body, offsetPos, offsetQuat }) => {
       bodyQuatThree.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
@@ -590,7 +735,7 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
   // Safety net: nothing should ever exceed a sane speed, regardless of how
   // many frames of contact/impulses stack up. Cheap insurance against any
   // runaway velocity turning the ragdoll into a rocket.
-  const MAX_BODY_SPEED = 6;
+  const MAX_BODY_SPEED = 8;
   const clampVelocities = () => {
     runtimes.forEach(({ body }) => {
       const speedSq = body.velocity.lengthSquared();
@@ -611,6 +756,7 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
     constraints = [];
     runtimes = [];
     hinges = [];
+    cones = [];
     settledPose.length = 0;
     settled = false;
     hipsBone = null;

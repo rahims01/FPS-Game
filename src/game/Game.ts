@@ -264,7 +264,6 @@ export class Game {
 
   // Input.
   private keys = new Set<string>();
-  private mouse = { left: false, right: false };
   private yaw = 0;
   private pitch = 0;
   private lookDX = 0;
@@ -665,7 +664,6 @@ export class Game {
     if (!this.net) return;
     this.chatOpen = true;
     this.keys.clear();
-    this.mouse.left = this.mouse.right = false;
   }
 
   closeChat(): void {
@@ -680,15 +678,11 @@ export class Game {
     if (this.touchMode || this.padMode) return;
     this.locked = document.pointerLockElement === this.renderer.domElement;
     this.paused = !this.locked;
-    if (!this.locked) {
-      this.keys.clear();
-      this.mouse.left = this.mouse.right = false;
-    }
+    if (!this.locked) this.keys.clear();
   };
 
   private onBlur = () => {
     this.keys.clear();
-    this.mouse.left = this.mouse.right = false;
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -701,33 +695,45 @@ export class Game {
     }
     if (e.code === 'Tab' || e.code === k.scores) e.preventDefault();
     if (e.repeat) return;
-    this.keys.add(e.code);
-    if (performance.now() < this.introUntil && (e.code === k.jump || e.code === 'Enter')) {
+    this.press(e.code);
+  };
+
+  /** A key or mouse button ("Mouse0" etc.) going down: every action can be bound to either. */
+  private press(code: string): void {
+    const k = this.settings.keys;
+    this.keys.add(code);
+    if (code === k.fire) {
+      if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
+      const p = this.match.player;
+      if (p.alive && p.ammo === 0 && p.reloadT <= 0) this.audio.dryFire();
+    }
+    if (code === k.aim && this.settings.toggleAim) this.aimToggled = !this.aimToggled;
+    if (performance.now() < this.introUntil && (code === k.jump || code === 'Enter')) {
       this.skipIntro();
       return;
     }
-    if (e.code === k.jump && this.killcam) {
+    if (code === k.jump && this.killcam) {
       this.endKillcam();
       return;
     }
-    if (e.code === k.jump && this.watching()) {
+    if (code === k.jump && this.watching()) {
       this.cycleSpectate(1);
       return;
     }
-    if (e.code === k.jump) {
+    if (code === k.jump) {
       this.jumpQueued = true;
       if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
     }
-    if (e.code === k.crouch && this.settings.toggleCrouch) this.crouchToggled = !this.crouchToggled;
-    if (e.code === k.reload) this.reloadQueued = true;
-    if (e.code === k.melee) this.meleeQueued = true;
-    if (e.code === k.grenade) this.grenadeQueued = true;
-    if (e.code === k.tactical) this.tacticalQueued = true;
-    if (e.code === k.cycle && this.practice && this.net?.role !== 'client') this.nextPracticeGun();
-    if (e.code === k.weapon1) this.switchQueued = 0;
-    if (e.code === k.weapon2) this.switchQueued = 1;
-    if (e.code === k.swap) this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
-  };
+    if (code === k.crouch && this.settings.toggleCrouch) this.crouchToggled = !this.crouchToggled;
+    if (code === k.reload) this.reloadQueued = true;
+    if (code === k.melee) this.meleeQueued = true;
+    if (code === k.grenade) this.grenadeQueued = true;
+    if (code === k.tactical) this.tacticalQueued = true;
+    if (code === k.cycle && this.practice && this.net?.role !== 'client') this.nextPracticeGun();
+    if (code === k.weapon1) this.switchQueued = 0;
+    if (code === k.weapon2) this.switchQueued = 1;
+    if (code === k.swap) this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
+  }
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
@@ -754,16 +760,7 @@ export class Game {
       this.cycleSpectate(e.button === 0 ? 1 : -1);
       return;
     }
-    if (e.button === 0) {
-      this.mouse.left = true;
-      if (this.match.canPlayerRespawn()) this.match.respawnPlayer();
-      const p = this.match.player;
-      if (p.alive && p.ammo === 0 && p.reloadT <= 0) this.audio.dryFire();
-    }
-    if (e.button === 2) {
-      this.mouse.right = true;
-      if (this.settings.toggleAim) this.aimToggled = !this.aimToggled;
-    }
+    this.press(`Mouse${e.button}`);
   };
 
   private onWheel = (e: WheelEvent) => {
@@ -773,8 +770,7 @@ export class Game {
   };
 
   private onMouseUp = (e: MouseEvent) => {
-    if (e.button === 0) this.mouse.left = false;
-    if (e.button === 2) this.mouse.right = false;
+    this.keys.delete(`Mouse${e.button}`);
   };
 
   private onContext = (e: MouseEvent) => e.preventDefault();
@@ -799,6 +795,7 @@ export class Game {
     this.arenaView.setShadows(g.shadows);
     this.effects.density = g.effects === 'low' ? 0.35 : 1;
     this.effects.reduceFlash = s.access.reduceFlash;
+    this.effects.bloodOn = s.blood;
     this.viewmodel.reduceMotion = s.access.reduceMotion;
     this.pads.deadzone = s.pad.deadzone;
     const fog = this.scene.fog as THREE.Fog;
@@ -831,8 +828,8 @@ export class Game {
       right: THREE.MathUtils.clamp((k.has(b.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(b.left) || k.has('ArrowLeft') ? 1 : 0) + t.moveX + (pd?.moveX ?? 0), -1, 1),
       yaw: this.yaw,
       pitch: this.pitch,
-      fire: this.mouse.left || t.fire || !!pd?.fire,
-      aim: (this.settings.toggleAim ? this.aimToggled : this.mouse.right) || t.aim || !!pd?.aim,
+      fire: k.has(b.fire) || t.fire || !!pd?.fire,
+      aim: (this.settings.toggleAim ? this.aimToggled : k.has(b.aim)) || t.aim || !!pd?.aim,
       reload: this.reloadQueued,
       jump: this.jumpQueued,
       sprint: k.has(b.sprint) || t.sprint || -t.moveY > 0.92 || !!pd?.sprint,
@@ -1227,8 +1224,9 @@ export class Game {
         if (this.feed.length > 6) this.feed.shift();
         const v = this.viewFor(victim);
         v.setVisible(true);
-        v.die(victim, this.physics, sim.time);
-        if (live && e.attacker >= 0 && this.match.mode !== 'paintball') this.effects.bloodPool(victim.x, victim.z);
+        v.die(victim, this.physics, sim.time, { distance: e.distance, melee: killer ? this.cosmetics[killer.id]?.melee : undefined });
+        // The pool goes where the body ends up, once it has mostly landed.
+        if (live && e.attacker >= 0 && this.match.mode !== 'paintball') this.pendingPools.push({ view: v, at: sim.time + 0.7, y: victim.y });
         // No killcam for wave enemies (zombies, survival) or labelled bots: nothing worth replaying.
         const waveEnemy = this.match.mode === 'zombies' || this.match.mode === 'survival';
         if (victim === player && killer && killer !== victim && !this.spectator && !this.practice && !waveEnemy && !this.isLabelledBot(killer)) {
@@ -1739,7 +1737,7 @@ export class Game {
       ghost.showTag(s.alive && tagShown, ghostDist);
       if (a.id === kc.victim && !kc.victimDead && kc.clock >= kc.deathT) {
         kc.victimDead = true;
-        ghost.die({ ...a, ...s }, this.physics, sim.time);
+        ghost.die({ ...a, ...s }, this.physics, sim.time, { distance: Math.hypot(s.x - killer.x, s.z - killer.z), melee: this.cosmetics[kc.killer]?.melee });
       }
       ghost.update(fake, s.x, s.y, s.z, dt, kc.clock);
     }
@@ -2070,6 +2068,39 @@ export class Game {
     }
   }
 
+  /** Blood pools waiting for their bodies to land, and the round number last seen (for clean-up). */
+  private pendingPools: { view: SoldierView; at: number; y: number }[] = [];
+  private seenRound = -1;
+  private _hips = new THREE.Vector3();
+
+  private updatePools(): void {
+    const m = this.match;
+    // A new round starts on a clean map: no bodies, blood, bullet holes or scorch marks.
+    // Paintball keeps its paint: the mess is half the fun.
+    if (m.round !== this.seenRound) {
+      if (this.seenRound >= 0 && m.mode !== 'paintball') {
+        this.effects.clearMarks();
+        this.pendingPools = [];
+        for (const [id, v] of this.views) {
+          if (!v.ragdoll) continue;
+          v.dispose();
+          this.views.delete(id);
+        }
+      }
+      this.seenRound = m.round;
+    }
+    if (!this.pendingPools.length) return;
+    const now = m.sim.time;
+    this.pendingPools = this.pendingPools.filter((p) => {
+      if (now < p.at) return true;
+      if (p.view.ragdoll) {
+        p.view.ragdoll.getHipsWorldPosition(this._hips);
+        this.effects.bloodPool(this._hips.x, p.y, this._hips.z);
+      }
+      return false;
+    });
+  }
+
   /** Oldest corpses go first once too many ragdolls are simulating. */
   private capRagdolls(): void {
     const dead = [...this.views.entries()].filter(([, v]) => v.ragdoll).sort((a, b) => a[1].diedAt - b[1].diedAt);
@@ -2278,6 +2309,7 @@ export class Game {
     this.lookDX = 0;
     this.lookDY = 0;
     this.arenaView.update(time, this.camera.position);
+    this.updatePools();
     this.effects.update(dt);
 
     this.renderer.clear();
@@ -2802,7 +2834,7 @@ export class Game {
       case 'move':
         if (touch) return { keys: ['LEFT STICK', 'FIRE'], text: 'Move with the left side, drag the right side to aim, FIRE to shoot' };
         if (pad) return { keys: ['L-STICK', 'RT'], text: 'Move, aim with the right stick, RT to shoot' };
-        return { keys: [`${key(k.forward)}${key(k.left)}${key(k.back)}${key(k.right)}`, 'MOUSE'], text: 'Move, aim with the mouse, left click to shoot' };
+        return { keys: [`${key(k.forward)}${key(k.left)}${key(k.back)}${key(k.right)}`, key(k.fire)], text: `Move, look with the mouse, ${key(k.fire)} to shoot, ${key(k.aim)} to aim` };
       case 'swap':
         if (touch) return { keys: ['SWAP'], text: 'Switch weapons' };
         if (pad) return { keys: ['Y'], text: 'Switch weapons' };

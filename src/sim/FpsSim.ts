@@ -569,6 +569,37 @@ export class FpsSim {
     this.emit({ type: 'reload', agent: a.id });
   }
 
+  /**
+   * Bots with a shotgun and a target out of its reach. Most of the time they
+   * close in, and hold fire until they get there. When that's too risky (hurt,
+   * a long open walk, being shot at from range, up against a sniper) they
+   * fight it with the sidearm instead, and put the shotgun back once close or
+   * once the fight is over. Returns true while closing in.
+   */
+  private shotgunRange(a: Agent, t: Agent | null, dTarget: number): boolean {
+    const primary = a.weapons[0];
+    if (!CLOSE_GUNS.has(primary) || a.weapons.length < 2 || WEAPONS[a.weapons[1]].slot !== 'secondary') return false;
+    const engaged = !!t && (a.seesTarget || this.knowsTarget(a));
+    if (!engaged || dTarget <= SHOTGUN_REACH) {
+      a.rangePlan = 'none';
+      if (a.slot !== 0 && a.switchT <= 0 && a.reloadT <= 0) this.switchWeapon(a, 0);
+      return false;
+    }
+    if (this.time >= a.rangePlanUntil || a.rangePlan === 'none') {
+      const underFire = this.time - a.lastHitT < 1.5;
+      const vsSniper = !!t && !!WEAPONS[weaponOf(t).id].scope && dTarget > 20;
+      const risky = this.robotic(a) || a.hp < 55 || dTarget > 35 || vsSniper || (underFire && dTarget > 20);
+      a.rangePlan = risky && a.seesTarget ? 'secondary' : 'push';
+      a.rangePlanUntil = this.time + 3 + this.rng.next() * 2;
+    }
+    if (a.rangePlan === 'secondary') {
+      if (a.slot !== 1 && a.switchT <= 0) this.switchWeapon(a, 1);
+      return false;
+    }
+    if (a.slot !== 0 && a.switchT <= 0 && a.reloadT <= 0) this.switchWeapon(a, 0);
+    return true;
+  }
+
   switchWeapon(a: Agent, slot: number): void {
     if (slot === a.slot || slot < 0 || slot >= a.weapons.length) return;
     a.stash[a.slot] = a.ammo;
@@ -1307,6 +1338,7 @@ export class FpsSim {
     const style = a.style;
     const known = this.knowsTarget(a);
     const dTarget = Math.hypot(tx - a.x, tz - a.z);
+    const push = !override && this.shotgunRange(a, t, dTarget);
     let crouch = false;
     const tbag = !this.robotic(a) && this.time < a.tbagUntil && !a.seesTarget && !override;
     // Standing objectives (planting, defusing): hold still once there.
@@ -1316,6 +1348,8 @@ export class FpsSim {
       if (style === 'sniper' && !a.seesTarget && known && (name === 'advance' || name === 'sprint') && this.time < a.holdUntil) name = 'hold';
       if (style === 'tactician' && a.seesTarget && a.hp < 40 && !a.inCover && this.coverFor(a)) name = 'take_cover';
       if ((style === 'sniper' || style === 'tactician') && name === 'hold') crouch = true;
+      // Shotgun out of reach: close the distance instead of plinking from afar.
+      if (push) name = dTarget > SHOTGUN_REACH + 6 ? 'sprint' : 'advance';
     }
     // Flankers swing wide around a target they can't see instead of walking straight at it.
     const goal = (gx: number, gz: number): [number, number] => {
@@ -1482,6 +1516,8 @@ export class FpsSim {
     }
 
     if (!t || !a.seesTarget || !mayFire) return;
+    // Shotgun pellets do nothing past this; hold fire until closer.
+    if (CLOSE_GUNS.has(w.id) && dTarget > SHOTGUN_REACH + 4) return;
     // Snipers take longer to line up a shot.
     const aimTime = SOLDIER.reactionTime * a.skill + (w.scope ? 0.45 : 0) + (hasPerk(t, 'coldblooded') ? 0.35 : 0);
     if (a.trackT < aimTime) return;
@@ -1500,6 +1536,11 @@ export class FpsSim {
     }
   }
 }
+
+/** Guns that only work up close; bots close in with them or switch to the sidearm. */
+const CLOSE_GUNS = new Set<string>(['shotgun', 'autoshotgun']);
+/** How far a shotgun bot will still fight with the shotgun. */
+const SHOTGUN_REACH = 12;
 
 /** Crouching and sliding soldiers are about 70% as tall. */
 export const crouchScale = (b: { crouching: boolean; slideT: number }): number => (b.crouching || b.slideT > 0 ? 0.7 : 1);

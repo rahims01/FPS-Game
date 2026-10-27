@@ -25,7 +25,7 @@ import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
 import { ControlsList } from './ui/ControlsList';
-import { ArrowIcon, GearIcon, TrophyIcon } from './ui/icons';
+import { ArrowIcon, ExitFullscreenIcon, FullscreenIcon, GearIcon, TrophyIcon } from './ui/icons';
 import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
 import { resetHints } from './game/hints';
 import { loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
@@ -117,6 +117,31 @@ export const App = () => {
   const [settings, setSettings] = useState<GameSettings>(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  // Full screen (mostly for phones, where the browser's bars eat the menu). iPhones have no page full screen, so no button there.
+  const doc = document as Document & { webkitFullscreenElement?: Element; webkitFullscreenEnabled?: boolean; webkitExitFullscreen?: () => void };
+  const canFullscreen = !!(document.fullscreenEnabled || doc.webkitFullscreenEnabled);
+  const [fullscreen, setFullscreen] = useState(() => !!(document.fullscreenElement || doc.webkitFullscreenElement));
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!(document.fullscreenElement || doc.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange);
+    };
+  }, [doc]);
+  const toggleFullscreen = () => {
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    try {
+      if (document.fullscreenElement || doc.webkitFullscreenElement) {
+        if (document.exitFullscreen) void document.exitFullscreen().catch(() => {});
+        else doc.webkitExitFullscreen?.();
+      } else if (el.requestFullscreen) void el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+      else el.webkitRequestFullscreen?.();
+    } catch {
+      /* refused (some browsers in frames): the button just does nothing */
+    }
+  };
   const [hud, setHud] = useState<HudState | null>(null);
   const [round, setRound] = useState(0);
   // Ranked.
@@ -606,6 +631,11 @@ export const App = () => {
                   </button>
                 ))}
               </nav>
+              {canFullscreen && (
+                <button className="bug-full" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title={fullscreen ? 'Exit full screen' : 'Full screen'}>
+                  {fullscreen ? <ExitFullscreenIcon size={20} /> : <FullscreenIcon size={20} />}
+                </button>
+              )}
               <div className="bug-live">
                 <b>LIVE</b>
                 <span className="live-full">

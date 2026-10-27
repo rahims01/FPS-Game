@@ -18,6 +18,68 @@ export const flashTexture = (): THREE.CanvasTexture => {
   return new THREE.CanvasTexture(c);
 };
 
+/** Blood pools: a few puddle shapes drawn once, each spreading out under a body over a couple of seconds. */
+const POOL_SHAPES = 4;
+const MAX_POOLS = 24;
+const POOL_SPREAD_S = 2.4;
+
+/**
+ * One puddle shape: overlapping lobes with a few runs reaching out and some
+ * spatter past the edge. Near-black where it's deepest, redder and thinner
+ * toward the rim, with a soft wet highlight.
+ */
+const poolTexture = (seed: number): THREE.CanvasTexture => {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  let s = seed * 7919 + 13;
+  const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  const blob = (x: number, y: number, r: number) => {
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+  };
+  const m = S / 2;
+  g.fillStyle = '#fff';
+  blob(m, m, 54);
+  for (let i = 0; i < 9; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = 18 + rnd() * 40;
+    blob(m + Math.cos(a) * d, m + Math.sin(a) * d, 20 + rnd() * 30);
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = rnd() * Math.PI * 2;
+    for (let k = 0; k < 6; k++) {
+      const d = 62 + k * 9;
+      blob(m + Math.cos(a) * d + (rnd() - 0.5) * 6, m + Math.sin(a) * d + (rnd() - 0.5) * 6, Math.max(3, 13 - k * 1.8));
+    }
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = 96 + rnd() * 26;
+    blob(m + Math.cos(a) * d, m + Math.sin(a) * d, 1.5 + rnd() * 3.5);
+  }
+  g.globalCompositeOperation = 'source-in';
+  const body = g.createRadialGradient(m, m, 6, m, m, 124);
+  body.addColorStop(0, 'rgba(38,0,2,0.96)');
+  body.addColorStop(0.55, 'rgba(76,4,6,0.93)');
+  body.addColorStop(1, 'rgba(118,10,10,0.78)');
+  g.fillStyle = body;
+  g.fillRect(0, 0, S, S);
+  g.globalCompositeOperation = 'source-atop';
+  const hx = m - 26 + rnd() * 20;
+  const hy = m - 30 + rnd() * 20;
+  const sheen = g.createRadialGradient(hx, hy, 2, hx, hy, 44);
+  sheen.addColorStop(0, 'rgba(255,200,200,0.3)');
+  sheen.addColorStop(1, 'rgba(255,200,200,0)');
+  g.fillStyle = sheen;
+  g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+};
+
 const dotTexture = (): THREE.CanvasTexture => {
   const c = document.createElement('canvas');
   c.width = c.height = 32;
@@ -61,7 +123,12 @@ export class Effects {
   private smokeNext = 0;
   private fireballs: { sprite: THREE.Sprite; life: number; size: number }[] = [];
   private fireNext = 0;
-  private bloodMat = new THREE.MeshBasicMaterial({ color: 0x5a0505, transparent: true, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
+  // Blood pools (shapes drawn on first use).
+  private poolMats: THREE.MeshLambertMaterial[] = [];
+  private pools: { mesh: THREE.Mesh; t: number; size: number }[] = [];
+  private poolNext = 0;
+  /** Settings: blood on or off. Off, hits kick up dust instead and nobody leaves a pool. */
+  bloodOn = true;
 
   constructor() {
     const geo = new THREE.BufferGeometry();
@@ -284,6 +351,10 @@ export class Effects {
   }
 
   blood(p: THREE.Vector3, dir: THREE.Vector3, heavy: boolean): void {
+    if (!this.bloodOn) {
+      for (let i = 0; i < 5; i++) this.emit(p.x, p.y, p.z, dir.x + (Math.random() - 0.5), dir.y + Math.random(), dir.z + (Math.random() - 0.5), 0.6, 0.58, 0.54, 0.25 + Math.random() * 0.2, 6);
+      return;
+    }
     const n = heavy ? 26 : 12;
     for (let i = 0; i < n; i++) {
       const s = 1 + Math.random() * 2.5;
@@ -329,9 +400,37 @@ export class Effects {
     this.decal(new THREE.Vector3(p.x, 0.012, p.z), new THREE.Vector3(0, 1, 0), this.scorchMat, 30 * k);
   }
 
-  bloodPool(x: number, z: number): void {
-    const p = new THREE.Vector3(x, 0.01, z);
-    this.decal(p, new THREE.Vector3(0, 1, 0), this.bloodMat, 6 + Math.random() * 4);
+  /** A pool of blood spreading out under a body (y = the ground it lies on). */
+  bloodPool(x: number, y: number, z: number): void {
+    if (!this.bloodOn) return;
+    if (!this.poolMats.length) {
+      for (let i = 0; i < POOL_SHAPES; i++) {
+        this.poolMats.push(new THREE.MeshLambertMaterial({ map: poolTexture(i + 1), transparent: true, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false }));
+      }
+      const geo = new THREE.PlaneGeometry(1, 1);
+      for (let i = 0; i < MAX_POOLS; i++) {
+        const mesh = new THREE.Mesh(geo, this.poolMats[0]);
+        mesh.visible = false;
+        mesh.renderOrder = 1;
+        this.group.add(mesh);
+        this.pools.push({ mesh, t: 0, size: 1 });
+      }
+    }
+    const pool = this.pools[this.poolNext];
+    this.poolNext = (this.poolNext + 1) % MAX_POOLS;
+    pool.mesh.material = this.poolMats[Math.floor(Math.random() * POOL_SHAPES)];
+    pool.mesh.position.set(x, y + 0.015, z);
+    pool.mesh.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+    pool.size = 1 + Math.random() * 0.5;
+    pool.t = 0;
+    pool.mesh.scale.setScalar(pool.size * 0.2);
+    pool.mesh.visible = true;
+  }
+
+  /** New round: wipe blood, bullet holes, scorch marks and paint off the map. */
+  clearMarks(): void {
+    for (const d of this.decals) d.visible = false;
+    for (const p of this.pools) p.mesh.visible = false;
   }
 
   private decal(p: THREE.Vector3, n: THREE.Vector3, mat: THREE.Material, scale: number): void {
@@ -345,6 +444,12 @@ export class Effects {
   }
 
   update(dt: number): void {
+    for (const pool of this.pools) {
+      if (!pool.mesh.visible || pool.t >= POOL_SPREAD_S) continue;
+      pool.t = Math.min(POOL_SPREAD_S, pool.t + dt);
+      const k = 1 - (1 - pool.t / POOL_SPREAD_S) ** 3;
+      pool.mesh.scale.setScalar(pool.size * (0.2 + 0.8 * k));
+    }
     for (let i = 0; i < MAX_PARTICLES; i++) {
       if (this.pLife[i] <= 0) continue;
       this.pLife[i] -= dt;
