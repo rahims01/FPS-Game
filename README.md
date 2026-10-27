@@ -162,7 +162,7 @@ PeerJS's built-in relays no longer answer, so without a relay, players on differ
 
 **Optional: Metered Open Relay (free, 20 GB a month, also ports 80 and 443)**
 
-Ports 80 and 443 get through school and office firewalls that block 3478. Its service has been unreliable, so treat it as a bonus. Sign up at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/), then add `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret).
+Ports 80 and 443 get through school and office firewalls that block 3478. Its service has been unreliable, so treat it as a bonus. Sign up at [metered.ca/tools/openrelay](https://metered.ca/tools/openrelay/), then add the username and password from its dashboard as `METERED_USERNAME` and `METERED_CREDENTIAL` (as a secret). The relay addresses default to `global.relay.metered.ca` on ports 80 and 443; set `METERED_URLS` (comma-separated) only if your dashboard lists different ones. An API key works too: `METERED_DOMAIN` (e.g. `yourapp.metered.live`) and `METERED_API_KEY` (as a secret).
 
 Cloudflare's own relay also works: `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` from **Realtime > TURN Server**. It's paid beyond its free allowance.
 

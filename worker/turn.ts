@@ -10,7 +10,12 @@
  *     TURN_USERNAME
  *     TURN_CREDENTIAL  (secret)
  *
- *   Optional, Metered Open Relay (free, 20 GB/month, also ports 80/443):
+ *   Optional, Metered Open Relay (free, 20 GB/month, also ports 80/443).
+ *   Either the username and password from its dashboard:
+ *     METERED_USERNAME
+ *     METERED_CREDENTIAL  (secret)
+ *     METERED_URLS        optional; defaults to global.relay.metered.ca on 80/443
+ *   or an API key:
  *     METERED_DOMAIN   e.g. yourapp.metered.live
  *     METERED_API_KEY  (secret)
  *
@@ -23,6 +28,9 @@ export interface TurnEnv {
   TURN_URLS?: string;
   TURN_USERNAME?: string;
   TURN_CREDENTIAL?: string;
+  METERED_USERNAME?: string;
+  METERED_CREDENTIAL?: string;
+  METERED_URLS?: string;
   METERED_DOMAIN?: string;
   METERED_API_KEY?: string;
   TURN_KEY_ID?: string;
@@ -47,14 +55,27 @@ const relaysOnly = (servers: IceServer[]): IceServer[] =>
     .map((s) => ({ ...s, urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => /^turns?:/.test(u) && !/:53(\?|$)/.test(u)) }))
     .filter((s) => s.urls.length > 0);
 
-const staticTurn = (env: TurnEnv): IceServer[] => {
-  if (!env.TURN_URLS || !env.TURN_USERNAME || !env.TURN_CREDENTIAL) return [];
-  // Forgiving about how the address was pasted: quotes, spaces, or no "turn:" in front.
-  const urls = env.TURN_URLS.split(',')
+/** Forgiving about how addresses were pasted: quotes, spaces, or no "turn:" in front. */
+const parseUrls = (list: string): string[] =>
+  list
+    .split(',')
     .map((u) => u.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean)
     .map((u) => (/^turns?:/i.test(u) ? u : `turn:${u.replace(/^[a-z]+:\/\//i, '')}`));
+
+const staticTurn = (env: TurnEnv): IceServer[] => {
+  if (!env.TURN_URLS || !env.TURN_USERNAME || !env.TURN_CREDENTIAL) return [];
+  const urls = parseUrls(env.TURN_URLS);
   return urls.length ? [{ urls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL }] : [];
+};
+
+/** Metered's fixed relay addresses; 80 and 443 get through firewalls that block 3478. */
+const METERED_DEFAULT_URLS = 'turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp';
+
+const meteredStatic = (env: TurnEnv): IceServer[] => {
+  if (!env.METERED_USERNAME || !env.METERED_CREDENTIAL) return [];
+  const urls = parseUrls(env.METERED_URLS || METERED_DEFAULT_URLS);
+  return urls.length ? [{ urls, username: env.METERED_USERNAME.trim(), credential: env.METERED_CREDENTIAL.trim() }] : [];
 };
 
 const metered = async (env: TurnEnv): Promise<IceServer[]> => {
@@ -82,11 +103,11 @@ const cloudflare = async (env: TurnEnv): Promise<IceServer[]> => {
 
 export const turn = async (env: TurnEnv): Promise<Response> => {
   // One provider failing (quota, outage) never hides the others.
-  const results = await Promise.allSettled([Promise.resolve(staticTurn(env)), metered(env), cloudflare(env)]);
+  const results = await Promise.allSettled([Promise.resolve(staticTurn(env)), Promise.resolve(meteredStatic(env)), metered(env), cloudflare(env)]);
   const iceServers = relaysOnly(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
   if (!iceServers.length) {
     // Names only (never values), so a misnamed or missing setting is easy to spot.
-    const names: (keyof TurnEnv)[] = ['TURN_URLS', 'TURN_USERNAME', 'TURN_CREDENTIAL', 'METERED_DOMAIN', 'METERED_API_KEY', 'TURN_KEY_ID', 'TURN_KEY_API_TOKEN'];
+    const names: (keyof TurnEnv)[] = ['TURN_URLS', 'TURN_USERNAME', 'TURN_CREDENTIAL', 'METERED_USERNAME', 'METERED_CREDENTIAL', 'METERED_URLS', 'METERED_DOMAIN', 'METERED_API_KEY', 'TURN_KEY_ID', 'TURN_KEY_API_TOKEN'];
     return json(
       {
         error: 'No TURN relay is configured',
