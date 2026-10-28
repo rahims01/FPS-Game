@@ -108,7 +108,7 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
             <Slider label="Mouse sensitivity" value={settings.sensitivity} min={0.1} max={4} step={0.05} fmt={(v) => v.toFixed(2)} onChange={(v) => set({ sensitivity: v })} />
             <Slider label="Aim-down-sights sensitivity" value={settings.adsSensitivity} min={0.2} max={1.5} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ adsSensitivity: v })} />
             <Toggle label="Invert mouse Y" value={settings.invertY} onChange={(v) => set({ invertY: v })} />
-            <Toggle label="Toggle aim" hint="Right click toggles instead of holding" value={settings.toggleAim} onChange={(v) => set({ toggleAim: v })} />
+            <Toggle label="Toggle aim" hint="The aim button toggles instead of holding (good on a trackpad)" value={settings.toggleAim} onChange={(v) => set({ toggleAim: v })} />
             <Toggle label="Toggle crouch" hint="Crouch key toggles instead of holding" value={settings.toggleCrouch} onChange={(v) => set({ toggleCrouch: v })} />
             <Slider label="Field of view" value={settings.fov} min={60} max={115} step={1} fmt={(v) => `${v}°`} onChange={(v) => set({ fov: v })} />
             <Toggle label="Show FPS" value={settings.showFps} onChange={(v) => set({ showFps: v })} />

@@ -1878,7 +1878,8 @@ export class Match {
       if (sim.time >= this.breakUntil) this.startZombieWave();
       return;
     }
-    const zombies = sim.agents.filter((a) => a.team === 1);
+    // Only bots are zombies: a human must never hold up a wave or be respawned as one.
+    const zombies = sim.agents.filter((a) => a.team === 1 && !isHuman(a));
     const alive = zombies.filter((a) => a.alive);
     // Zombies always know where the nearest survivor is.
     for (const z of alive) {
@@ -2321,7 +2322,7 @@ export class Match {
   }
 
   enemiesRemaining(): number {
-    if (this.mode === 'survival' || this.mode === 'zombies') return this.waveQueue + this.sim.agents.filter((a) => a.team === 1 && a.alive).length;
+    if (this.mode === 'survival' || this.mode === 'zombies') return this.waveQueue + this.sim.agents.filter((a) => a.team === 1 && a.alive && !isHuman(a)).length;
     return this.sim.agents.filter((a) => a.alive && a.team !== this.player.team).length;
   }
 

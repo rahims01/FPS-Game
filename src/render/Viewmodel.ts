@@ -8,18 +8,22 @@ import type { WeaponId } from '../sim/weapons';
 interface Pose {
   hip: THREE.Vector3;
   ads: THREE.Vector3;
-  /** Pitch that makes the sight line point straight ahead. */
+  /** Pitch and yaw that make the sight line point straight ahead. */
   tilt: number;
+  yaw?: number;
 }
 
 /**
- * M16: measured from the prop. Rear aperture ~0.135 m and front post ~0.10 m above
- * the grip, 0.45 m apart; the eye sits 0.15 m behind the rear sight and the gun is
- * tilted so that line points straight ahead. The procedural guns have level sights,
- * so their ADS pose comes straight from the model's sight height.
+ * M16: solved from the prop's own sight geometry. The peep hole in the rear
+ * flip aperture sits at (-0.0016, -0.035, 0.156) and the front post's tip at
+ * (-0.0047, 0.449, 0.096) (prop frame: +Y forward, +Z up). The gun is pitched
+ * and turned so the line through them points straight down the view, then
+ * moved so it passes through the eye: hole and post both land on the exact
+ * centre of the screen. The procedural guns have level sights, so their ADS
+ * pose comes straight from the model's sight height.
  */
 const poseFor = (id: WeaponId, m: WeaponModel): Pose => {
-  if (id === 'rifle') return { hip: new THREE.Vector3(0.2, -0.24, -0.5), ads: new THREE.Vector3(0, -0.151, -0.161), tilt: 0.078 };
+  if (id === 'rifle') return { hip: new THREE.Vector3(0.2, -0.24, -0.5), ads: new THREE.Vector3(0.0018, -0.1504, -0.161), tilt: 0.1225, yaw: -0.0064 };
   if (id === 'knife') return { hip: new THREE.Vector3(0.24, -0.25, -0.38), ads: new THREE.Vector3(0.24, -0.25, -0.38), tilt: 0 };
   const handgun = id === 'pistol' || id === 'revolver' || id === 'deagle' || id === 'mpistol';
   const hip = handgun ? new THREE.Vector3(0.16, -0.19, -0.46) : new THREE.Vector3(0.2, -0.23, -0.42);
@@ -205,7 +209,7 @@ export class Viewmodel {
     const kickScale = kc === 'shotgun' || kc === 'sniper' || kc === 'revolver' || kc === 'barrett' || kc === 'deagle' ? 2.2 : kc === 'dmr' || kc === 'scar' || kc === 'autoshotgun' ? 1.6 : 1;
     this.gun.rotation.set(
       this.adsT * this.pose.tilt + this.kickRot * 0.06 * kickScale * (1 - this.adsT * 0.7) + reloadDip * -0.3 - this.sprintT * 0.25 - switchDip * 0.8 + swing * 0.4,
-      this.sprintT * 0.75 + this.swayX * 2 + swing * 1.1,
+      this.adsT * (this.pose.yaw ?? 0) + this.sprintT * 0.75 + this.swayX * 2 + swing * 1.1,
       reloadDip * 0.7 + this.sprintT * 0.2 - swing * 0.6
     );
 

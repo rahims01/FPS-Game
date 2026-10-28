@@ -374,7 +374,19 @@ export class HostSession {
       const partyTeam = this.party && def.teams ? (sim.agents.some((b) => b.team === 0 && !taken.has(b.id) && !b.dummy && b.control !== 'player' && b.control !== 'remote') ? 0 : 1) : null;
       // Battle-royale squads: friends share the host's squad while it has room.
       const squadTeam = match.player.squad >= 0 ? match.player.team : null;
-      const wantTeam = squadTeam !== null && sim.agents.some((b) => b.team === squadTeam && !taken.has(b.id) && b.control !== 'player' && b.control !== 'remote') ? squadTeam : partyTeam !== null ? partyTeam : !def.teams ? null : sameSide ? 0 : slot % 2;
+      // Co-op modes put every human on team 0 first, party or not: in Zombies team 1 is the zombies,
+      // and a friend seated there counted as a zombie that never died, so waves never ended.
+      const wantTeam = sameSide && def.teams
+        ? 0
+        : squadTeam !== null && sim.agents.some((b) => b.team === squadTeam && !taken.has(b.id) && b.control !== 'player' && b.control !== 'remote')
+          ? squadTeam
+          : partyTeam !== null
+            ? partyTeam
+            : !def.teams
+              ? null
+              : sameSide
+                ? 0
+                : slot % 2;
       const free = (team: number | null) =>
         sim.agents.find((a) => !taken.has(a.id) && !a.dummy && a.control !== 'player' && a.control !== 'remote' && (team === null || a.team === team) && !(match.mode === 'infected' && a.team === 1));
       let a: Agent | undefined = slot === 0 ? match.player : (free(wantTeam) ?? free(null));
