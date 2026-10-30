@@ -301,6 +301,16 @@ export const heartbeat = async (): Promise<void> => {
   const d = r.data;
   if (token) remember(token, d.user);
   set({ user: d.user, online: d.online, unread: d.unread, requests: d.requests, news: d.news, events: d.events, maintenance: d.maintenance });
+  // Staff get their title to wear.
+  const staff = d.user.role === 'admin' ? 'staff_admin' : d.user.role === 'mod' ? 'staff_mod' : null;
+  if (staff) {
+    const p = loadProfile();
+    if (!(p.granted ?? []).includes(staff)) {
+      p.granted = [...(p.granted ?? []), staff];
+      saveProfile(p);
+      window.dispatchEvent(new Event('fps-save-replaced'));
+    }
+  }
   await handleInbox(d.inbox);
 };
 

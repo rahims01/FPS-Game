@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MELEES } from '../assets/melees';
-import { BADGES, CARDS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type Cosmetics } from '../game/cosmetics';
+import { BADGES, CARDS, COLLECTIONS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, claimCollections, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type BadgeGroup, type Cosmetics } from '../game/cosmetics';
 import type { GameSettings } from '../game/settings';
-import { canPrestige, divisionOf, levelLabel, levelOf, MAX_PRESTIGE, rankOf, type Profile } from '../game/progression';
+import { canPrestige, divisionOf, levelLabel, levelOf, loadProfile, MAX_PRESTIGE, MEDALS, rankOf, saveProfile, type Profile } from '../game/progression';
+import { MODES } from '../sim/Match';
 import { PRIMARIES, SECONDARIES, WEAPONS } from '../sim/weapons';
 import { LockIcon, StarIcon } from './icons';
 
@@ -54,11 +55,16 @@ export const LevelBadge = ({ level, prestige, frame }: { level: number; prestige
   );
 };
 
-type Tab = 'look' | 'badges' | 'mastery' | 'stats';
+type Tab = 'look' | 'badges' | 'collections' | 'mastery' | 'stats';
+
+const GROUPS: (BadgeGroup | 'All')[] = ['All', 'Combat', 'Weapons', 'Modes', 'Career', 'Social', 'Secret'];
+const hours = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`);
 
 /** Your calling card, title, frame and emblem, badges, weapon mastery and lifetime stats. */
 export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile; onPrestige: () => void }) => {
   const [tab, setTab] = useState<Tab>('look');
+  const [group, setGroup] = useState<BadgeGroup | 'All'>('All');
+  const [, bump] = useState(0);
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<Cosmetics>) => onChange({ ...settings, cosmetics: { ...cos, ...patch } });
@@ -66,6 +72,23 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
   const st = profile.stats;
   const div = divisionOf(profile);
   const duel = divisionOf(profile, 'duel');
+  // Collections finished outside a match (a gift, a code) are claimed here.
+  useEffect(() => {
+    const p = loadProfile();
+    if (claimCollections(p, levelOf(p.xp).level).length) saveProfile(p);
+  }, [profile]);
+  const showcase = loadProfile().showcase ?? [];
+  const pin = (id: string) => {
+    const p = loadProfile();
+    const cur = p.showcase ?? [];
+    p.showcase = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-3);
+    saveProfile(p);
+    bump((n) => n + 1);
+  };
+  const collectionsDone = COLLECTIONS.filter((c) => {
+    const [have, need] = c.progress(profile, level);
+    return have >= need;
+  }).length;
 
   return (
     <div className="profile-panel">
@@ -87,9 +110,10 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
         {(
           [
             ['look', 'Card, title & emblem'],
-            ['badges', `Badges ${earnedCount}/${BADGES.length}`],
+            ['badges', `Achievements ${earnedCount}/${BADGES.length}`],
+            ['collections', `Collections ${collectionsDone}/${COLLECTIONS.length}`],
             ['mastery', 'Weapon mastery'],
-            ['stats', 'Stats']
+            ['stats', 'Career']
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button key={id} className={`set-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
@@ -184,25 +208,63 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
       )}
 
       {tab === 'badges' && (
+        <>
+          <div className="pc-reasons">
+            {GROUPS.map((g) => (
+              <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>
+                {g}
+              </button>
+            ))}
+          </div>
+          <p className="set-hint">Pin up to 3 earned achievements to show them on your player card ({showcase.length}/3 pinned).</p>
         <div className="badge-grid">
-          {BADGES.map((b) => {
+          {BADGES.filter((b) => group === 'All' || (b.group ?? 'Combat') === group).map((b) => {
             const [have, need] = b.progress(profile, level);
             const done = have >= need;
+            const hidden = b.secret && !done;
+            const pinned = showcase.includes(b.id);
             return (
-              <div key={b.id} className={`badge ${done ? 'done' : ''}`}>
-                <span className="badge-icon">{b.icon}</span>
-                <b>{b.name}</b>
-                <small>{b.blurb}</small>
-                {!done && (
+              <div key={b.id} className={`badge ${done ? 'done' : ''} ${hidden ? 'secret' : ''}`}>
+                <span className="badge-icon">{hidden ? '?' : b.icon}</span>
+                <b>{hidden ? 'Secret achievement' : b.name}</b>
+                <small>{hidden ? 'Keep playing to find out.' : b.blurb}</small>
+                {done && (
+                  <button className={`chip badge-pin ${pinned ? 'on' : ''}`} onClick={() => pin(b.id)}>
+                    {pinned ? 'Pinned' : 'Pin to card'}
+                  </button>
+                )}
+                {!done && !hidden && (
                   <div className="badge-bar">
                     <i style={{ width: `${Math.min(100, (have / need) * 100)}%` }} />
                   </div>
                 )}
-                {!done && need > 1 && (
+                {!done && !hidden && need > 1 && (
                   <small className="badge-count">
                     {Math.min(have, need).toLocaleString()} / {need.toLocaleString()}
                   </small>
                 )}
+              </div>
+            );
+          })}
+        </div>
+        </>
+      )}
+
+      {tab === 'collections' && (
+        <div className="badge-grid">
+          {COLLECTIONS.map((c) => {
+            const [have, need] = c.progress(profile, level);
+            const done = have >= need;
+            return (
+              <div key={c.id} className={`badge collection ${done ? 'done' : ''}`}>
+                <b>{c.name}</b>
+                <small>{c.blurb}</small>
+                <div className="badge-bar">
+                  <i style={{ width: `${Math.min(100, (have / need) * 100)}%` }} />
+                </div>
+                <small className="badge-count">
+                  {Math.min(have, need)} / {need} · Reward: title “{titleDef(c.reward).text}”{done ? ' (yours)' : ''}
+                </small>
               </div>
             );
           })}
@@ -259,7 +321,15 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
               ['Flawless wins', st.flawlessWins ?? 0],
               ['Ranked team', `${div.name}${div.placed ? ` · ${profile.sr} SR` : ''}`],
               ['Ranked 1v1', `${duel.name}${duel.placed ? ` · ${profile.duelSr} SR` : ''}`],
-              ['Aim trainer best', st.aimBest ?? 0]
+              ['Aim trainer best', st.aimBest ?? 0],
+              ['Time played', hours(st.seconds ?? 0)],
+              ['Distance run', `${((st.meters ?? 0) / 1000).toFixed(1)} km`],
+              ['Damage dealt', (st.damage ?? 0).toLocaleString()],
+              ['Accuracy', st.shots ? `${Math.round(((st.hits ?? 0) / st.shots) * 100)}%` : '–'],
+              ['Longest kill', `${st.longestKill ?? 0} m`],
+              ['Most kills in a match', st.bestMatchKills ?? 0],
+              ['Best Zombies wave', st.zombieWave ?? 0],
+              ['Best Survival wave', st.survivalWave ?? 0]
             ] as [string, string | number][]
           ).map(([k, v]) => (
             <div key={k} className="stat-tile">
@@ -267,6 +337,51 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
               <b className={typeof v === 'string' && v.length > 8 ? 'wordy' : undefined}>{v}</b>
             </div>
           ))}
+        </div>
+      )}
+      {tab === 'stats' && (
+        <div className="career-more">
+          <h3>By mode</h3>
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Played</th>
+                <th>Won</th>
+                <th>Win rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(profile.modes ?? {})
+                .sort((a, b) => b[1].played - a[1].played)
+                .map(([id, m]) => (
+                  <tr key={id}>
+                    <td>{MODES.find((d) => d.id === id)?.name ?? id}</td>
+                    <td>{m.played}</td>
+                    <td>{m.won}</td>
+                    <td>{m.played ? `${Math.round((m.won / m.played) * 100)}%` : '–'}</td>
+                  </tr>
+                ))}
+              {!Object.keys(profile.modes ?? {}).length && (
+                <tr>
+                  <td colSpan={4} className="set-hint">
+                    Play a few matches to see your record in each mode.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <h3>Medals</h3>
+          <div className="medal-tally">
+            {Object.entries(profile.medals ?? {})
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, n]) => (
+                <span key={k}>
+                  {MEDALS[k as keyof typeof MEDALS]?.name ?? k} <b>×{n.toLocaleString()}</b>
+                </span>
+              ))}
+            {!Object.keys(profile.medals ?? {}).length && <span className="set-hint">None yet.</span>}
+          </div>
         </div>
       )}
     </div>

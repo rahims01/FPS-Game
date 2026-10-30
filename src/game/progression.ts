@@ -34,6 +34,12 @@ export interface Profile {
   duelWins: number;
   /** Items given outright (admin gifts, codes); "*" unlocks everything. */
   granted?: string[];
+  /** Lifetime count of each medal (by MEDALS key). */
+  medals?: Record<string, number>;
+  /** Matches played and won in each mode. */
+  modes?: Record<string, { played: number; won: number }>;
+  /** Up to 3 achievements shown on your player card. */
+  showcase?: string[];
 }
 
 export const loadProfile = (): Profile => {
@@ -44,6 +50,13 @@ export const loadProfile = (): Profile => {
   } catch {
     return base;
   }
+};
+
+/** Adds to one lifetime stat outside a match (messages sent, and so on). */
+export const bumpStat = (k: StatKey, n = 1): void => {
+  const p = loadProfile();
+  p.stats[k] = (p.stats[k] ?? 0) + n;
+  saveProfile(p);
 };
 
 export const saveProfile = (p: Profile): void => {

@@ -183,7 +183,28 @@ export type StatKey =
   | 'bossWins'
   | 'aimBest'
   | 'paintballWins'
-  | 'clutches';
+  | 'clutches'
+  // Career totals.
+  | 'damage'
+  | 'shots'
+  | 'hits'
+  | 'seconds'
+  | 'meters'
+  | 'longestKill'
+  | 'bestMatchKills'
+  | 'accurateMatches'
+  | 'zombieWave'
+  | 'survivalWave'
+  | 'friends'
+  | 'messages'
+  // Secret achievements.
+  | 'noKillWins'
+  | 'ownGoals'
+  | 'airKills'
+  | 'crouchKnives'
+  | 'lastBullet'
+  | 'nightOwl'
+  | 'earlyBird';
 
 export interface ProfileLike {
   xp: number;
@@ -200,18 +221,33 @@ export interface ProfileLike {
   stats: Partial<Record<StatKey, number>>;
   /** Items given outright (admin gifts, codes); "*" unlocks everything. */
   granted?: string[];
+  /** Lifetime count of each medal (by MEDALS key). */
+  medals?: Record<string, number>;
+  /** Matches played and won in each mode. */
+  modes?: Record<string, { played: number; won: number }>;
 }
+
+export type BadgeGroup = 'Combat' | 'Weapons' | 'Modes' | 'Career' | 'Social' | 'Secret';
 
 export interface BadgeDef {
   id: string;
   name: string;
   blurb: string;
   icon: string;
+  /** Where it shows in the list (the original badges are Combat unless set). */
+  group?: BadgeGroup;
+  /** Hidden (name and how to get it) until earned. */
+  secret?: boolean;
   /** Progress toward it: [have, need]. */
   progress: (p: ProfileLike, level: number) => [number, number];
 }
 
 const stat = (p: ProfileLike, k: StatKey) => p.stats[k] ?? 0;
+const medal = (p: ProfileLike, k: string) => p.medals?.[k] ?? 0;
+const modeWins = (p: ProfileLike, m: string) => p.modes?.[m]?.won ?? 0;
+const killsWith = (p: ProfileLike, ids: string[]) => ids.reduce((n, id) => n + (p.weaponKills[id] ?? 0), 0);
+/** Every gun (melee aside), for "with every weapon" goals. */
+export const GUN_IDS = ['rifle', 'ak', 'scar', 'burst', 'smg', 'uzi', 'shotgun', 'autoshotgun', 'dmr', 'sniper', 'barrett', 'lmg', 'pistol', 'revolver', 'deagle', 'mpistol'];
 /** Mastery tier thresholds (kills with one gun). */
 export const MASTERY = [
   { name: 'Bronze', kills: 25, color: '#c8814a' },
@@ -258,8 +294,90 @@ export const BADGES: BadgeDef[] = [
   { id: 'clutch', name: 'Clutch', blurb: 'Win 5 rounds as the last one alive on your team.', icon: '😤', progress: (p) => [stat(p, 'clutches'), 5] },
   { id: 'masterofarms', name: 'Master of Arms', blurb: 'Gold mastery with any weapon (200 kills).', icon: '⭐', progress: (p) => [bestMastery(p), 200] },
   { id: 'diamondhands', name: 'Diamond Hands', blurb: 'Diamond mastery with any weapon (500 kills).', icon: '💎', progress: (p) => [bestMastery(p), 500] },
-  { id: 'maxed', name: 'Maxed Out', blurb: 'Reach level 55.', icon: '🔝', progress: (p, level) => [effectiveLevel(p, level), 55] }
+  { id: 'maxed', name: 'Maxed Out', blurb: 'Reach level 55.', icon: '🔝', progress: (p, level) => [effectiveLevel(p, level), 55] },
+
+  // Combat.
+  { id: 'fivek', name: 'Five Thousand', blurb: '5,000 kills.', icon: '🔱', group: 'Combat', progress: (p) => [p.kills, 5000] },
+  { id: 'headmaster', name: 'Headmaster', blurb: '2,000 headshots.', icon: '🎓', group: 'Combat', progress: (p) => [stat(p, 'headshots'), 2000] },
+  { id: 'doubletrouble', name: 'Double Trouble', blurb: '50 double kills.', icon: '✌', group: 'Combat', progress: (p) => [medal(p, 'double'), 50] },
+  { id: 'multikill', name: 'Wrecking Ball', blurb: '10 multi kills (4 in quick succession).', icon: '💥', group: 'Combat', progress: (p) => [medal(p, 'multi'), 10] },
+  { id: 'spreemaster', name: 'On a Roll', blurb: '25 killing sprees.', icon: '🎳', group: 'Combat', progress: (p) => [medal(p, 'spree'), 25] },
+  { id: 'payback', name: 'Payback', blurb: '50 revenge kills.', icon: '↩', group: 'Combat', progress: (p) => [medal(p, 'revenge'), 50] },
+  { id: 'tooclose', name: 'Too Close for Comfort', blurb: '50 point-blank kills.', icon: '👃', group: 'Combat', progress: (p) => [medal(p, 'pointBlank'), 50] },
+  { id: 'ghost', name: 'From Beyond', blurb: '10 afterlife kills.', icon: '👻', group: 'Combat', progress: (p) => [medal(p, 'afterlife'), 10] },
+  { id: 'nevergiveup', name: 'Never Give Up', blurb: '25 comeback kills.', icon: '📈', group: 'Combat', progress: (p) => [medal(p, 'comeback'), 25] },
+  { id: 'partypooper', name: 'Party Pooper', blurb: 'End 25 enemy streaks.', icon: '🎈', group: 'Combat', progress: (p) => [medal(p, 'buzzkill'), 25] },
+  { id: 'openingact', name: 'Opening Act', blurb: 'Get first blood 25 times.', icon: '🎬', group: 'Combat', progress: (p) => [medal(p, 'firstBlood'), 25] },
+  { id: 'heavyhitter', name: 'Heavy Hitter', blurb: 'Deal 100,000 damage.', icon: '🔨', group: 'Combat', progress: (p) => [stat(p, 'damage'), 100000] },
+  { id: 'steadyhands', name: 'Steady Hands', blurb: 'Finish 10 matches with 50% accuracy and 10+ kills.', icon: '🤚', group: 'Combat', progress: (p) => [stat(p, 'accurateMatches'), 10] },
+  { id: 'acrossthemap', name: 'Across the Map', blurb: 'A kill from 80 m away.', icon: '🗺', group: 'Combat', progress: (p) => [stat(p, 'longestKill'), 80] },
+  { id: 'onemanarmy', name: 'One-Man Army', blurb: '30 kills in one match.', icon: '🪖', group: 'Combat', progress: (p) => [stat(p, 'bestMatchKills'), 30] },
+
+  // Weapons.
+  { id: 'eagleeye', name: 'Eagle Eye', blurb: '500 kills with snipers and the DMR.', icon: '🦅', group: 'Weapons', progress: (p) => [killsWith(p, ['sniper', 'barrett', 'dmr']), 500] },
+  { id: 'sidearm', name: 'Quick Draw', blurb: '250 kills with pistols.', icon: '🤠', group: 'Weapons', progress: (p) => [killsWith(p, ['pistol', 'revolver', 'deagle', 'mpistol']), 250] },
+  { id: 'boomstick', name: 'Boomstick', blurb: '250 shotgun kills.', icon: '💨', group: 'Weapons', progress: (p) => [killsWith(p, ['shotgun', 'autoshotgun']), 250] },
+  { id: 'spraypray', name: 'Spray and Pray', blurb: '1,000 kills with SMGs.', icon: '🌧', group: 'Weapons', progress: (p) => [killsWith(p, ['smg', 'uzi', 'mpistol']), 1000] },
+  { id: 'bullethose', name: 'Bullet Hose', blurb: '500 LMG kills.', icon: '🚿', group: 'Weapons', progress: (p) => [killsWith(p, ['lmg']), 500] },
+  { id: 'rifleman', name: 'Rifleman', blurb: '1,000 kills with assault rifles.', icon: '🎖', group: 'Weapons', progress: (p) => [killsWith(p, ['rifle', 'ak', 'scar', 'burst']), 1000] },
+  { id: 'arsenal', name: 'Arsenal', blurb: '25 kills with every gun.', icon: '🗄', group: 'Weapons', progress: (p) => [GUN_IDS.filter((g) => (p.weaponKills[g] ?? 0) >= 25).length, GUN_IDS.length] },
+  { id: 'golden5', name: 'Golden Touch', blurb: 'Gold mastery on 5 guns.', icon: '🪙', group: 'Weapons', progress: (p) => [Object.values(p.weaponKills).filter((k) => k >= 200).length, 5] },
+
+  // Modes.
+  { id: 'survivor', name: 'Survivor', blurb: 'Reach wave 10 in Zombies.', icon: '🧟', group: 'Modes', progress: (p) => [stat(p, 'zombieWave'), 10] },
+  { id: 'undying', name: 'Undying', blurb: 'Reach wave 20 in Zombies.', icon: '⚰', group: 'Modes', progress: (p) => [stat(p, 'zombieWave'), 20] },
+  { id: 'laststand', name: 'Last Stand', blurb: 'Reach wave 10 in Survival.', icon: '🏰', group: 'Modes', progress: (p) => [stat(p, 'survivalWave'), 10] },
+  { id: 'flagbearer', name: 'Flag Bearer', blurb: 'Capture 10 flags.', icon: '🚩', group: 'Modes', progress: (p) => [medal(p, 'flagCaptured'), 10] },
+  { id: 'demolition', name: 'Demolition', blurb: 'Plant 10 bombs.', icon: '🧨', group: 'Modes', progress: (p) => [medal(p, 'planted'), 10] },
+  { id: 'wirecutter', name: 'Wire Cutter', blurb: 'Defuse 5 bombs.', icon: '✂', group: 'Modes', progress: (p) => [medal(p, 'defused'), 5] },
+  { id: 'tagcollector', name: 'Tag Collector', blurb: 'Confirm 100 kills.', icon: '🏷', group: 'Modes', progress: (p) => [medal(p, 'confirmed'), 100] },
+  { id: 'pointman', name: 'Point Man', blurb: 'Capture 50 points.', icon: '📍', group: 'Modes', progress: (p) => [medal(p, 'captured'), 50] },
+  { id: 'gunrunner', name: 'Gun Runner', blurb: 'Win Gun Game 5 times.', icon: '🔫', group: 'Modes', progress: (p) => [modeWins(p, 'gungame'), 5] },
+  { id: 'onebullet', name: 'One and Done', blurb: 'Win One in the Chamber.', icon: '1️⃣', group: 'Modes', progress: (p) => [modeWins(p, 'oitc'), 1] },
+  { id: 'patientzero', name: 'Patient Zero', blurb: 'Win Infected 5 times.', icon: '🦠', group: 'Modes', progress: (p) => [modeWins(p, 'infected'), 5] },
+  { id: 'tourist', name: 'Tourist', blurb: 'Play 20 different modes.', icon: '🧳', group: 'Modes', progress: (p) => [Object.values(p.modes ?? {}).filter((m) => m.played > 0).length, 20] },
+  { id: 'allrounder', name: 'All-Rounder', blurb: 'Win in 10 different modes.', icon: '🎡', group: 'Modes', progress: (p) => [Object.values(p.modes ?? {}).filter((m) => m.won > 0).length, 10] },
+
+  // Career.
+  { id: 'dedicated', name: 'Dedicated', blurb: 'Play for 10 hours.', icon: '⏱', group: 'Career', progress: (p) => [Math.floor(stat(p, 'seconds') / 3600), 10] },
+  { id: 'nolife', name: 'Living Legend', blurb: 'Play for 50 hours.', icon: '⌛', group: 'Career', progress: (p) => [Math.floor(stat(p, 'seconds') / 3600), 50] },
+  { id: 'marathon', name: 'Marathon', blurb: 'Run 42 km in matches.', icon: '🏃', group: 'Career', progress: (p) => [Math.floor(stat(p, 'meters') / 1000), 42] },
+  { id: 'lifer', name: 'Lifer', blurb: 'Play 500 matches.', icon: '📅', group: 'Career', progress: (p) => [p.matches, 500] },
+  { id: 'centurywins', name: 'Hundred Wins', blurb: 'Win 100 matches.', icon: '🏁', group: 'Career', progress: (p) => [p.wins, 100] },
+  { id: 'freshstart', name: 'Fresh Start', blurb: 'Prestige for the first time.', icon: '🔄', group: 'Career', progress: (p) => [p.prestige ?? 0, 1] },
+  { id: 'prestigemaster', name: 'Prestige Master', blurb: 'Reach the top prestige.', icon: '🌟', group: 'Career', progress: (p) => [p.prestige ?? 0, 10] },
+
+  // Social.
+  { id: 'makingfriends', name: 'Making Friends', blurb: 'Add a friend.', icon: '🤝', group: 'Social', progress: (p) => [stat(p, 'friends'), 1] },
+  { id: 'popular', name: 'Popular', blurb: 'Have 10 friends.', icon: '🎉', group: 'Social', progress: (p) => [stat(p, 'friends'), 10] },
+  { id: 'chatterbox', name: 'Chatterbox', blurb: 'Send 100 messages to friends.', icon: '💬', group: 'Social', progress: (p) => [stat(p, 'messages'), 100] },
+
+  // Secret: shown as ??? until earned.
+  { id: 'pacifist', name: 'Pacifist', blurb: 'Win a match without a single kill.', icon: '🕊', group: 'Secret', secret: true, progress: (p) => [stat(p, 'noKillWins'), 1] },
+  { id: 'oops', name: 'Oops', blurb: 'Take yourself out with your own explosive.', icon: '🤦', group: 'Secret', secret: true, progress: (p) => [stat(p, 'ownGoals'), 1] },
+  { id: 'skyhigh', name: 'Sky High', blurb: '25 kills while in the air.', icon: '🪂', group: 'Secret', secret: true, progress: (p) => [stat(p, 'airKills'), 25] },
+  { id: 'silentdeadly', name: 'Silent but Deadly', blurb: '10 knife kills while crouching.', icon: '🐈', group: 'Secret', secret: true, progress: (p) => [stat(p, 'crouchKnives'), 10] },
+  { id: 'cuttingitclose', name: 'Cutting It Close', blurb: '10 kills with the last bullet in your magazine.', icon: '🎲', group: 'Secret', secret: true, progress: (p) => [stat(p, 'lastBullet'), 10] },
+  { id: 'nightowl', name: 'Night Owl', blurb: 'Finish a match between midnight and 4 am.', icon: '🦉', group: 'Secret', secret: true, progress: (p) => [stat(p, 'nightOwl'), 1] },
+  { id: 'earlybird', name: 'Early Bird', blurb: 'Finish a match between 5 and 7 am.', icon: '🐓', group: 'Secret', secret: true, progress: (p) => [stat(p, 'earlyBird'), 1] },
+  { id: 'rampage', name: 'Rampage', blurb: '50 kills in one match.', icon: '🦖', group: 'Secret', secret: true, progress: (p) => [stat(p, 'bestMatchKills'), 50] },
+  { id: 'satellite', name: 'Satellite', blurb: 'A kill from 150 m away.', icon: '🛰', group: 'Secret', secret: true, progress: (p) => [stat(p, 'longestKill'), 150] },
+  { id: 'nuke3', name: 'Mushroom Season', blurb: 'Call in 3 nukes.', icon: '🍄', group: 'Secret', secret: true, progress: (p) => [stat(p, 'nukes'), 3] },
+  { id: 'everything', name: 'Completionist', blurb: 'Earn every other achievement.', icon: '🏛', group: 'Secret', secret: true, progress: (p, level) => [BADGES.filter((b) => b.id !== 'everything' && earned(b, p, level)).length, BADGES.length - 1] }
 ];
+
+/**
+ * Collections: sets to complete. Finishing one gives a title you can't get
+ * any other way (added to your granted items the moment it's done).
+ */
+export interface CollectionDef {
+  id: string;
+  name: string;
+  blurb: string;
+  /** The title it awards (a TITLES id with a `special` unlock). */
+  reward: string;
+  progress: (p: ProfileLike, level: number) => [number, number];
+}
 
 export const earned = (b: BadgeDef, p: ProfileLike, level: number): boolean => {
   const [have, need] = b.progress(p, level);
@@ -345,6 +463,16 @@ export interface TitleDef {
 
 export const TITLES: TitleDef[] = [
   { id: 'none', text: 'No title', unlock: null },
+  // Collection rewards and staff titles: only ever given.
+  { id: 'collector', text: 'The Collector', unlock: { special: 'Collection: Armory' } },
+  { id: 'gilded', text: 'Gilded', unlock: { special: 'Collection: Gold Rush' } },
+  { id: 'blademaster', text: 'Blademaster', unlock: { special: 'Collection: Sharp Things' } },
+  { id: 'decorated', text: 'Decorated', unlock: { special: 'Collection: Medal Case' } },
+  { id: 'fashionista', text: 'Fashionista', unlock: { special: 'Collection: Wardrobe' } },
+  { id: 'luckycharm', text: 'Lucky Charm', unlock: { special: 'Collection: Charmed' } },
+  { id: 'jackofall', text: 'Jack of All Trades', unlock: { special: 'Collection: Mode Master' } },
+  { id: 'staff_admin', text: 'Admin', unlock: { special: 'Staff only' } },
+  { id: 'staff_mod', text: 'Moderator', unlock: { special: 'Staff only' } },
   { id: 'rookie', text: 'Rookie', unlock: null },
   { id: 'grinder', text: 'The Grinder', unlock: { level: 10 } },
   { id: 'veteran', text: 'Veteran', unlock: { badge: 'veteran' } },
@@ -545,3 +673,28 @@ export const STYLES: StyleDef[] = [
 ];
 
 export const styleDef = (id: string): StyleDef => STYLES.find((s) => s.id === id) ?? STYLES[0];
+
+/** Collections and their rewards (see CollectionDef). Uses the lists above, so it lives at the end. */
+export const COLLECTIONS: CollectionDef[] = [
+  { id: 'armory', name: 'Armory', blurb: '15 kills with every gun (its first camos).', reward: 'collector', progress: (p) => [GUN_IDS.filter((g) => (p.weaponKills[g] ?? 0) >= 15).length, GUN_IDS.length] },
+  { id: 'goldrush', name: 'Gold Rush', blurb: 'Gold mastery (200 kills) on 8 guns.', reward: 'gilded', progress: (p) => [GUN_IDS.filter((g) => (p.weaponKills[g] ?? 0) >= 200).length, 8] },
+  { id: 'sharp', name: 'Sharp Things', blurb: 'Unlock every melee weapon.', reward: 'blademaster', progress: (p, level) => [MELEE_UNLOCKS.filter((u) => unlocked(u, p, level)).length, MELEE_UNLOCKS.length] },
+  { id: 'medals', name: 'Medal Case', blurb: 'Earn 50 achievements.', reward: 'decorated', progress: (p, level) => [BADGES.filter((b) => earned(b, p, level)).length, 50] },
+  { id: 'wardrobe', name: 'Wardrobe', blurb: 'Unlock 30 calling cards.', reward: 'fashionista', progress: (p, level) => [CARDS.filter((c) => unlocked(c.unlock, p, level, c.id)).length, 30] },
+  { id: 'charmed', name: 'Charmed', blurb: 'Unlock every charm.', reward: 'luckycharm', progress: (p, level) => [CHARMS.filter((c) => !c.secret && unlocked(c.unlock, p, level, c.id)).length, CHARMS.filter((c) => !c.secret).length] },
+  { id: 'modemaster', name: 'Mode Master', blurb: 'Win in 15 different modes.', reward: 'jackofall', progress: (p) => [Object.values(p.modes ?? {}).filter((m) => m.won > 0).length, 15] }
+];
+
+/** The melee unlock rules (kept here, not imported, so this file has no asset dependencies). */
+const MELEE_UNLOCKS: Unlock[] = [null, { level: 6 }, { level: 12 }, { level: 18 }, { level: 24 }, { level: 30 }, { level: 38 }, { level: 46 }, { badge: 'knifemaster' }];
+
+/** Grants every finished collection's reward title. Returns the titles newly given. */
+export const claimCollections = <P extends ProfileLike>(p: P, level: number): string[] => {
+  const fresh: string[] = [];
+  for (const c of COLLECTIONS) {
+    const [have, need] = c.progress(p, level);
+    if (have >= need && !(p.granted ?? []).includes(c.reward)) fresh.push(c.reward);
+  }
+  if (fresh.length) p.granted = [...(p.granted ?? []), ...fresh];
+  return fresh;
+};

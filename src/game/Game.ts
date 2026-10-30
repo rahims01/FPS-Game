@@ -19,14 +19,14 @@ import { setMetalNight } from '../render/realMetal';
 import { camoKey, meleeDef } from '../assets/melees';
 import { Hints, type HintId } from './hints';
 import { Gamepads, type PadFrame } from './gamepad';
-import { BADGES, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
+import { BADGES, claimCollections, earned, emblemDef, flashDef, masteryOf, randomCosmetics, styleDef, titleDef, tracerDef, type Cosmetics, type StatKey } from './cosmetics';
 import { tickSkins } from '../assets/skins';
 import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, basePingFor, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
-import { botFriendByName } from './botFriends';
+import { botFriendByName, botFriends } from './botFriends';
 import { account, eventOn } from '../net/account';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
@@ -54,6 +54,27 @@ export interface PlayerCardData {
   kills: number;
   deaths: number;
   mode: string;
+}
+
+/** The end screen's "your match" panel. */
+export interface MatchSummary {
+  xp: number;
+  medals: { name: string; count: number; xp: number }[];
+  kills: number;
+  deaths: number;
+  damage: number;
+  shots: number;
+  hits: number;
+  headshots: number;
+  bestStreak: number;
+  longestKill: number;
+  meters: number;
+  seconds: number;
+  /** Kills by weapon name, most first. */
+  weapons: { name: string; kills: number }[];
+  /** Titles from collections finished this match. */
+  newTitles: string[];
+  doubleXp: boolean;
 }
 
 export interface ScoreRow {
@@ -201,6 +222,8 @@ export interface HudState {
   sounds: { angle: number; kind: 'shot' | 'step' | 'boom'; at: number }[];
   /** Badges unlocked by this match (for the end screen). */
   newBadges: string[];
+  /** Your match in numbers, once it's over. */
+  summary: MatchSummary | null;
   /** Your throwables: lethal and tactical, with counts. */
   throwables: { lethal: ThrowableId; lethals: number; tactical: ThrowableId; tacticals: number };
   night: boolean;
@@ -312,6 +335,12 @@ export class Game {
   // Lifetime stats gathered this match (banked into the profile at the end).
   private matchStats: Partial<Record<StatKey, number>> = {};
   private newBadges: string[] = [];
+  private summary: MatchSummary | null = null;
+  /** This match: medals by key, distance moved and the longest kill. */
+  private medalCounts: Record<string, number> = {};
+  private meters = 0;
+  private lastPos: { x: number; z: number } | null = null;
+  private longestKill = 0;
   private prevPhase: Match['phase'] = 'live';
   private prevScores: [number, number] = [0, 0];
   /** Keep the online session open when this match is disposed (going back to the room). */
@@ -1264,6 +1293,7 @@ export class Game {
         if (live && e.attacker >= 0 && this.match.mode !== 'paintball') this.pendingPools.push({ view: v, at: sim.time + 0.7, y: victim.y });
         // No killcam for wave enemies (zombies, survival) or labelled bots: nothing worth replaying.
         const waveEnemy = this.match.mode === 'zombies' || this.match.mode === 'survival';
+        if (victim === player && e.attacker === player.id && !this.spectator && (e.cause === 'grenade' || e.cause === 'molotov' || e.cause === 'airstrike')) this.matchStats.ownGoals = (this.matchStats.ownGoals ?? 0) + 1;
         if (victim === player && killer && killer !== victim && !this.spectator && !this.practice && !waveEnemy && !this.isLabelledBot(killer)) {
           this.pendingKillcam = { at: sim.time + KILLCAM_DELAY, killer: killer.id, victim: victim.id, deathT: sim.time };
         }
@@ -1921,6 +1951,8 @@ export class Game {
 
   private medal(m: Medal): void {
     const sim = this.match.sim;
+    const key = (Object.keys(MEDALS) as (keyof typeof MEDALS)[]).find((k) => MEDALS[k] === m);
+    if (key) this.medalCounts[key] = (this.medalCounts[key] ?? 0) + 1;
     // Double XP weekend (an admin event).
     const xp = m.xp * (this.doubleXp ? 2 : 1);
     this.xp += xp;
@@ -1963,6 +1995,10 @@ export class Game {
     if (e.cause === 'grenade') bump('fragKills');
     if (e.cause === 'molotov') bump('molotovKills');
     if (gun && e.distance > 35) bump('longshots');
+    if (gun) this.longestKill = Math.max(this.longestKill, e.distance);
+    if (gun && !player.onGround) bump('airKills');
+    if (e.cause === 'knife' && player.crouching) bump('crouchKnives');
+    if (gun && player.ammo === 0 && player.alive) bump('lastBullet');
     if (gun && e.distance < 2.5) this.medal(MEDALS.pointBlank);
     if (!this.firstBlood) this.medal(MEDALS.firstBlood);
     if (victim.id === this.lastKillerOfPlayer) {
@@ -2124,11 +2160,61 @@ export class Game {
       if (won && (m.mode === 'br_duos' || m.mode === 'br_trios')) st.squadWins = (st.squadWins ?? 0) + 1;
       if (won && m.mode === 'boss') st.bossWins = (st.bossWins ?? 0) + 1;
       if (won && m.mode === 'paintball') st.paintballWins = (st.paintballWins ?? 0) + 1;
+      // Career totals.
+      const pl = m.player;
+      const add = (k: StatKey, v: number) => (st[k] = (st[k] ?? 0) + v);
+      const max = (k: StatKey, v: number) => (st[k] = Math.max(st[k] ?? 0, v));
+      add('damage', Math.round(pl.damageDealt));
+      add('shots', pl.shots);
+      add('hits', pl.hits);
+      add('seconds', Math.round(m.sim.time));
+      add('meters', Math.round(this.meters));
+      max('longestKill', Math.round(this.longestKill));
+      max('bestMatchKills', pl.kills);
+      if (pl.kills >= 10 && pl.shots > 0 && pl.hits / pl.shots >= 0.5) add('accurateMatches', 1);
+      if (m.mode === 'zombies') max('zombieWave', m.wave);
+      if (m.mode === 'survival') max('survivalWave', m.wave);
+      if (won && pl.kills === 0) add('noKillWins', 1);
+      const hour = new Date().getHours();
+      if (hour < 4) add('nightOwl', 1);
+      if (hour >= 5 && hour < 7) add('earlyBird', 1);
+      max('friends', botFriends().filter((f) => f.state === 'friends').length + realFriendCount);
+      prof.medals = { ...(prof.medals ?? {}) };
+      for (const [k, n] of Object.entries(this.medalCounts)) prof.medals[k] = (prof.medals[k] ?? 0) + n;
+      prof.modes = { ...(prof.modes ?? {}) };
+      const mm = prof.modes[m.mode] ?? { played: 0, won: 0 };
+      prof.modes[m.mode] = { played: mm.played + 1, won: mm.won + (won ? 1 : 0) };
+      const matchWeapons = { ...this.weaponKills };
       for (const [w, k] of Object.entries(this.weaponKills)) prof.weaponKills[w] = (prof.weaponKills[w] ?? 0) + k;
       this.weaponKills = {};
       const levelAfter = levelOf(prof.xp).level;
       this.newBadges = BADGES.filter((b) => !before.has(b.id) && earned(b, prof, levelAfter)).map((b) => b.id);
+      const newTitles = claimCollections(prof, levelAfter);
       saveProfile(prof);
+      this.summary = {
+        xp: this.xp,
+        medals: Object.entries(this.medalCounts)
+          .map(([k, count]) => {
+            const md = MEDALS[k as keyof typeof MEDALS];
+            return { name: md.name, count, xp: md.xp * count * (this.doubleXp ? 2 : 1) };
+          })
+          .sort((a, b) => b.xp - a.xp),
+        kills: pl.kills,
+        deaths: pl.deaths,
+        damage: Math.round(pl.damageDealt),
+        shots: pl.shots,
+        hits: pl.hits,
+        headshots: pl.headshots,
+        bestStreak: pl.bestStreak,
+        longestKill: Math.round(this.longestKill),
+        meters: Math.round(this.meters),
+        seconds: Math.round(m.sim.time),
+        weapons: Object.entries(matchWeapons)
+          .map(([w, kills]) => ({ name: WEAPONS[w as WeaponId]?.name ?? meleeDef(w).name, kills }))
+          .sort((a, b) => b.kills - a.kills),
+        newTitles,
+        doubleXp: this.doubleXp
+      };
     }
   }
 
@@ -2374,6 +2460,14 @@ export class Game {
     this.lookDY = 0;
     this.arenaView.update(time, this.camera.position);
     this.updatePools();
+    const me = this.match.player;
+    if (me.alive && !this.spectator) {
+      if (this.lastPos) {
+        const d = Math.hypot(me.x - this.lastPos.x, me.z - this.lastPos.z);
+        if (d < 3) this.meters += d;
+      }
+      this.lastPos = { x: me.x, z: me.z };
+    } else this.lastPos = null;
     this.effects.update(dt);
 
     this.renderer.clear();
@@ -2713,6 +2807,7 @@ export class Game {
       boss: m.mode === 'boss' ? { hp: m.bossHealth(), phase: m.party.bossPhase } : null,
       sounds: this.soundCues.filter((c) => sim.time - c.at < 1.2),
       newBadges: this.newBadges,
+      summary: this.summary,
       throwables: { lethal: p.lethal, lethals: p.grenades, tactical: p.tactical, tacticals: p.tacticals },
       night: this.night,
       party: this.party,
@@ -2970,3 +3065,7 @@ export class Game {
     this.renderer.domElement.remove();
   }
 }
+
+/** Real (account) friends, as last counted by the friends list: for the friends achievements. */
+let realFriendCount = 0;
+export const setRealFriendCount = (n: number) => (realFriendCount = n);

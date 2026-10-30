@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { addBotFriend, botFriendByName, botFriends, isTyping, markRead, modeName, removeBotFriend, resolveMode, sendToBot, statusOf, subscribeBotFriends, type BotFriend } from '../game/botFriends';
 import { DEFAULT_COSMETICS } from '../game/cosmetics';
-import type { PlayerCardData } from '../game/Game';
+import { setRealFriendCount, type PlayerCardData } from '../game/Game';
+import { bumpStat } from '../game/progression';
 import { account, api, subscribeAccount } from '../net/account';
 import type { CardSubject } from './PlayerCard';
 
@@ -93,7 +94,10 @@ export const FriendsPanel = ({
   const loadReal = async () => {
     if (!account().user) return;
     const r = await api<typeof real>('friends');
-    if (r.ok) setReal(r.data);
+    if (r.ok) {
+      setReal(r.data);
+      setRealFriendCount(r.data.friends.length);
+    }
   };
   useEffect(() => {
     void loadReal();
@@ -165,6 +169,7 @@ export const FriendsPanel = ({
     const t = text.trim();
     if (!t || !sel) return;
     setText('');
+    bumpStat('messages');
     if (sel.bot) sendToBot(sel.bot.key, t, playerName);
     else if (sel.real) {
       const r = await api('messages', { body: { to: sel.real.id, text: t } });

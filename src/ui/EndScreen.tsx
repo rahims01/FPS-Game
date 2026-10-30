@@ -1,7 +1,7 @@
 import type { HudState, ScoreRow } from '../game/Game';
 import { isDark } from '../game/identity';
 import type { Division } from '../game/progression';
-import { BADGES } from '../game/cosmetics';
+import { BADGES, titleDef } from '../game/cosmetics';
 import { CallingCard } from './ProfilePanel';
 import { inkOn } from './ink';
 
@@ -132,6 +132,22 @@ export const EndScreen = ({
                 <span>
                   <b>{me.bestStreak}</b> best streak
                 </span>
+                {hud.summary && (
+                  <>
+                    <span>
+                      <b>{hud.summary.longestKill} m</b> longest kill
+                    </span>
+                    <span>
+                      <b>{hud.summary.meters} m</b> moved
+                    </span>
+                    <span>
+                      <b>
+                        {Math.floor(hud.summary.seconds / 60)}:{String(hud.summary.seconds % 60).padStart(2, '0')}
+                      </b>{' '}
+                      played
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -142,9 +158,54 @@ export const EndScreen = ({
             </div>
           )}
         </div>
+        {hud.summary && (hud.summary.medals.length > 0 || hud.summary.weapons.length > 0) && (
+          <div className="end-breakdown">
+            {hud.summary.medals.length > 0 && (
+              <div>
+                <small>
+                  Medals · {hud.summary.xp.toLocaleString()} XP{hud.summary.doubleXp ? ' (Double XP)' : ''}
+                </small>
+                <ul>
+                  {hud.summary.medals.map((m) => (
+                    <li key={m.name}>
+                      <span>
+                        {m.name}
+                        {m.count > 1 ? ` ×${m.count}` : ''}
+                      </span>
+                      <b>+{m.xp}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {hud.summary.weapons.length > 0 && (
+              <div>
+                <small>Kills by weapon</small>
+                <ul>
+                  {hud.summary.weapons.map((w) => (
+                    <li key={w.name}>
+                      <span>{w.name}</span>
+                      <b>{w.kills}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        {hud.summary && hud.summary.newTitles.length > 0 && (
+          <div className="end-badges">
+            <small>Collection complete</small>
+            {hud.summary.newTitles.map((t) => (
+              <span key={t} className="end-badge">
+                New title: {titleDef(t).text}
+              </span>
+            ))}
+          </div>
+        )}
         {badges.length > 0 && (
           <div className="end-badges">
-            <small>New badges</small>
+            <small>New achievements</small>
             {badges.map((b) => (
               <span key={b.id} className="end-badge" title={b.blurb}>
                 {b.icon} {b.name}

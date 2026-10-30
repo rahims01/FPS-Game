@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CARDS, CHARMS, DEFAULT_COSMETICS, EMBLEMS, FLASHES, FRAMES, NAMETAGS, STYLES, TITLES, TRACERS, type Cosmetics } from '../game/cosmetics';
+import { BADGES, CARDS, CHARMS, DEFAULT_COSMETICS, EMBLEMS, FLASHES, FRAMES, NAMETAGS, STYLES, TITLES, TRACERS, type Cosmetics } from '../game/cosmetics';
 import { meleeDef } from '../assets/melees';
 import { addBotFriend, botFriendByName, levelNow, modeName, seedOf, statsFor, statusOf, type BotFriend } from '../game/botFriends';
 import { levelOf, type Profile } from '../game/progression';
@@ -124,6 +124,15 @@ export const PlayerCard = ({
     if (r.ok) setReporting(false);
   };
 
+  // Pinned achievements: yours, theirs (accounts), or a believable few for a computer player.
+  const BOT_SHOWCASE = ['firstblood', 'centurion', 'headhunter', 'veteran', 'winner', 'unstoppable', 'knifemaster', 'longarm', 'triple', 'fragout', 'thousand', 'dedicated', 'payback', 'openingact'];
+  const showcase: string[] = me
+    ? (myProfile.showcase ?? [])
+    : remote
+      ? (remote.profile?.showcase ?? [])
+      : isBot
+        ? BOT_SHOWCASE.filter((_, i) => ((seed >>> (i % 24)) & 3) === 0).slice(0, level < 5 ? 0 : level < 20 ? 1 : level < 40 ? 2 : 3)
+        : [];
   const card = cos?.card ?? 'recruit';
   const melee = meleeDef(cos?.melee).name;
   const wpn = WEAPONS[favorite]?.name ?? 'M16';
@@ -154,6 +163,18 @@ export const PlayerCard = ({
           ))}
         </div>
 
+        {tab === 'overview' && showcase.length > 0 && (
+          <div className="pc-showcase" aria-label="Pinned achievements">
+            {showcase.map((id) => {
+              const b = BADGES.find((x) => x.id === id);
+              return b ? (
+                <span key={id} title={b.blurb}>
+                  {b.icon} {b.name}
+                </span>
+              ) : null;
+            })}
+          </div>
+        )}
         {tab === 'overview' && (
           <dl className="pc-facts">
             <div>
