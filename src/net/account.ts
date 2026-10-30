@@ -2,6 +2,7 @@ import { loadProfile, saveProfile, xpForLevel, type Profile } from '../game/prog
 import { loadSettings, saveSettings, type GameSettings } from '../game/settings';
 import { exportBotFriends, importBotFriends, setBotFriendsSavedHook } from '../game/botFriends';
 import { onLocalSave } from '../game/saveHook';
+import { ADMIN_ITEMS } from '../game/cosmetics';
 import { WEAPONS } from '../sim/weapons';
 
 /**
@@ -31,7 +32,7 @@ export interface NewsItem {
 
 export interface InboxItem {
   id: number;
-  kind: 'reward' | 'warning' | 'renamed' | 'reset';
+  kind: 'reward' | 'warning' | 'renamed' | 'reset' | 'shout';
   body: { text?: string; name?: string; from?: string; xp?: number; levels?: number; unlocks?: string[]; weaponKills?: Record<string, number>; note?: string };
   at: number;
 }
@@ -279,6 +280,7 @@ const handleInbox = async (items: InboxItem[]) => {
       notices.push(`Gift from the admin${it.body.note ? `: ${it.body.note}` : ''}`);
     } else if (it.kind === 'warning') notices.push(`Warning from a moderator: ${it.body.text}`);
     else if (it.kind === 'renamed') notices.push(`A moderator changed your username to ${it.body.name}.`);
+    else if (it.kind === 'shout') notices.push(`Message from ${it.body.from ?? 'the admin'}: ${it.body.text}`);
     else if (it.kind === 'reset') {
       try {
         localStorage.removeItem('fps-profile-v1');
@@ -301,12 +303,12 @@ export const heartbeat = async (): Promise<void> => {
   const d = r.data;
   if (token) remember(token, d.user);
   set({ user: d.user, online: d.online, unread: d.unread, requests: d.requests, news: d.news, events: d.events, maintenance: d.maintenance });
-  // Staff get their title to wear.
-  const staff = d.user.role === 'admin' ? 'staff_admin' : d.user.role === 'mod' ? 'staff_mod' : null;
+  // Staff get their title to wear; the admin gets every admin-only item.
+  const staff = d.user.role === 'admin' ? ADMIN_ITEMS : d.user.role === 'mod' ? ['staff_mod'] : null;
   if (staff) {
     const p = loadProfile();
-    if (!(p.granted ?? []).includes(staff)) {
-      p.granted = [...(p.granted ?? []), staff];
+    if (staff.some((id) => !(p.granted ?? []).includes(id))) {
+      p.granted = [...new Set([...(p.granted ?? []), ...staff])];
       saveProfile(p);
       window.dispatchEvent(new Event('fps-save-replaced'));
     }
@@ -332,6 +334,15 @@ export const refreshNews = async (): Promise<void> => {
 
 /** Is a global event (double XP...) running right now? */
 export const eventOn = (key: string): boolean => (state.events[key] ?? 0) > Date.now();
+
+/** Change your account's username (once a week for players). */
+export const renameAccount = async (name: string): Promise<string | null> => {
+  const r = await api<{ user: AccountUser }>('account/rename', { body: { name } });
+  if (!r.ok) return r.data.error ?? 'Could not change it';
+  if (token) remember(token, r.data.user);
+  set({ user: r.data.user });
+  return null;
+};
 
 export const redeemCode = async (code: string): Promise<string> => {
   const r = await api<{ reward: InboxItem['body'] }>('redeem', { body: { code } });

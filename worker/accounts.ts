@@ -148,6 +148,14 @@ export class Accounts {
       `CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, uid INTEGER, host TEXT NOT NULL, mode TEXT NOT NULL, players INTEGER NOT NULL, max INTEGER NOT NULL, open INTEGER NOT NULL, updated INTEGER NOT NULL)`
     ];
     for (const t of tables) this.sql.exec(t);
+    // Columns added after the first release (the ALTER fails harmlessly once they exist).
+    for (const alter of ['ALTER TABLE users ADD COLUMN renamed_at INTEGER NOT NULL DEFAULT 0']) {
+      try {
+        this.sql.exec(alter);
+      } catch {
+        /* already there */
+      }
+    }
   }
 
   // ------------------------------------------------------------- helpers
@@ -382,6 +390,18 @@ export class Accounts {
         const salt = randomHex(16);
         this.sql.exec('UPDATE users SET hash = ?, salt = ?, iters = ? WHERE id = ?', await pbkdf2(pw, salt, ITERATIONS), salt, ITERATIONS, me.id);
         return json({ ok: true });
+      }
+      case 'POST account/rename': {
+        // Players can change their username once a week; staff any time.
+        const name = String(body.name ?? '').trim();
+        if (!NAME.test(name)) return fail('Usernames are 3 to 16 letters, numbers or _');
+        if (blocked(name) || (RESERVED.includes(name.toLowerCase()) && me.role === 'player')) return fail("That username isn't allowed");
+        if (this.one('SELECT id FROM users WHERE lname = ? AND id != ?', name.toLowerCase(), me.id)) return fail('That username is taken');
+        const last = (this.one('SELECT renamed_at FROM users WHERE id = ?', me.id)?.renamed_at as number) ?? 0;
+        const wait = last + 7 * DAY - now;
+        if (me.role === 'player' && wait > 0 && name.toLowerCase() !== me.name.toLowerCase()) return fail(`You can change your username again in ${Math.ceil(wait / DAY)} day(s)`);
+        this.sql.exec('UPDATE users SET name = ?, lname = ?, renamed_at = ? WHERE id = ?', name, name.toLowerCase(), now, me.id);
+        return json({ user: this.publicUser({ ...me, name }, now) });
       }
       case 'POST account/email': {
         const email = String(body.email ?? '').trim();
@@ -681,6 +701,36 @@ export class Accounts {
         }
         this.log(me, 'delete', t.id, { name: t.name });
         return json({ ok: true });
+      }
+      case 'POST shout': {
+        // A personal message from the staff (one player, or everyone online).
+        const text = String(body.text ?? '').trim().slice(0, 240);
+        if (!text) return fail('Write something');
+        const ids: number[] = body.everyone ? this.q('SELECT id FROM users WHERE last_seen > ?', now - ONLINE_MS).map((r) => r.id as number) : [Number(body.id)];
+        for (const id of ids) if (this.user(id)) this.give(id, 'shout', { text, from: me.name }, now);
+        this.log(me, 'shout', body.everyone ? 'everyone online' : Number(body.id), { text });
+        return json({ ok: true, count: ids.length });
+      }
+      case 'POST giveaway': {
+        if (!isAdmin) return adminOnly();
+        // A random player who's online right now wins.
+        const reward = cleanReward(body.reward) ?? { xp: 5000 };
+        const online = this.q("SELECT id, name FROM users WHERE last_seen > ? AND role = 'player' AND banned_until < ?", now - ONLINE_MS, now);
+        if (!online.length) return fail('Nobody is online right now');
+        const w = online[Math.floor(Math.random() * online.length)];
+        this.give(w.id as number, 'reward', { ...reward, note: `You won the admin's giveaway!` }, now);
+        this.sql.exec('INSERT INTO news (text, kind, at, until, by) VALUES (?, ?, ?, ?, ?)', `${w.name} just won the admin's giveaway!`, 'celebrate', now, now + 2 * 60 * MIN, me.id);
+        this.log(me, 'giveaway', w.id as number, reward);
+        return json({ winner: w.name, entrants: online.length });
+      }
+      case 'POST rain': {
+        if (!isAdmin) return adminOnly();
+        // XP for everyone online right now.
+        const xp = Math.max(1, Math.min(100_000, Math.round(Number(body.xp) || 1000)));
+        const online = this.q('SELECT id FROM users WHERE last_seen > ?', now - ONLINE_MS);
+        for (const r of online) this.give(r.id as number, 'reward', { xp, note: `XP rain! +${xp} XP from the admin` }, now);
+        this.log(me, 'rain', 'everyone online', { xp });
+        return json({ count: online.length });
       }
       case 'POST news': {
         const text = String(body.text ?? '').trim().slice(0, 280);

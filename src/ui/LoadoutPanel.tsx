@@ -212,7 +212,8 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           </h3>
           <div className="skin-grid">
             {SKINS.map((s) => {
-              const locked = focusKills < s.kills;
+              const given = !!profile.granted && (profile.granted.includes('*') || profile.granted.includes(s.id));
+              const locked = focusKills < s.kills && !given;
               const on = (settings.skins[slotKey] ?? 'none') === s.id;
               return (
                 <button
@@ -220,13 +221,13 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
                   className={`skin ${on ? 'on' : ''} ${locked ? 'locked' : ''}`}
                   style={{ borderColor: on ? undefined : RARITY[s.kind === 'mastery' || s.kills >= 400 ? 'mythic' : s.kind || s.kills >= 150 ? 'legendary' : s.kills >= 60 ? 'epic' : s.kills >= 15 ? 'rare' : 'common'].color }}
                   disabled={locked}
-                  title={locked ? `${s.kills} kills with the ${focusName} to unlock` : s.name}
+                  title={locked ? (s.id === 'sovereign' ? 'Admin only' : `${s.kills} kills with the ${focusName} to unlock`) : s.name}
                   onClick={() => set({ skins: { ...settings.skins, [slotKey]: s.id } })}
                 >
                   <i style={{ background: s.swatch }} className={s.kind ? `camo-${s.kind}` : ''} />
                   <span>{s.name}</span>
                   {s.kind && <small className={`camo-kind ${s.kind}`}>{s.kind === 'mastery' ? (s.kills >= 500 ? 'Diamond mastery' : 'Gold mastery') : s.kind}</small>}
-                  {locked && <small><LockIcon size={11} /> {s.kills}</small>}
+                  {locked && <small><LockIcon size={11} /> {s.id === 'sovereign' ? 'Admin' : s.kills}</small>}
                 </button>
               );
             })}

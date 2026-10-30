@@ -7,6 +7,8 @@
 import { MELEES } from '../assets/melees';
 
 export interface Cosmetics {
+  /** Staff accounts: the admin's spawn and kill effects, the crown in the feed. Looks only. */
+  staff?: 'admin' | 'mod';
   card: string;
   emblem: string;
   charm: string;
@@ -66,6 +68,7 @@ export interface CardDef {
 
 export const CARDS: CardDef[] = [
   { id: 'recruit', name: 'Recruit', bg: 'linear-gradient(120deg,#2b3a2b,#13190f)', ink: '#e8efe6', unlock: null },
+  { id: 'command', name: 'Command Center', bg: 'linear-gradient(115deg,#120d02,#4a3500 45%,#ffc400 85%,#fff3c2)', ink: '#fff8de', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'dusk', name: 'Dusk', bg: 'linear-gradient(120deg,#ff7e5f,#6a3093)', ink: '#fff', unlock: null },
   { id: 'ocean', name: 'Deep Blue', bg: 'linear-gradient(120deg,#0f2027,#2c5364)', ink: '#bfe9ff', unlock: { level: 5 } },
   { id: 'forest', name: 'Forest', bg: 'repeating-linear-gradient(60deg,#203a1e 0 14px,#2e5129 14px 28px)', ink: '#d6f5c9', unlock: { level: 8 } },
@@ -106,6 +109,7 @@ export interface EmblemDef {
 
 export const EMBLEMS: EmblemDef[] = [
   { id: 'star', glyph: '★', color: '#ffcc33', unlock: null },
+  { id: 'crown', glyph: '♛', color: '#ffd23d', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'chevron', glyph: '︽', color: '#9ad93d', unlock: null },
   { id: 'target', glyph: '◎', color: '#ff5a4a', unlock: null },
   { id: 'bolt', glyph: '⚡', color: '#ffe14d', unlock: { level: 4 } },
@@ -148,6 +152,7 @@ export interface CharmDef {
 
 export const CHARMS: CharmDef[] = [
   { id: 'none', name: 'None', shape: 'none', color: 0, unlock: null },
+  { id: 'crown', name: 'Golden Crown', shape: 'star', color: 0xffc400, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'ball', name: 'Lucky Ball', shape: 'ball', color: 0xff5a4a, unlock: null },
   { id: 'dice', name: 'Fuzzy Die', shape: 'dice', color: 0xf2f2f2, unlock: { level: 6 } },
   { id: 'ring', name: 'Gold Ring', shape: 'ring', color: 0xd4a933, unlock: { level: 11 } },
@@ -371,6 +376,9 @@ export const BADGES: BadgeDef[] = [
  * Collections: sets to complete. Finishing one gives a title you can't get
  * any other way (added to your granted items the moment it's done).
  */
+/** Everything the admin account gets (given on sign-in; see account.ts). */
+export const ADMIN_ITEMS = ['command', 'crown', 'admin', 'admin_gold', 'admin_glow', 'sovereign', 'staff_admin'];
+
 export interface CollectionDef {
   id: string;
   name: string;
@@ -509,6 +517,7 @@ export interface FrameDef {
 
 export const FRAMES: FrameDef[] = [
   { id: 'none', name: 'Standard', border: 'transparent', bg: 'var(--accent)', unlock: null },
+  { id: 'admin', name: 'Sovereign', border: '#fff3c2', bg: 'linear-gradient(135deg,#ffe27a,#c79100 60%,#7a5800)', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'bronze', name: 'Bronze', border: '#c8814a', bg: '#3a2412', unlock: { level: 10 } },
   { id: 'silver', name: 'Silver', border: '#c3cbd3', bg: '#2a3036', unlock: { level: 25 } },
   { id: 'gold', name: 'Gold', border: '#f2c94c', bg: '#3a2c00', unlock: { level: 40 } },
@@ -530,6 +539,7 @@ export interface NametagDef {
 
 export const NAMETAGS: NametagDef[] = [
   { id: 'plain', name: 'Plain', unlock: null },
+  { id: 'admin', name: 'Sovereign', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'outline', name: 'Outlined', unlock: { level: 5 } },
   { id: 'gold', name: 'Gold Plate', unlock: { level: 20 } },
   { id: 'neon', name: 'Neon', unlock: { level: 30 } },
@@ -552,6 +562,7 @@ export interface TracerDef {
 
 export const TRACERS: TracerDef[] = [
   { id: 'default', name: 'Standard', color: 0xffe9a8, unlock: null },
+  { id: 'admin', name: 'Sovereign', color: 0xffd23d, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'red', name: 'Red', color: 0xff3b3b, unlock: { level: 8 } },
   { id: 'green', name: 'Green', color: 0x3bff6b, unlock: { level: 14 } },
   { id: 'blue', name: 'Blue', color: 0x3bb9ff, unlock: { level: 22 } },
@@ -574,6 +585,7 @@ export interface FlashDef {
 
 export const FLASHES: FlashDef[] = [
   { id: 'default', name: 'Standard', color: 0xffffff, scale: 1, unlock: null },
+  { id: 'admin', name: 'Crown Flash', color: 0xffd23d, scale: 1.45, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'blue', name: 'Plasma Blue', color: 0x6ab8ff, scale: 1, unlock: { level: 12 } },
   { id: 'green', name: 'Toxic Green', color: 0x8aff5a, unlock: { level: 26 }, scale: 1 },
   { id: 'purple', name: 'Void Purple', color: 0xc08aff, scale: 1.1, unlock: { level: 38 } },
@@ -595,6 +607,8 @@ export interface ThemeColorDef {
 
 export const THEME_COLORS: ThemeColorDef[] = [
   { id: 'crimson', name: 'Crimson', hex: 0x9e0f2b, finish: 'flat', unlock: { level: 6 } },
+  { id: 'admin_gold', name: 'Sovereign Gold', hex: 0xffc400, finish: 'metal', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'admin_glow', name: 'Command Glow', hex: 0xffd23d, finish: 'glow', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'mint', name: 'Mint', hex: 0x6ff0c0, finish: 'flat', unlock: { level: 9 } },
   { id: 'sky', name: 'Sky', hex: 0x8fd3ff, finish: 'flat', unlock: { level: 12 } },
   { id: 'coral', name: 'Coral', hex: 0xff7b6b, finish: 'flat', unlock: { level: 15 } },
@@ -641,6 +655,7 @@ export interface StyleDef {
 
 export const STYLES: StyleDef[] = [
   { id: 'none', name: 'Plain', kind: 'finish', blurb: 'Your colour, nothing else.', unlock: null },
+  { id: 'sovereign', name: 'Sovereign', kind: 'animated', blurb: 'Shimmering gold with a light that sweeps across you.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'matte', name: 'Matte', kind: 'finish', blurb: 'Flat, no shine.', unlock: null },
   { id: 'metal', name: 'Metallic', kind: 'finish', blurb: 'Polished and shiny.', unlock: { level: 7 } },
   { id: 'glow', name: 'Glow', kind: 'finish', blurb: 'Lit from within.', unlock: { level: 13 } },

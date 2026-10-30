@@ -37,6 +37,8 @@ const poseFor = (id: WeaponId, m: WeaponModel): Pose => {
  * switching and knife swings.
  */
 export class Viewmodel {
+  /** Golden Guns event: every gun is gold. */
+  static goldGuns = false;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   private gun = new THREE.Group();
@@ -102,7 +104,7 @@ export class Viewmodel {
   }
 
   private show(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm): void {
-    const skin = skins[camoKey(id, this.melee)] ?? 'none';
+    const skin = Viewmodel.goldGuns && id !== 'knife' ? 'gold' : (skins[camoKey(id, this.melee)] ?? 'none');
     const key = `${id}:${skin}:${charm}:${id === 'knife' ? this.melee : ''}`;
     if (key === this.currentKey) return;
     this.currentKey = key;

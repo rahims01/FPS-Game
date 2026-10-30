@@ -221,6 +221,15 @@ export const animateStyle = (mats: THREE.Material[], styleId: string, base: numb
   };
   const t = time + seed * 1.7;
   switch (styleId) {
+    case 'sovereign': {
+      // Gold, with a light sweeping head to toe.
+      const sweep = Math.max(0, Math.sin(t * 1.6));
+      set((m) => {
+        m.color.setRGB(0.95, 0.72, 0.16);
+        m.emissive?.setRGB(0.35 + 0.65 * sweep ** 6, 0.24 + 0.5 * sweep ** 6, 0.04 + 0.3 * sweep ** 6);
+      });
+      break;
+    }
     case 'pulse': {
       const k = 0.1 + 0.55 * (0.5 + 0.5 * Math.sin(t * 2.2));
       set((m) => m.emissive?.copy(col).multiplyScalar(k));
@@ -368,6 +377,19 @@ export const drawNametag = (g: CanvasRenderingContext2D, w: number, name: string
       g.fillStyle = color;
       g.fillText(name, cx, y);
       break;
+    case 'admin': {
+      // A gold plate with a crown above the name.
+      const grad = g.createLinearGradient(0, y - 34, 0, y + 34);
+      grad.addColorStop(0, '#fff6c8');
+      grad.addColorStop(0.45, '#ffc400');
+      grad.addColorStop(1, '#7a5800');
+      plate(grad, '#fff3c2');
+      g.fillStyle = '#1b1200';
+      g.fillText(name, cx, y + 2);
+      g.fillStyle = '#ffd23d';
+      g.fillText('♛', cx, y - 62);
+      break;
+    }
     case 'gold': {
       const grad = g.createLinearGradient(0, y - 34, 0, y + 34);
       grad.addColorStop(0, '#fff1a8');

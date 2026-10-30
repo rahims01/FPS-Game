@@ -264,6 +264,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
             ) : (
             <div key={f.id} className="feed-row">
               <span className={`${f.killerIsPlayer ? 'me' : ''} ${isDark(f.killerColor) ? 'dark' : ''}`} style={{ color: f.killerColor }}>
+                {f.killerAdmin && <b className="feed-crown" title="Admin">♛ </b>}
                 {f.killer}
               </span>
               <span className="gun">

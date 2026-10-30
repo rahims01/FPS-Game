@@ -411,6 +411,33 @@ export class Effects {
     this.decal(new THREE.Vector3(p.x, 0.012, p.z), new THREE.Vector3(0, 1, 0), this.scorchMat, 30 * k);
   }
 
+  /** A burst of confetti: gold for the admin's kills, every colour in a confetti event. */
+  confetti(p: THREE.Vector3, gold: boolean): void {
+    const palette = gold ? [[1, 0.82, 0.24], [1, 0.95, 0.75], [0.95, 0.65, 0.1]] : [[1, 0.77, 0], [0.35, 0.63, 1], [0.27, 0.83, 0.51], [1, 0.36, 0.6], [0.7, 0.45, 1]];
+    for (let i = 0; i < 46; i++) {
+      const c = palette[i % palette.length];
+      const a = Math.random() * Math.PI * 2;
+      const s = 1.5 + Math.random() * 3.5;
+      this.emit(p.x, p.y + 1, p.z, Math.cos(a) * s, 3 + Math.random() * 4, Math.sin(a) * s, c[0], c[1], c[2], 0.9 + Math.random() * 0.8, 5);
+    }
+  }
+
+  /** The admin arriving: a column of golden light and a ring of sparks. */
+  adminArrive(p: THREE.Vector3): void {
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2;
+      this.emit(p.x + Math.cos(a) * 0.6, p.y + 0.1, p.z + Math.sin(a) * 0.6, Math.cos(a) * 1.5, 0.5 + Math.random(), Math.sin(a) * 1.5, 1, 0.82, 0.24, 0.8 + Math.random() * 0.4, 1);
+    }
+    for (let i = 0; i < 30; i++) this.emit(p.x + (Math.random() - 0.5) * 0.4, p.y + Math.random() * 0.5, p.z + (Math.random() - 0.5) * 0.4, 0, 5 + Math.random() * 6, 0, 1, 0.95, 0.7, 0.6 + Math.random() * 0.5, -2);
+    const l = this.lights[this.lightNext];
+    this.lightNext = (this.lightNext + 1) % this.lights.length;
+    l.light.position.set(p.x, p.y + 2, p.z);
+    l.light.color.setHex(0xffc400);
+    l.light.intensity = 30;
+    l.light.distance = 10;
+    l.life = 0.9;
+  }
+
   /** A soft dust puff (a dodgeball landing). */
   puff(p: THREE.Vector3): void {
     for (let i = 0; i < 8; i++) {
@@ -507,6 +534,7 @@ export class Effects {
       if (l.life <= 0) {
         l.light.intensity = 0;
         l.light.distance = 7;
+        l.light.color.setHex(0xffc070);
       }
     }
     for (const f of this.fireballs) {

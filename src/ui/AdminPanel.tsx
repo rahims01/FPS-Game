@@ -9,7 +9,7 @@ import { levelOf, type Profile } from '../game/progression';
  * resets and deleting accounts. Every action is written to the log.
  */
 
-type Section = 'overview' | 'reports' | 'players' | 'news' | 'rewards' | 'rooms' | 'log';
+type Section = 'overview' | 'fun' | 'reports' | 'players' | 'news' | 'rewards' | 'rooms' | 'log';
 type Any = Record<string, unknown>;
 
 const ago = (at: number) => {
@@ -21,10 +21,12 @@ const when = (at: number) => (at >= 8_640_000_000_000_000 ? 'forever' : new Date
 const EVENTS: [string, string, string][] = [
   ['doubleXp', 'Double XP', 'Every medal is worth twice the XP.'],
   ['bigHeads', 'Big Heads', 'Huge heads (and headshot hitboxes) in casual matches.'],
-  ['lowGravity', 'Low Gravity', 'Moon jumps in casual matches.']
+  ['lowGravity', 'Low Gravity', 'Moon jumps in casual matches.'],
+  ['goldenGuns', 'Golden Guns', 'Every gun in every match is gold. Looks only.'],
+  ['confettiKills', 'Confetti Kills', 'Every takedown bursts into confetti. Looks only.']
 ];
 
-export const AdminPanel = ({ onWatchRoom }: { onWatchRoom: (code: string) => void }) => {
+export const AdminPanel = ({ onWatchRoom, onDressUp }: { onWatchRoom: (code: string) => void; onDressUp?: () => void }) => {
   const admin = isAdmin();
   const [section, setSection] = useState<Section>('overview');
   const [flash, setFlash] = useState<string | null>(null);
@@ -36,6 +38,7 @@ export const AdminPanel = ({ onWatchRoom }: { onWatchRoom: (code: string) => voi
 
   const tabs: [Section, string][] = [
     ['overview', 'Overview'],
+    ...(admin ? ([['fun', 'Fun']] as [Section, string][]) : []),
     ['reports', 'Reports'],
     ['players', 'Players'],
     ['news', 'News & events'],
@@ -46,6 +49,7 @@ export const AdminPanel = ({ onWatchRoom }: { onWatchRoom: (code: string) => voi
 
   return (
     <div className="admin-panel">
+      <CommandHeader admin={admin} />
       <div className="set-tabs">
         {tabs.map(([id, label]) => (
           <button
@@ -70,6 +74,7 @@ export const AdminPanel = ({ onWatchRoom }: { onWatchRoom: (code: string) => voi
       ) : (
         <>
           {section === 'overview' && <Overview onGo={setSection} />}
+          {section === 'fun' && admin && <Fun say={say} onDressUp={onDressUp} />}
           {section === 'reports' && <Reports say={say} onOpen={setOpenUser} />}
           {section === 'players' && <Players onOpen={setOpenUser} />}
           {section === 'news' && <News admin={admin} say={say} />}
@@ -78,6 +83,117 @@ export const AdminPanel = ({ onWatchRoom }: { onWatchRoom: (code: string) => voi
           {section === 'log' && <Log />}
         </>
       )}
+    </div>
+  );
+};
+
+/** The panel's banner: who you are and a live clock, in the admin's gold. */
+const CommandHeader = ({ admin }: { admin: boolean }) => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  return (
+    <header className={`adm-banner ${admin ? 'admin' : 'mod'}`}>
+      <span className="adm-crown" aria-hidden="true">
+        {admin ? '♛' : '◆'}
+      </span>
+      <span>
+        <b>{admin ? 'Command Center' : 'Moderator desk'}</b>
+        <small>{admin ? 'Everything in the game, at your fingertips.' : 'Keep it fun and fair for everyone.'}</small>
+      </span>
+      <time>{now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</time>
+    </header>
+  );
+};
+
+/** The fun side of being the admin: dress up, give things away, make it rain. */
+const Fun = ({ say, onDressUp }: { say: (s: string) => void; onDressUp?: () => void }) => {
+  const [shout, setShout] = useState('');
+  const [who, setWho] = useState('');
+  const [rain, setRain] = useState(1000);
+  const [prize, setPrize] = useState(10000);
+  const [winner, setWinner] = useState<string | null>(null);
+  const findId = async (name: string) => (await api<{ users: Any[] }>(`admin/users?q=${encodeURIComponent(name)}`)).data.users?.find((u) => String(u.name).toLowerCase() === name.toLowerCase())?.id;
+  return (
+    <div className="adm-fun">
+      <section className="adm-fun-card gold">
+        <h3>Wear the crown</h3>
+        <p>Put on every admin-only item at once: the Sovereign camo on every gun, Command Center card, crown emblem and charm, gold frame, name tag, tracers, muzzle flash, style and colour. Everyone sees it; none of it changes how you play.</p>
+        <button
+          className="play"
+          onClick={() => {
+            onDressUp?.();
+            say('Crowned. Look in the Armory and Loadout');
+          }}
+        >
+          DRESS UP
+        </button>
+      </section>
+
+      <section className="adm-fun-card">
+        <h3>Giveaway</h3>
+        <p>A random player who’s online right now wins XP, and everyone’s menu announces the winner.</p>
+        <div className="acc-row">
+          <label className="adm-inline">
+            XP <input className="field" type="number" value={prize} onChange={(e) => setPrize(Number(e.target.value))} />
+          </label>
+          <button
+            className="chip on"
+            onClick={async () => {
+              setWinner('Drawing…');
+              const r = await api<{ winner: string; entrants: number }>('admin/giveaway', { body: { reward: { xp: prize } } });
+              await new Promise((res) => setTimeout(res, 900));
+              setWinner(r.ok ? `${r.data.winner} wins! (out of ${r.data.entrants})` : (r.data.error ?? 'Failed'));
+            }}
+          >
+            Draw a winner
+          </button>
+        </div>
+        {winner && <p className="adm-winner">{winner}</p>}
+      </section>
+
+      <section className="adm-fun-card">
+        <h3>XP rain</h3>
+        <p>Everyone online right now gets XP, with a message saying it rained.</p>
+        <div className="acc-row">
+          <label className="adm-inline">
+            XP each <input className="field" type="number" value={rain} onChange={(e) => setRain(Number(e.target.value))} />
+          </label>
+          <button
+            className="chip on"
+            onClick={async () => {
+              const r = await api<{ count: number }>('admin/rain', { body: { xp: rain } });
+              say(r.ok ? `It rained on ${r.data.count} player(s)` : (r.data.error ?? 'Failed'));
+            }}
+          >
+            Make it rain
+          </button>
+        </div>
+      </section>
+
+      <section className="adm-fun-card">
+        <h3>Shout-out</h3>
+        <p>A message that pops up for one player (or everyone online) the next time their game checks in.</p>
+        <textarea className="field" rows={2} maxLength={240} placeholder="GG everyone, see you in the next tournament!" value={shout} onChange={(e) => setShout(e.target.value)} />
+        <div className="acc-row">
+          <input className="field" placeholder="Username (empty = everyone online)" value={who} onChange={(e) => setWho(e.target.value)} />
+          <button
+            className="chip on"
+            disabled={!shout.trim()}
+            onClick={async () => {
+              const id = who ? await findId(who) : undefined;
+              if (who && !id) return say('No player with that username');
+              const r = await api<{ count: number }>('admin/shout', { body: { id, everyone: !who, text: shout } });
+              say(r.ok ? `Sent to ${r.data.count} player(s)` : (r.data.error ?? 'Failed'));
+              if (r.ok) setShout('');
+            }}
+          >
+            Send
+          </button>
+        </div>
+      </section>
     </div>
   );
 };

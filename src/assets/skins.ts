@@ -10,7 +10,7 @@ export type SkinId =
   | 'cherry' | 'zebra' | 'hex' | 'ocean' | 'ice' | 'rainbow' | 'toxic' | 'lava' | 'dragon' | 'galaxy' | 'bloodstone' | 'spectral'
   | 'urban' | 'jungle' | 'leopard' | 'marble' | 'woodgrain' | 'cyber' | 'emerald' | 'obsidian'
   | 'damascus' | 'darkmatter'
-  | 'plasma' | 'matrix' | 'shift' | 'magma' | 'neonpulse'
+  | 'plasma' | 'matrix' | 'shift' | 'magma' | 'neonpulse' | 'sovereign'
   | 'bloodline' | 'ember' | 'frost';
 
 export interface SkinDef {
@@ -65,7 +65,9 @@ export const SKINS: SkinDef[] = [
   { id: 'neonpulse', name: 'Neon Pulse', kills: 450, kind: 'animated', swatch: 'linear-gradient(135deg,#ff2bd6,#0b0f1a 50%,#19e6ff)' },
   { id: 'bloodline', name: 'Bloodline', kills: 60, kind: 'reactive', swatch: 'linear-gradient(90deg,#3a3d40,#8a0a1a)' },
   { id: 'ember', name: 'Ember', kills: 110, kind: 'reactive', swatch: 'linear-gradient(90deg,#2a2a2a,#ff7a1a)' },
-  { id: 'frost', name: 'Frostbite', kills: 190, kind: 'reactive', swatch: 'linear-gradient(90deg,#3a3d40,#bff3ff)' }
+  { id: 'frost', name: 'Frostbite', kills: 190, kind: 'reactive', swatch: 'linear-gradient(90deg,#3a3d40,#bff3ff)' },
+  // The admin's own camo: only ever given.
+  { id: 'sovereign', name: 'Sovereign', kills: 1_000_000_000, kind: 'animated', swatch: 'linear-gradient(110deg,#7a5800,#ffc400 40%,#fff6c8 50%,#ffc400 60%,#7a5800)' }
 ].sort((a, b) => a.kills - b.kills) as SkinDef[];
 
 export const skinDef = (id: SkinId): SkinDef => SKINS.find((s) => s.id === id) ?? SKINS[0];
@@ -108,6 +110,24 @@ const animated: ((t: number) => void)[] = [];
 const animatedMaterial = (id: SkinId): THREE.MeshStandardMaterial => {
   let m: THREE.MeshStandardMaterial;
   switch (id) {
+    case 'sovereign': {
+      // Gold, with a bright band of light sweeping along it.
+      const tex = paint((g) => {
+        const grad = g.createLinearGradient(0, 0, 64, 0);
+        grad.addColorStop(0, '#000');
+        grad.addColorStop(0.42, '#000');
+        grad.addColorStop(0.5, '#fff6c8');
+        grad.addColorStop(0.58, '#000');
+        grad.addColorStop(1, '#000');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+      });
+      m = new THREE.MeshStandardMaterial({ color: 0xf2bf2a, metalness: 0.75, roughness: 0.22, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.9 });
+      animated.push((t) => {
+        tex.offset.x = (t * 0.45) % 1;
+      });
+      break;
+    }
     case 'plasma': {
       const tex = paint((g) => {
         const grad = g.createLinearGradient(0, 0, 64, 0);
@@ -701,6 +721,7 @@ const skinMaterial = (id: SkinId): THREE.MeshStandardMaterial => {
       break;
     // ---- animated: each frame tickSkins() moves them
     case 'darkmatter':
+    case 'sovereign':
     case 'plasma':
     case 'matrix':
     case 'shift':
@@ -824,5 +845,7 @@ export const randomSkin = (rand: () => number = Math.random): SkinId => {
   if (r < 0.7) return 'none';
   // Mostly the early camos; the late ones (gold, galaxy, spectral...) are rare.
   if (r < 0.95) return SKINS[1 + Math.floor(rand() * 11)].id;
-  return SKINS[12 + Math.floor(rand() * (SKINS.length - 12))].id;
+  // (Never the admin's camo.)
+  const late = SKINS.slice(12).filter((s) => s.id !== 'sovereign');
+  return late[Math.floor(rand() * late.length)].id;
 };

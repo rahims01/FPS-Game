@@ -12,7 +12,7 @@ const PasswordInput = (props: InputHTMLAttributes<HTMLInputElement>) => {
     </span>
   );
 };
-import { account, api, localBackup, redeemCode, restoreLocalBackup, signIn, signOut, signUp, subscribeAccount, type AccountState } from '../net/account';
+import { account, api, localBackup, redeemCode, renameAccount, restoreLocalBackup, signIn, signOut, signUp, subscribeAccount, type AccountState } from '../net/account';
 
 /** Sign in or create an account; once signed in, your account details, password, email and gift codes. */
 export const AccountPanel = ({ onClose }: { onClose: () => void }) => {
@@ -28,6 +28,7 @@ export const AccountPanel = ({ onClose }: { onClose: () => void }) => {
   const [newPw, setNewPw] = useState('');
   const [code, setCode] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
   useEffect(() => subscribeAccount(setSt), []);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -122,6 +123,23 @@ export const AccountPanel = ({ onClose }: { onClose: () => void }) => {
               </div>
             </dl>
             {u.mutedUntil > 0 && <p className="acc-error">Chat is muted until {new Date(u.mutedUntil).toLocaleString()}.</p>}
+
+            <h3>Change username</h3>
+            <form
+              className="acc-row"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const err = await renameAccount(newName.trim());
+                setMsg(err ?? `Your username is now ${newName.trim()}`);
+                if (!err) setNewName('');
+              }}
+            >
+              <input className="field" placeholder={u.name} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={16} aria-label="New username" />
+              <button className="chip" disabled={newName.trim().length < 3}>
+                Change
+              </button>
+            </form>
+            <p className="set-hint">3 to 16 letters, numbers or _. You can change it once a week.</p>
 
             <h3>Redeem a code</h3>
             <form

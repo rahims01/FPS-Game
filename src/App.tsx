@@ -578,7 +578,7 @@ export const App = () => {
     perks: settings.perks,
     lethal: settings.lethal,
     tactical: settings.tactical,
-    cosmetics: { ...settings.cosmetics, prestige: profile.prestige },
+    cosmetics: { ...settings.cosmetics, prestige: profile.prestige, ...(account().user?.role === 'admin' || account().user?.role === 'mod' ? { staff: account().user!.role as 'admin' | 'mod' } : {}) },
     account: account().user?.name ?? null
   });
 
@@ -941,7 +941,19 @@ export const App = () => {
                     onSignIn={() => setShowAccount(true)}
                   />
                 )}
-                {tab === 'admin' && isStaff() && <AdminPanel onWatchRoom={(code) => void joinRoom(code, true)} />}
+                {tab === 'admin' && isStaff() && (
+                  <AdminPanel
+                    onWatchRoom={(code) => void joinRoom(code, true)}
+                    onDressUp={() =>
+                      setSettings((s) => ({
+                        ...s,
+                        playerColor: 0xffc400,
+                        cosmetics: { ...s.cosmetics, card: 'command', emblem: 'crown', frame: 'admin', nametag: 'admin', tracer: 'admin', flash: 'admin', style: 'sovereign', charm: 'crown', title: 'staff_admin' },
+                        skins: Object.fromEntries(['rifle', 'ak', 'scar', 'burst', 'smg', 'uzi', 'shotgun', 'autoshotgun', 'dmr', 'sniper', 'barrett', 'lmg', 'pistol', 'revolver', 'deagle', 'mpistol', 'knife', 'karambit', 'machete', 'bat', 'axe', 'shovel', 'katana', 'hammer', 'kunai'].map((w) => [w, 'sovereign']))
+                      }))
+                    }
+                  />
+                )}
                 {tab === 'settings' && (
                   <SettingsPanel
                     settings={settings}

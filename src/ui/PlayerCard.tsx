@@ -149,6 +149,11 @@ export const PlayerCard = ({
           </button>
         </div>
 
+        {(() => {
+          // Everyone shows a username: an account's, yours, or (for computer players) their name.
+          const handle = me ? account().user?.name : remote?.name ?? accountName ?? (isBot ? name : null);
+          return handle ? <p className="pc-handle">@{handle}</p> : <p className="pc-handle">Not signed in</p>;
+        })()}
         <div className="set-tabs">
           {(
             [

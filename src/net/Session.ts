@@ -412,6 +412,12 @@ export class HostSession {
       names[a.id] = c.profile.name;
       skins[a.id] = c.profile.skins ?? {};
       if (!teamColors) colors[a.id] = c.profile.color;
+      // A visiting admin's team wears the admin's colour.
+      else if (c.profile.cosmetics?.staff === 'admin') {
+        const mine = a.team === match.player.team ? 0 : 1;
+        teamColors[mine] = c.profile.color;
+        for (const b of sim.agents) if ((b.team === match.player.team ? 0 : 1) === mine) colors[b.id] = c.profile.color;
+      }
     }
     // Rooms with friends: fillers are openly bots. Parties and public matches look like any matchmade game.
     if (!this.party && !this.public) {

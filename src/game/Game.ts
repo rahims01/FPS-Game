@@ -25,7 +25,7 @@ import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
-import { assignIdentities, basePingFor, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
+import { assignIdentities, basePingFor, COLORS, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { botFriendByName, botFriends } from './botFriends';
 import { COURSE } from '../sim/layouts';
 import { account, eventOn } from '../net/account';
@@ -119,6 +119,8 @@ export interface KillFeedEntry {
   killerColor: string;
   victimColor: string;
   killerIsPlayer: boolean;
+  /** The admin got this one (a crown in the feed). */
+  killerAdmin?: boolean;
   victimIsPlayer: boolean;
   /** A line that is not a kill ("X left the match"). */
   system?: string;
@@ -397,6 +399,7 @@ export class Game {
   private xpBanked = false;
   /** Admin events running when the match started. */
   private readonly doubleXp = eventOn('doubleXp');
+  private readonly confettiKills = eventOn('confettiKills');
   private killTimes: number[] = [];
   private firstBlood = false;
   private lastKillerOfPlayer = -1;
@@ -573,9 +576,14 @@ export class Game {
       // Watching a friend: your soldier is just another player, under someone else's name.
       if (opts.watch) this.match.player.control = opts.botControl;
       this.ids = assignIdentities(this.match, opts.watch ? freshNames(1)[0] : settings.playerName || 'Player', settings.playerColor, settings.skins);
+      // The admin's team wears the admin's colour (the other side gets one that stands apart).
+      if (!opts.watch && account().user?.role === 'admin' && this.ids.teamColors) recolorTeam(this.ids, this.match, this.match.player.team, settings.playerColor);
       // Everyone else's calling card and emblem (yours from the menu).
       this.cosmetics = this.match.sim.agents.map((a) => {
-        if (a === this.match.player && !opts.watch) return { ...settings.cosmetics, prestige: loadProfile().prestige };
+        if (a === this.match.player && !opts.watch) {
+          const role = account().user?.role;
+          return { ...settings.cosmetics, prestige: loadProfile().prestige, ...(role === 'admin' || role === 'mod' ? { staff: role } : {}) };
+        }
         if (a.dummy) return null;
         // Bot friends wear what they always wear.
         const friend = botFriendByName(this.ids.names[a.id]);
@@ -590,6 +598,8 @@ export class Game {
       if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins, this.cosmetics, this.accounts);
       if (opts.watch) this.specId = this.match.sim.agents.find((a) => this.ids.names[a.id] === opts.watch)?.id ?? -1;
       // Admin events for everyone's casual matches (not ranked or tournaments, which pass an exact skill).
+      // Golden Guns (an admin event): everyone's guns are gold. Looks only.
+      SoldierView.goldGuns = Viewmodel.goldGuns = eventOn('goldenGuns');
       if (!opts.skill) {
         if (eventOn('bigHeads')) this.match.sim.headScale = Math.max(this.match.sim.headScale, 1.8);
         if (eventOn('lowGravity')) this.match.sim.gravity *= 0.45;
@@ -1181,6 +1191,7 @@ export class Game {
       v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id);
       const cos = this.cosmetics[a.id];
       v.setStyle(this.styleFor(a), this.colorOf(a.id));
+      if (cosAdmin(this.cosmetics[a.id]) && a.alive && !this.killcam) this.effects.adminArrive(new THREE.Vector3(a.x, a.y, a.z));
       if (a !== this.match.player || this.spectator) {
         const title = cos && cos.title !== 'none' ? titleDef(cos.title).text : null;
         v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team, cos?.nametag ?? 'plain', title);
@@ -1293,12 +1304,17 @@ export class Game {
           headshot: e.region === 'head' && e.cause !== 'grenade' && e.cause !== 'airstrike',
           weapon: e.cause === 'knife' && killer ? meleeDef(this.cosmetics[killer.id]?.melee).tag : causeTag(e.cause),
           killerIsPlayer: killer === player,
+          killerAdmin: !!killer && this.cosmetics[killer.id]?.staff === 'admin',
           victimIsPlayer: victim === player,
           at: sim.time
         });
         if (this.feed.length > 6) this.feed.shift();
         const v = this.viewFor(victim);
         v.setVisible(true);
+        if (live && killer && (this.cosmetics[killer.id]?.staff === 'admin' || this.confettiKills)) {
+          this.effects.confetti(new THREE.Vector3(victim.x, victim.y, victim.z), this.cosmetics[killer.id]?.staff === 'admin');
+          if (victim === player && this.cosmetics[killer.id]?.staff === 'admin') this.callout('Taken down by the Admin ♛');
+        }
         v.die(victim, this.physics, sim.time, { distance: e.distance, melee: killer ? this.cosmetics[killer.id]?.melee : undefined });
         // The pool goes where the body ends up, once it has mostly landed.
         if (live && e.attacker >= 0 && this.match.mode !== 'paintball') this.pendingPools.push({ view: v, at: sim.time + 0.7, y: victim.y });
@@ -3144,3 +3160,25 @@ export class Game {
 /** Real (account) friends, as last counted by the friends list: for the friends achievements. */
 let realFriendCount = 0;
 export const setRealFriendCount = (n: number) => (realFriendCount = n);
+
+const cosAdmin = (c: Cosmetics | null | undefined) => c?.staff === 'admin';
+
+/** Gives one team a chosen colour, and the other the most different colour in the palette. */
+export const recolorTeam = (ids: Identities, match: { sim: { agents: Agent[] }; player: Agent }, team: number, color: number): void => {
+  if (!ids.teamColors) return;
+  const mine = team === match.player.team ? 0 : 1;
+  const hue = (c: number) => {
+    const r = ((c >> 16) & 255) / 255, g = ((c >> 8) & 255) / 255, b = (c & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx === mn) return 0;
+    const h = mx === r ? (g - b) / (mx - mn) : mx === g ? 2 + (b - r) / (mx - mn) : 4 + (r - g) / (mx - mn);
+    return ((h * 60) + 360) % 360;
+  };
+  const far = COLORS.map((c) => c.hex)
+    .filter((c) => c !== color)
+    .sort((a, b) => Math.abs(180 - Math.abs(hue(b) - hue(color))) - Math.abs(180 - Math.abs(hue(a) - hue(color))))
+    .reverse()[0];
+  ids.teamColors[mine] = color;
+  ids.teamColors[1 - mine] = far ?? ids.teamColors[1 - mine];
+  match.sim.agents.forEach((a) => (ids.colors[a.id] = ids.teamColors![a.team === match.player.team ? 0 : 1]));
+};

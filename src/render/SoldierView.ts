@@ -264,6 +264,8 @@ export class SoldierView {
   static headScale = 1;
   /** Simplified soldiers (weak devices): low-detail body and gun. Read when a soldier is created. */
   static lowDetail = false;
+  /** Golden Guns event: every gun is gold. */
+  static goldGuns = false;
   private low = SoldierView.lowDetail;
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
@@ -371,7 +373,7 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, this.skins[camoKey(id, this.melee)] ?? 'none', this.charm, this.low, this.melee).clone(true));
+    this.rifle.add(thirdPersonWeapon(this.assets, id, SoldierView.goldGuns && id !== 'knife' ? 'gold' : (this.skins[camoKey(id, this.melee)] ?? 'none'), this.charm, this.low, this.melee).clone(true));
     // Reactive camos change with this soldier's own kills.
     ownReactive(this.rifle);
     this.muzzleLength = modelOf(this.assets, id, this.melee).length * THIRD_PERSON_SCALE;

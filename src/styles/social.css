@@ -451,6 +451,89 @@ textarea.field {
   }
 }
 
+/* Admin: the Command Center banner and the Fun tab. */
+.adm-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border-left: 4px solid var(--line-2);
+}
+.adm-banner.admin {
+  background: linear-gradient(110deg, #1a1405, #3b2b00 55%, #6b4f00);
+  border-left-color: #ffc400;
+}
+.adm-banner > span:nth-child(2) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.adm-banner b {
+  font-family: var(--f-cond);
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.adm-banner small {
+  color: var(--dim);
+}
+.adm-banner.admin small {
+  color: #f5e3a8;
+}
+.adm-crown {
+  font-size: 34px;
+  line-height: 1;
+}
+.adm-banner.admin .adm-crown {
+  color: #ffd23d;
+  text-shadow: 0 0 12px rgba(255, 196, 0, 0.7);
+}
+.adm-banner time {
+  font-family: var(--f-cond);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.adm-fun {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2px;
+}
+.adm-fun-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--panel);
+}
+.adm-fun-card h3 {
+  margin: 0;
+}
+.adm-fun-card p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 14px;
+}
+.adm-fun-card.gold {
+  background: linear-gradient(135deg, #2a2005, #4a3800);
+}
+.adm-fun-card.gold p {
+  color: #f5e3a8;
+}
+.adm-fun-card .play {
+  align-self: flex-start;
+}
+.adm-winner {
+  padding: 8px 12px;
+  background: var(--paper);
+  color: var(--ink) !important;
+  font-family: var(--f-cond);
+  font-size: 20px !important;
+  font-weight: 800;
+}
+
 /* Admin. */
 .admin-panel h3 {
   margin: 22px 0 8px;
@@ -766,6 +849,19 @@ textarea.field {
 }
 .end-breakdown li b {
   font-family: var(--f-cond);
+}
+
+.pc-handle {
+  margin: -8px 0 12px;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+.feed-crown {
+  color: #ffd23d;
+  text-shadow: 0 0 6px rgba(255, 196, 0, 0.8);
 }
 
 /* Player card: pinned achievements. */
