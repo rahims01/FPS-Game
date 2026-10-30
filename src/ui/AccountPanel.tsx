@@ -1,4 +1,17 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type InputHTMLAttributes } from 'react';
+
+/** A password box with a Show / Hide button, so you can check what you typed. */
+const PasswordInput = (props: InputHTMLAttributes<HTMLInputElement>) => {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="pw-field">
+      <input {...props} className="field" type={show ? 'text' : 'password'} autoCapitalize="none" spellCheck={false} />
+      <button type="button" className="pw-toggle" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show}>
+        {show ? 'Hide' : 'Show'}
+      </button>
+    </span>
+  );
+};
 import { account, api, localBackup, redeemCode, restoreLocalBackup, signIn, signOut, signUp, subscribeAccount, type AccountState } from '../net/account';
 
 /** Sign in or create an account; once signed in, your account details, password, email and gift codes. */
@@ -63,7 +76,7 @@ export const AccountPanel = ({ onClose }: { onClose: () => void }) => {
               </label>
               <label>
                 <span>Password</span>
-                <input className="field" type="password" autoComplete={mode === 'in' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} minLength={mode === 'up' ? 6 : 1} required />
+                <PasswordInput autoComplete={mode === 'in' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} minLength={mode === 'up' ? 6 : 1} required />
               </label>
               {mode === 'up' && (
                 <label>
@@ -148,8 +161,8 @@ export const AccountPanel = ({ onClose }: { onClose: () => void }) => {
                 if (r.ok) setOldPw(''), setNewPw('');
               }}
             >
-              <input className="field" type="password" autoComplete="current-password" placeholder="Current" value={oldPw} onChange={(e) => setOldPw(e.target.value)} />
-              <input className="field" type="password" autoComplete="new-password" placeholder="New (6+ characters)" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+              <PasswordInput autoComplete="current-password" placeholder="Current" value={oldPw} onChange={(e) => setOldPw(e.target.value)} />
+              <PasswordInput autoComplete="new-password" placeholder="New (6+ characters)" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
               <button className="chip" disabled={!oldPw || newPw.length < 6}>
                 Change
               </button>

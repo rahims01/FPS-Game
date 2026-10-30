@@ -695,3 +695,118 @@ textarea.field {
   font-size: 17px;
   line-height: 1.45;
 }
+
+/* Profile: achievements, collections, career. */
+.badge.secret {
+  border-style: dashed;
+}
+.badge.secret .badge-icon {
+  color: var(--mute);
+  font-family: var(--f-cond);
+  font-weight: 800;
+}
+.badge-pin {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 3px 10px 2px;
+  font-size: 13px;
+}
+.badge.collection b {
+  font-family: var(--f-cond);
+  font-size: 20px;
+}
+.career-more h3 {
+  margin: 24px 0 8px;
+}
+.medal-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.medal-tally span {
+  padding: 4px 10px 3px;
+  background: var(--panel);
+  font-size: 14px;
+}
+.medal-tally b {
+  margin-left: 4px;
+  font-family: var(--f-cond);
+}
+
+/* End screen: medals and weapons. */
+.end-breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 2px;
+  margin-top: 12px;
+}
+.end-breakdown > div {
+  padding: 12px 14px;
+  background: var(--navy);
+}
+.end-breakdown small {
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.end-breakdown ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.end-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.end-breakdown li b {
+  font-family: var(--f-cond);
+}
+
+/* Player card: pinned achievements. */
+.pc-showcase {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.pc-showcase span {
+  padding: 5px 10px 4px;
+  background: var(--navy);
+  border-left: 3px solid var(--line-2);
+  font-size: 14px;
+}
+
+/* Password box with a Show / Hide button inside it. */
+.pw-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+.pw-field .field {
+  padding-right: 64px;
+}
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  padding: 4px 8px 3px;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.pw-toggle:hover {
+  background: var(--line-2);
+}
