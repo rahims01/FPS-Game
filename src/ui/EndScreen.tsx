@@ -3,6 +3,7 @@ import { isDark } from '../game/identity';
 import type { Division } from '../game/progression';
 import { BADGES, titleDef } from '../game/cosmetics';
 import { CallingCard } from './ProfilePanel';
+import { say } from '../game/words';
 import { inkOn } from './ink';
 
 const acc = (r: ScoreRow) => (r.accuracy < 0 ? '–' : `${r.accuracy}%`);
@@ -115,10 +116,10 @@ export const EndScreen = ({
               <small>Your match</small>
               <div className="end-stats">
                 <span>
-                  <b>{me.kills}</b> kills
+                  <b>{me.kills}</b> {say('kills')}
                 </span>
                 <span>
-                  <b>{me.deaths}</b> deaths
+                  <b>{me.deaths}</b> {say('deaths')}
                 </span>
                 <span>
                   <b>{me.damage}</b> damage
@@ -135,7 +136,7 @@ export const EndScreen = ({
                 {hud.summary && (
                   <>
                     <span>
-                      <b>{hud.summary.longestKill} m</b> longest kill
+                      <b>{hud.summary.longestKill} m</b> {say('longest kill')}
                     </span>
                     <span>
                       <b>{hud.summary.meters} m</b> moved
@@ -154,7 +155,7 @@ export const EndScreen = ({
           {mvp && (
             <div className="end-stat-card mvp">
               <small>MVP</small>
-              <CallingCard card={mvp.isPlayer ? mine.card : mvp.card} emblem={mvp.isPlayer ? mine.emblem : mvp.emblemId} title={mvp.isPlayer ? mine.title : mvp.title} frame={mvp.isPlayer ? mine.frame : mvp.frame} prestige={mvp.isPlayer ? mine.prestige : mvp.prestige} name={mvp.name} level={mvp.level} sub={`${mvp.kills} kills · ${mvp.damage} damage · ${acc(mvp)} accuracy`} />
+              <CallingCard card={mvp.isPlayer ? mine.card : mvp.card} emblem={mvp.isPlayer ? mine.emblem : mvp.emblemId} title={mvp.isPlayer ? mine.title : mvp.title} frame={mvp.isPlayer ? mine.frame : mvp.frame} prestige={mvp.isPlayer ? mine.prestige : mvp.prestige} name={mvp.name} level={mvp.level} sub={`${mvp.kills} ${say('kills')} · ${mvp.damage} damage · ${acc(mvp)} accuracy`} />
             </div>
           )}
         </div>
@@ -180,7 +181,7 @@ export const EndScreen = ({
             )}
             {hud.summary.weapons.length > 0 && (
               <div>
-                <small>Kills by weapon</small>
+                <small>{say('Kills by weapon')}</small>
                 <ul>
                   {hud.summary.weapons.map((w) => (
                     <li key={w.name}>
@@ -208,7 +209,7 @@ export const EndScreen = ({
             <small>New achievements</small>
             {badges.map((b) => (
               <span key={b.id} className="end-badge" title={b.blurb}>
-                {b.icon} {b.name}
+                {b.icon} {say(b.name)}
               </span>
             ))}
           </div>

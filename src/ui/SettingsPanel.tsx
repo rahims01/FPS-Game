@@ -114,7 +114,8 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
             <Toggle label="Show FPS" value={settings.showFps} onChange={(v) => set({ showFps: v })} />
             <Toggle label="Show ping (online)" value={settings.showPing} onChange={(v) => set({ showPing: v })} />
             <Toggle label="Damage numbers" hint="Floating numbers on everyone you hit" value={settings.damageNumbers} onChange={(v) => set({ damageNumbers: v })} />
-            <Toggle label="Blood" hint="Off: hits kick up dust and nobody leaves a pool of blood" value={settings.blood} onChange={(v) => set({ blood: v })} />
+            <Toggle label="Blood" hint={settings.classroom ? 'Off while Classroom mode is on' : 'Off: hits kick up dust and nobody leaves a pool of blood'} value={settings.blood && !settings.classroom} onChange={(v) => set({ blood: v })} />
+            <Toggle label="Classroom mode" hint="For playing in class or with younger players: no blood, colourful sparks on hits, and takedowns instead of kills." value={settings.classroom} onChange={(v) => set({ classroom: v })} />
             <Toggle label="Hit marker sound" value={settings.hitSounds} onChange={(v) => set({ hitSounds: v })} />
             <Toggle label="Control hints" hint="Short tips in your first matches (switching weapons, grenades, scoreboard...). Each one stops once you've used it." value={settings.hints} onChange={(v) => set({ hints: v })} />
             {onReplayTour && (

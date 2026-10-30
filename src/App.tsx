@@ -28,6 +28,7 @@ import { ControlsList } from './ui/ControlsList';
 import { account, isStaff, setPresenceSource, startAccount, subscribeAccount, type AccountState, type PresenceStatus } from './net/account';
 import { botFriendByName, matchEndedWith, resolveMode, subscribeBotFriends, tickBotFriends, unreadBotMessages, type BotFriend } from './game/botFriends';
 import { bringFriends } from './game/identity';
+import { setClassroom } from './game/words';
 import type { PlayerCardData } from './game/Game';
 import { Scoreboard } from './ui/Hud';
 import { AccountPanel } from './ui/AccountPanel';
@@ -207,6 +208,7 @@ export const App = () => {
 
   useEffect(() => {
     saveSettings(settings);
+    setClassroom(settings.classroom);
     game.current?.applySettings(settings);
     // Accessibility: text size, colourblind palettes and high contrast are page-wide styles.
     const root = document.documentElement;

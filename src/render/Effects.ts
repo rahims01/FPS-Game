@@ -129,6 +129,8 @@ export class Effects {
   private poolNext = 0;
   /** Settings: blood on or off. Off, hits kick up dust instead and nobody leaves a pool. */
   bloodOn = true;
+  /** Classroom mode: hits throw bright coloured sparks instead (blood is off too). */
+  sparkHits = false;
 
   constructor() {
     const geo = new THREE.BufferGeometry();
@@ -351,6 +353,15 @@ export class Effects {
   }
 
   blood(p: THREE.Vector3, dir: THREE.Vector3, heavy: boolean): void {
+    if (this.sparkHits) {
+      const colors = [[1, 0.77, 0], [0.35, 0.63, 1], [0.27, 0.83, 0.51], [1, 0.36, 0.6]];
+      for (let i = 0; i < (heavy ? 14 : 8); i++) {
+        const c = colors[i % colors.length];
+        const sp = 1.5 + Math.random() * 2.5;
+        this.emit(p.x, p.y, p.z, dir.x * sp + (Math.random() - 0.5) * 2.5, Math.random() * 2.5, dir.z * sp + (Math.random() - 0.5) * 2.5, c[0], c[1], c[2], 0.3 + Math.random() * 0.25, 7);
+      }
+      return;
+    }
     if (!this.bloodOn) {
       for (let i = 0; i < 5; i++) this.emit(p.x, p.y, p.z, dir.x + (Math.random() - 0.5), dir.y + Math.random(), dir.z + (Math.random() - 0.5), 0.6, 0.58, 0.54, 0.25 + Math.random() * 0.2, 6);
       return;

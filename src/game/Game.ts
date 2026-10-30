@@ -28,6 +28,7 @@ import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Ma
 import { assignIdentities, basePingFor, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { botFriendByName, botFriends } from './botFriends';
 import { account, eventOn } from '../net/account';
+import { say, setClassroom } from './words';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
 import { keyLabel, lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
@@ -341,6 +342,7 @@ export class Game {
   private meters = 0;
   private lastPos: { x: number; z: number } | null = null;
   private longestKill = 0;
+  private lastBeat = 0;
   private prevPhase: Match['phase'] = 'live';
   private prevScores: [number, number] = [0, 0];
   /** Keep the online session open when this match is disposed (going back to the room). */
@@ -859,7 +861,10 @@ export class Game {
     this.arenaView.setShadows(g.shadows);
     this.effects.density = g.effects === 'low' ? 0.35 : 1;
     this.effects.reduceFlash = s.access.reduceFlash;
-    this.effects.bloodOn = s.blood;
+    // Classroom mode: no blood, coloured sparks on hits.
+    this.effects.bloodOn = s.blood && !s.classroom;
+    this.effects.sparkHits = s.classroom;
+    setClassroom(s.classroom);
     this.viewmodel.reduceMotion = s.access.reduceMotion;
     this.pads.deadzone = s.pad.deadzone;
     const fog = this.scene.fog as THREE.Fog;
@@ -1228,8 +1233,12 @@ export class Game {
           if (e.first) {
             const fl = flashDef(this.cosmetics[shooter.id]?.flash ?? 'default');
             this.effects.muzzleFlash(from, true, fl.scale, fl.color);
-            this.audio.gunshot(this.distTo(shooter.x, shooter.z), this.panTo(shooter.x, shooter.z), false, e.weapon);
+            // Behind you (more than ~110 degrees off where you look): muffled.
+            const off = Math.abs(wrapAngle(yawTo(this.camera.position.x, this.camera.position.z, shooter.x, shooter.z) - this.yaw));
+            this.audio.gunshot(this.distTo(shooter.x, shooter.z), this.panTo(shooter.x, shooter.z), false, e.weapon, off > 1.9);
           }
+          // A miss that passes close to your head: the whiz of the bullet going by.
+          if (player.alive && !this.spectator && e.hit !== player.id && shooter.team !== player.team && this.nearMiss(e, player)) this.audio.whiz(this.panTo(e.ex, e.ez));
         }
         this.effects.tracer(from, end, this.tracerColor(shooter.id));
         const paintball = this.match.mode === 'paintball';
@@ -1945,6 +1954,16 @@ export class Game {
     return Math.hypot(x - this.camera.position.x, z - this.camera.position.z);
   }
 
+  /** Does a shot's line pass within 1.6 m of the player's head (without hitting them)? */
+  private nearMiss(e: { ox: number; oy: number; oz: number; ex: number; ey: number; ez: number }, p: Agent): boolean {
+    const hx = p.x, hy = p.y + eyeHeight(p), hz = p.z;
+    const dx = e.ex - e.ox, dy = e.ey - e.oy, dz = e.ez - e.oz;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 < 1) return false;
+    const t = Math.max(0, Math.min(1, ((hx - e.ox) * dx + (hy - e.oy) * dy + (hz - e.oz) * dz) / len2));
+    return Math.hypot(e.ox + dx * t - hx, e.oy + dy * t - hy, e.oz + dz * t - hz) < 1.6;
+  }
+
   private panTo(x: number, z: number): number {
     return -Math.sin(wrapAngle(yawTo(this.camera.position.x, this.camera.position.z, x, z) - this.yaw));
   }
@@ -1956,7 +1975,7 @@ export class Game {
     // Double XP weekend (an admin event).
     const xp = m.xp * (this.doubleXp ? 2 : 1);
     this.xp += xp;
-    this.medals.push({ id: this.medalId++, name: m.name, xp, big: !!m.big, at: sim.time });
+    this.medals.push({ id: this.medalId++, name: say(m.name), xp, big: !!m.big, at: sim.time });
     if (this.medals.length > 8) this.medals.shift();
     if (m.big) this.audio.fanfare();
     else this.audio.medal();
@@ -2196,7 +2215,7 @@ export class Game {
         medals: Object.entries(this.medalCounts)
           .map(([k, count]) => {
             const md = MEDALS[k as keyof typeof MEDALS];
-            return { name: md.name, count, xp: md.xp * count * (this.doubleXp ? 2 : 1) };
+            return { name: say(md.name), count, xp: md.xp * count * (this.doubleXp ? 2 : 1) };
           })
           .sort((a, b) => b.xp - a.xp),
         kills: pl.kills,
@@ -2461,6 +2480,10 @@ export class Game {
     this.arenaView.update(time, this.camera.position);
     this.updatePools();
     const me = this.match.player;
+    if (me.alive && !this.spectator && me.hp < 30 && this.match.phase !== 'over' && time - this.lastBeat > 0.85) {
+      this.lastBeat = time;
+      this.audio.heartbeat();
+    }
     if (me.alive && !this.spectator) {
       if (this.lastPos) {
         const d = Math.hypot(me.x - this.lastPos.x, me.z - this.lastPos.z);

@@ -143,6 +143,8 @@ export interface GameSettings {
   hints: boolean;
   /** Blood sprays and pools (off: hits kick up dust). */
   blood: boolean;
+  /** Classroom mode: no blood, sparks on hits, takedowns instead of kills. */
+  classroom: boolean;
   /** On-screen touch controls: automatic on touch screens, or forced on / off. */
   touchControls: 'auto' | 'on' | 'off';
   lethal: ThrowableId;
@@ -185,6 +187,7 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   hitSounds: true,
   hints: true,
   blood: true,
+  classroom: false,
   touchControls: 'auto',
   lethal: 'frag',
   tactical: 'flash',

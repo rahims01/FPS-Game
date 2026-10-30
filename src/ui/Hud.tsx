@@ -4,6 +4,7 @@ import type { GameSettings } from '../game/settings';
 import { isDark } from '../game/identity';
 import { THROWABLES } from '../sim/gear';
 import { CallingCard, LevelBadge } from './ProfilePanel';
+import { isClassroom, say } from '../game/words';
 import { inkOn } from './ink';
 import { HeadshotIcon } from './icons';
 
@@ -208,7 +209,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           <div className="kc-bar kc-top" />
           <div className="kc-bar kc-bottom" />
           <div className="kc-label">
-            <b>KILLCAM</b>
+            <b>{say('KILLCAM')}</b>
             <span>
               <i style={{ color: hud.killcam.color }}>{hud.killcam.killer}</i> · {hud.killcam.weapon}
             </span>
@@ -228,10 +229,10 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
       )}
       {!hud.alive && !watching && !hud.spectator && hud.phase !== 'over' && !hud.killcam && (
         <div className="dead">
-          <h2>You died</h2>
+          <h2>{isClassroom() ? 'Tagged out' : 'You died'}</h2>
           {hud.killedBy && (
             <div className="killed-by">
-              <span>Killed by</span>
+              <span>{say('Killed by')}</span>
               <CallingCard card={hud.killedBy.card} emblem={hud.killedBy.emblem} name={hud.killedBy.name} level={hud.killedBy.level} title={hud.killedBy.title} frame={hud.killedBy.frame} prestige={hud.killedBy.prestige} />
               <small>
                 {hud.killedBy.weapon}
@@ -278,7 +279,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         </div>
         {LEADERBOARD_MODES.has(hud.mode) && (
           <div className="leaderboard">
-            <div className="lb-title">Kills</div>
+            <div className="lb-title">{say('Kills')}</div>
             {top.map((p, i) => (
               <div key={p.id} className={`lb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'}`}>
                 <span className="rank">{i + 1}</span>
