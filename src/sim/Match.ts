@@ -2,7 +2,7 @@ import { BOT_STYLES, STYLE_KIT, isHuman, setLoadout, type Agent, type Control, t
 import type { ArenaLayout, Point } from './Arena';
 import { SIM } from './config';
 import { FpsSim, type DamageRule, type PlayerInput, type Rally } from './FpsSim';
-import { classicLayout, randomLayout, rangeLayout } from './layouts';
+import { classicLayout, COURSE, courseLayout, randomLayout, rangeLayout } from './layouts';
 import { yawTo } from './math';
 import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, PRIMARIES, SECONDARIES, WEAPONS, type WeaponId } from './weapons';
 import { DEFAULT_STREAKS, normalizeStreaks, streakDef, type StreakId } from './killstreaks';
@@ -54,7 +54,11 @@ export type ModeId =
   | 'br_duos'
   | 'br_trios'
   | 'paintball'
-  | 'boss';
+  | 'boss'
+  | 'course'
+  | 'race'
+  | 'tag'
+  | 'dodgeball';
 
 export interface ModeDef {
   id: ModeId;
@@ -75,6 +79,7 @@ export interface ModeDef {
 export const MODES: ModeDef[] = [
   { id: 'training', name: 'Training Range', blurb: 'Target dummies at 10, 25 and 45 m, some strafing. Nobody shoots back. B tries the next gun, or the next pistol while holding your sidearm.', players: 1, teams: true, group: 'Practice' },
   { id: 'aimtrainer', name: 'Aim Trainer', blurb: '60 seconds: targets appear around the range, and each one you drop pops up somewhere else. Beat your best score.', players: 1, teams: true, group: 'Practice' },
+  { id: 'course', name: 'Movement Course', blurb: 'A timed parkour run: steps, gap jumps, a beam, stepping stones and a tower. Don’t touch the ground. Beat your best time.', players: 1, teams: true, group: 'Practice' },
   { id: 'freeroam', name: 'Free Roam', blurb: 'A big random map with nobody hunting you. Explore, practise movement, try guns and pistols (B). Bring friends online.', players: 1, teams: true, group: 'Practice' },
   { id: 'tdm', name: 'Team Deathmatch', blurb: '5v5 with respawns. First team to 40 kills.', players: 10, teams: true, group: 'Team' },
   { id: 'kc', name: 'Kill Confirmed', blurb: "5v5. A kill only counts when someone grabs the dog tags. Grab your team's tags to deny. First to 30.", players: 10, teams: true, group: 'Team' },
@@ -97,6 +102,9 @@ export const MODES: ModeDef[] = [
   { id: 'lowgrav', name: 'Low Gravity', blurb: 'Free-for-all with moon jumps. First to 20.', players: 8, teams: false, group: 'Party' },
   { id: 'bighead', name: 'Big Heads', blurb: 'Huge heads, huge headshot hitboxes. First to 20.', players: 8, teams: false, group: 'Party' },
   { id: 'friends_ffa', name: 'Friends Free-for-all', blurb: 'Just you and your friends, no computer players. First to 25.', players: 2, teams: false, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'race', name: 'Race', blurb: 'Everyone on the movement course at once. Jumps, gaps, a beam and a tower: first across the finish wins. Fall and you go back to your last checkpoint.', players: 2, teams: false, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'tag', name: 'Tag', blurb: 'One player is IT. Hit someone with your melee to pass it on (no tag-backs for 2 s). After 2½ minutes, whoever was IT for the least time wins.', players: 2, teams: false, group: 'Online only', humansOnly: true, minPlayers: 2 },
+  { id: 'dodgeball', name: 'Dodgeball', blurb: 'Two teams, unlimited balls, one hit and you’re out for the round. Throw with your lethal key. First team to 3 rounds.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
   { id: 'friends_tdm', name: 'Friends Team Deathmatch', blurb: 'Friends split into two teams, no computer players. First team to 30.', players: 2, teams: true, group: 'Online only', humansOnly: true, minPlayers: 2 },
   { id: 'hideseek', name: 'Hide & Seek', blurb: 'Seekers are blindfolded for 20 s while everyone hides. Found hiders join the seekers. Hiders win if anyone lasts 3 minutes.', players: 3, teams: true, group: 'Online only', humansOnly: true, minPlayers: 3 },
   { id: 'potato', name: 'Hot Potato', blurb: 'One player holds a ticking bomb and passes it on with a knife hit. Holding it when it blows = out. Last one standing wins.', players: 3, teams: false, group: 'Online only', humansOnly: true, minPlayers: 3 },
@@ -190,6 +198,8 @@ export type MatchNotice =
   | { kind: 'jugg'; agent: number }
   | { kind: 'sharp'; weapon: WeaponId }
   | { kind: 'potato'; holder: number; from: number }
+  | { kind: 'tagit'; holder: number; from: number }
+  | { kind: 'course'; agent: number; checkpoint: number; name: string; finished: boolean; time: number }
   | { kind: 'frozen'; agent: number; by: number }
   | { kind: 'thawed'; agent: number; by: number[] }
   | { kind: 'vip'; agent: number; team: number }
@@ -238,6 +248,7 @@ export const TARGETS: Partial<Record<ModeId, number>> = {
   tdm: 40,
   kc: 30,
   dom: 150,
+  dodgeball: 3,
   ctf: 3,
   koth: 60,
   ffa: 20,
@@ -298,7 +309,12 @@ const RESPAWN_MODES: ModeId[] = [
 ];
 const CRANK_TIME = 30;
 /** Calm modes with no opponents: no matchmaking, XP, camo progress or killcams. */
-export const PRACTICE_MODES: ModeId[] = ['training', 'aimtrainer', 'freeroam'];
+/** Tag lasts this long (seconds). */
+const TAG_TIME = 150;
+/** The rules run every 6 sim ticks. */
+const RULE_DT = 6 / 60;
+
+export const PRACTICE_MODES: ModeId[] = ['training', 'aimtrainer', 'freeroam', 'course'];
 const AIM_TIME = 60;
 /** Battle-royale squad sizes. */
 const SQUAD_SIZE: Partial<Record<ModeId, number>> = { br_duos: 2, br_trios: 3 };
@@ -379,6 +395,8 @@ export class Match {
     holder: -1,
     explodeAt: 0,
     passCd: 0,
+    /** Tag: who was IT before (they can't be tagged straight back). */
+    lastIt: -1,
     nextBomb: 3,
     hideRelease: -1,
     /** Search & Destroy. */
@@ -395,6 +413,10 @@ export class Match {
       plantedAt: 0,
       roundStart: 0
     },
+    /** Movement course and Race: checkpoint reached, start and finish times, by agent id. */
+    course: { cp: {} as Record<number, number>, started: {} as Record<number, number>, finished: {} as Record<number, number>, falls: {} as Record<number, number> },
+    /** Tag: seconds each player has been IT. */
+    itTime: {} as Record<number, number>,
     /** Freeze tag: thaw progress by agent id. */
     thaw: {} as Record<number, number>,
     /** Kill order: VIP agent per team (-1 = being chosen). */
@@ -452,6 +474,12 @@ export class Match {
     const layout: ArenaLayout =
       mode === 'training' || mode === 'aimtrainer'
         ? rangeLayout()
+        : mode === 'course' || mode === 'race'
+          ? courseLayout()
+          : mode === 'tag'
+            ? randomLayout(seed, 30)
+            : mode === 'dodgeball'
+              ? randomLayout(seed, 24)
         : mode === 'freeroam'
           ? randomLayout(seed, 70)
           : mode === 'boss'
@@ -468,7 +496,7 @@ export class Match {
     const diff = opts.skill ?? DIFFICULTY[opts.difficulty];
     const rules = opts.rules ?? DEFAULT_RULES;
     this.targetMul = rules.score;
-    const damageRule: DamageRule = mode === 'headshot' ? 'headshot' : mode === 'instagib' || mode === 'oitc' ? 'instagib' : mode === 'potato' ? 'none' : 'normal';
+    const damageRule: DamageRule = mode === 'headshot' ? 'headshot' : mode === 'instagib' || mode === 'oitc' ? 'instagib' : mode === 'potato' || mode === 'course' || mode === 'race' || mode === 'tag' ? 'none' : 'normal';
     this.sim = new FpsSim({
       seed,
       layout,
@@ -562,7 +590,7 @@ export class Match {
     for (const a of sim.agents) {
       if (mode === 'gungame') setLoadout(a, [GUN_GAME_LADDER[0]]);
       else if (mode === 'snipers') setLoadout(a, ['sniper', 'pistol']);
-      else if (mode === 'knife' || mode === 'potato' || mode === 'hideseek') {
+      else if (mode === 'knife' || mode === 'potato' || mode === 'hideseek' || mode === 'course' || mode === 'race' || mode === 'tag' || mode === 'dodgeball') {
         setLoadout(a, ['knife']);
         a.grenades = 0;
       } else if (mode === 'oitc') {
@@ -588,9 +616,10 @@ export class Match {
         a.tactical = opts.tactical ?? 'flash';
         a.perks = normalizePerks(opts.perks);
       } else this.randomGear(a);
-      const noThrows = mode === 'knife' || mode === 'oitc' || mode === 'potato' || mode === 'hideseek' || mode === 'paintball';
+      const noThrows = mode === 'knife' || mode === 'oitc' || mode === 'potato' || mode === 'hideseek' || mode === 'paintball' || mode === 'course' || mode === 'race' || mode === 'tag';
+      if (mode === 'dodgeball') a.lethal = 'ball';
       a.grenades = noThrows ? 0 : THROWABLES[a.lethal].count;
-      a.tacticals = noThrows ? 0 : THROWABLES[a.tactical].count;
+      a.tacticals = noThrows || mode === 'dodgeball' ? 0 : THROWABLES[a.tactical].count;
     }
     // Matchmade lobbies (not online rooms): the odd smurf, and now and then a squad of friends queued together.
     if (!opts.rules && !this.def.humansOnly && !PRACTICE_MODES.includes(mode)) {
@@ -765,6 +794,28 @@ export class Match {
       case 'hideseek':
         this.announce(`Hide! Seekers are picked in a moment`);
         break;
+      case 'course':
+        this.announce('Go! Don’t touch the ground');
+        break;
+      case 'race':
+        this.announce('Race to the finish!');
+        break;
+      case 'dodgeball':
+        this.announce('Dodgeball! One hit and you’re out');
+        break;
+      case 'tag':
+        sim.onMeleeHit = (a, b) => {
+          // IT passes on with a hit; no tag-backs for 2 s.
+          if (a.id === this.party.holder && sim.time > this.party.passCd && b.id !== this.party.lastIt) {
+            this.party.lastIt = a.id;
+            this.party.holder = b.id;
+            this.party.passCd = sim.time + 2;
+            this.notices.push({ kind: 'tagit', holder: b.id, from: a.id });
+          }
+          return true;
+        };
+        this.announce('Tag! Don’t be IT');
+        break;
       case 'potato':
         sim.onMeleeHit = (a, b) => {
           if (a.id === this.party.holder && sim.time > this.party.passCd) {
@@ -876,6 +927,18 @@ export class Match {
         this.rulesDefender();
         break;
       case 'gunfight':
+        this.rulesRounds();
+        break;
+      case 'course':
+      case 'race':
+        this.rulesCourse();
+        break;
+      case 'tag':
+        this.rulesTag();
+        break;
+      case 'dodgeball':
+        // Balls never run out.
+        for (const a of this.sim.agents) if (a.alive) a.grenades = 99;
         this.rulesRounds();
         break;
       case 'training':
@@ -1371,6 +1434,66 @@ export class Match {
     a.grenades = 0;
   }
 
+  /** Movement course and Race: checkpoints, falls back to the last one, and the finish. */
+  private rulesCourse(): void {
+    const sim = this.sim;
+    const c = this.party.course;
+    const inBox = (a: Agent, b: { minX: number; maxX: number; minZ: number; maxZ: number }) => a.x >= b.minX && a.x <= b.maxX && a.z >= b.minZ && a.z <= b.maxZ;
+    for (const a of sim.agents) {
+      if (!a.alive || c.finished[a.id] !== undefined) continue;
+      const cp = c.cp[a.id] ?? 0;
+      // The clock starts when you leave the start pad.
+      if (c.started[a.id] === undefined && !inBox(a, COURSE.start)) c.started[a.id] = sim.time;
+      for (let i = cp + 1; i < COURSE.checkpoints.length; i++) {
+        const k = COURSE.checkpoints[i];
+        if (Math.hypot(a.x - k.x, a.z - k.z) < 3.2 && a.y >= k.h - 0.4) {
+          c.cp[a.id] = i;
+          this.notices.push({ kind: 'course', agent: a.id, checkpoint: i, name: k.name, finished: false, time: sim.time - (c.started[a.id] ?? sim.time) });
+        }
+      }
+      if (inBox(a, COURSE.finish) && a.onGround) {
+        const time = sim.time - (c.started[a.id] ?? sim.time);
+        c.finished[a.id] = time;
+        this.notices.push({ kind: 'course', agent: a.id, checkpoint: COURSE.checkpoints.length, name: 'Finish', finished: true, time });
+        if (this.mode === 'race' || a === this.player) {
+          this.finish(a === this.player, 0, a.team);
+          return;
+        }
+        continue;
+      }
+      // Touching the ground anywhere but the start: back to the last checkpoint.
+      if (a.onGround && a.y < 0.2 && !inBox(a, COURSE.start)) {
+        const k = COURSE.checkpoints[c.cp[a.id] ?? 0];
+        a.x = k.x;
+        a.z = k.z;
+        a.y = k.h + 0.05;
+        a.vx = a.vz = a.vy = 0;
+        c.falls[a.id] = (c.falls[a.id] ?? 0) + 1;
+      }
+    }
+  }
+
+  /** Tag: someone is always IT; time as IT counts against you. */
+  private rulesTag(): void {
+    const sim = this.sim;
+    const p = this.party;
+    const alive = sim.agents.filter((a) => a.alive);
+    if (alive.length < 2) return;
+    if (p.holder < 0 || !sim.agents[p.holder]?.alive) {
+      const h = alive[sim.rng.int(alive.length)];
+      p.holder = h.id;
+      p.passCd = sim.time + 2;
+      this.notices.push({ kind: 'tagit', holder: h.id, from: -1 });
+    }
+    p.itTime[p.holder] = (p.itTime[p.holder] ?? 0) + RULE_DT;
+    // IT runs a little faster, so it can always catch up.
+    for (const a of alive) a.speedMul = a.id === p.holder ? 1.12 : 1;
+    if (sim.time - this.startTime >= TAG_TIME) {
+      const best = alive.slice().sort((a, b) => (p.itTime[a.id] ?? 0) - (p.itTime[b.id] ?? 0))[0];
+      this.finish(best === this.player, 0, best.team);
+    }
+  }
+
   private rulesPotato(): void {
     const sim = this.sim;
     const p = this.party;
@@ -1487,6 +1610,26 @@ export class Match {
         if (p.hideRelease < 0) return 'Picking seekers…';
         if (sim.time < p.hideRelease) return `${me.team === 1 ? 'You are seeking' : 'Hide!'} · seekers released in ${sec(p.hideRelease - sim.time)}`;
         return `${me.team === 1 ? 'Find the hiders' : 'Stay hidden'} · ${this.scores[0]} hiders left · ${sec(p.hideRelease + SEEK_TIME - sim.time)}`;
+      case 'course':
+      case 'race': {
+        const c = p.course;
+        const cp = c.cp[me.id] ?? 0;
+        const t = c.finished[me.id] ?? (c.started[me.id] !== undefined ? sim.time - c.started[me.id] : 0);
+        const run = `${t.toFixed(1)} s · checkpoint ${cp}/${COURSE.checkpoints.length - 1} · falls ${c.falls[me.id] ?? 0}`;
+        if (this.mode === 'course') return `${run} · don’t touch the ground`;
+        // Race: places by finish, then checkpoint.
+        const order = sim.agents
+          .filter((a) => !a.dummy)
+          .sort((a, b) => (c.finished[a.id] ?? 1e9) - (c.finished[b.id] ?? 1e9) || (c.cp[b.id] ?? 0) - (c.cp[a.id] ?? 0));
+        return `Place ${order.findIndex((a) => a.id === me.id) + 1} of ${order.length} · ${run}`;
+      }
+      case 'tag': {
+        const h = sim.agents[p.holder];
+        const mine = Math.round(p.itTime[me.id] ?? 0);
+        const left = sec(TAG_TIME - (sim.time - this.startTime));
+        if (!h) return `Picking who's IT… · ${left}`;
+        return `${h.id === me.id ? "YOU'RE IT · hit someone!" : `${nameOf(h.id)} is IT`} · your IT time ${mine}s · ${left} left`;
+      }
       case 'potato': {
         const h = sim.agents[p.holder];
         if (!h || p.holder < 0) return 'Next bomb incoming…';

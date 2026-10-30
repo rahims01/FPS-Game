@@ -41,6 +41,7 @@ const DEATH_PUSH: Record<string, number> = {
   molotov: 1.5,
   tknife: 2.8,
   spear: 4.5,
+  ball: 3,
   grenade: 5.5,
   airstrike: 6.5,
   zone: 0

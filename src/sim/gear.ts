@@ -2,7 +2,7 @@
  * Equipment beyond guns: throwables (one lethal, one tactical per loadout)
  * and perks (pick three). Shared by the simulation and the loadout menu.
  */
-export type ThrowableId = 'frag' | 'molotov' | 'tknife' | 'spear' | 'flash' | 'smoke';
+export type ThrowableId = 'frag' | 'molotov' | 'tknife' | 'spear' | 'flash' | 'smoke' | 'ball';
 
 export interface ThrowableDef {
   id: ThrowableId;
@@ -21,7 +21,9 @@ export const THROWABLES: Record<ThrowableId, ThrowableDef> = {
   tknife: { id: 'tknife', name: 'Throwing Knife', slot: 'lethal', count: 2, speed: 32, blurb: 'A fast, flat throw. One hit kills, and it sticks.' },
   spear: { id: 'spear', name: 'Spear', slot: 'lethal', count: 1, speed: 25, blurb: 'Heavy and slow with a big arc. Pins whoever it hits.' },
   flash: { id: 'flash', name: 'Flashbang', slot: 'tactical', count: 2, speed: 18, blurb: 'Blinds anyone looking at it for a few seconds.' },
-  smoke: { id: 'smoke', name: 'Smoke Grenade', slot: 'tactical', count: 1, speed: 16, blurb: 'A thick cloud for 14 s that nobody can see through.' }
+  smoke: { id: 'smoke', name: 'Smoke Grenade', slot: 'tactical', count: 1, speed: 16, blurb: 'A thick cloud for 14 s that nobody can see through.' },
+  // Dodgeball only (never in the loadout lists).
+  ball: { id: 'ball', name: 'Dodgeball', slot: 'lethal', count: 99, speed: 21, blurb: 'One hit and they are out.' }
 };
 
 export const LETHALS: ThrowableId[] = ['frag', 'molotov', 'tknife', 'spear'];

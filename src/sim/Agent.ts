@@ -11,7 +11,7 @@ export const A: Record<ActionName, number> = Object.fromEntries(ACTIONS.map((n, 
 /** Who chooses a bot's actions. 'external' means the caller sets agent.action (training). */
 export type Control = 'player' | 'remote' | 'heuristic' | 'learned' | 'external';
 
-export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone' | 'molotov' | 'tknife' | 'spear';
+export type DeathCause = WeaponId | 'grenade' | 'airstrike' | 'zone' | 'molotov' | 'tknife' | 'spear' | 'ball';
 
 /**
  * Bot personalities. They share the learned tactics but differ in how they

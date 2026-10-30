@@ -9,6 +9,7 @@ const tin = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.5, me
 const smokeCan = new THREE.MeshStandardMaterial({ color: 0x5a6168, roughness: 0.6, metalness: 0.4 });
 const bottle = new THREE.MeshStandardMaterial({ color: 0x3a7a3a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
 const rag = new THREE.MeshStandardMaterial({ color: 0xffb04a, emissive: 0xff5a00, emissiveIntensity: 1.5 });
+const rubber = new THREE.MeshStandardMaterial({ color: 0xd8322d, roughness: 0.55 });
 
 /**
  * A throwable, pointing along +Y (tip first for knives and spears). Used in
@@ -47,6 +48,9 @@ export const thrownModel = (kind: ThrowableId): THREE.Group => {
     case 'smoke':
       add(new THREE.CylinderGeometry(0.035, 0.035, 0.13, 10), smokeCan, 0);
       add(new THREE.BoxGeometry(0.02, 0.03, 0.04), grip, 0.08);
+      break;
+    case 'ball':
+      add(new THREE.SphereGeometry(0.11, 14, 10), rubber, 0);
       break;
     default: {
       const body = add(new THREE.SphereGeometry(0.06, 10, 8), olive, 0);

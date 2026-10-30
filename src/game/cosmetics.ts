@@ -204,7 +204,8 @@ export type StatKey =
   | 'crouchKnives'
   | 'lastBullet'
   | 'nightOwl'
-  | 'earlyBird';
+  | 'earlyBird'
+  | 'courseBest';
 
 export interface ProfileLike {
   xp: number;

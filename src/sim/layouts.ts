@@ -263,3 +263,73 @@ export const rangeLayout = (): ArenaLayout => ({
     [{ x: 0, z: 25 }]
   ]
 });
+
+/**
+ * The movement course (and Race): a raised route over open ground that counts
+ * as a fall. Steps up, gap jumps, a narrow beam, stepping stones, a tower
+ * climb and a long drop-jump, then down to the finish. Jumps are sized for
+ * the soldier's jump (about 1.2 m up, about 4.5 m across at a sprint).
+ */
+export interface CourseCheckpoint {
+  x: number;
+  z: number;
+  /** Height of the platform you stand on there. */
+  h: number;
+  name: string;
+}
+export const COURSE = {
+  start: { minX: -8, maxX: 8, minZ: -60, maxZ: -44.4 },
+  finish: { minX: -8, maxX: 8, minZ: 62.5, maxZ: 69 },
+  checkpoints: [
+    { x: 0, z: -52, h: 0, name: 'Start' },
+    { x: 0, z: -14, h: 2.4, name: 'Checkpoint 1' },
+    { x: 0, z: 6, h: 2.4, name: 'Checkpoint 2' },
+    { x: 0, z: 25, h: 2.4, name: 'Checkpoint 3' },
+    { x: 0, z: 45, h: 4.8, name: 'Checkpoint 4' }
+  ] as CourseCheckpoint[]
+};
+
+export const courseLayout = (): ArenaLayout => ({
+  name: 'Movement Course',
+  half: 70,
+  boxes: [
+    ...perimeter(70),
+    // Steps up.
+    box(0, -43, 4, 3, 0.8, 'crate'),
+    box(0, -39.5, 4, 3, 1.6, 'crate'),
+    box(0, -36, 4, 3, 2.4, 'crate'),
+    // Gap jumps: 2 m, 2.5 m, 3 m.
+    box(0, -31, 4, 3, 2.4, 'crate'),
+    box(0, -25.5, 4, 3, 2.4, 'crate'),
+    box(0, -19.5, 4, 3, 2.4, 'crate'),
+    // Checkpoint 1.
+    box(0, -14, 6, 6, 2.4, 'crate'),
+    // The beam.
+    box(0, -4, 0.7, 14, 2.4, 'wall'),
+    // Checkpoint 2.
+    box(0, 6, 6, 6, 2.4, 'crate'),
+    // Stepping stones, zig-zag.
+    box(3, 11.5, 2, 2, 2.4, 'pillar'),
+    box(0, 14.5, 2, 2, 2.4, 'pillar'),
+    box(3, 17.5, 2, 2, 2.4, 'pillar'),
+    box(0, 20.5, 2, 2, 2.4, 'pillar'),
+    // Checkpoint 3.
+    box(0, 25, 6, 6, 2.4, 'crate'),
+    // Tower climb.
+    box(0, 30, 4, 2, 3.2, 'wall'),
+    box(0, 32, 4, 2, 4.0, 'wall'),
+    box(0, 34, 4, 2, 4.8, 'wall'),
+    box(0, 39.5, 4, 9, 4.8, 'crate'),
+    // Checkpoint 4, then the long drop-jump.
+    box(0, 45, 6, 3, 4.8, 'crate'),
+    box(0, 52.5, 6, 4, 3.6, 'crate'),
+    // Down to the finish.
+    box(0, 56.5, 4, 2, 2.6, 'crate'),
+    box(0, 59, 4, 3, 1.4, 'crate')
+  ],
+  spawns: [-4, -2, 0, 2, 4, -6, 6, -3].map((x, i) => ({ x, z: -52 - (i % 2) * 2 })),
+  teamSpawns: [
+    [-4, -2, 0, 2, 4, -6, 6, -3].map((x, i) => ({ x, z: -52 - (i % 2) * 2 })),
+    [-4, -2, 0, 2, 4, -6, 6, -3].map((x, i) => ({ x, z: -50 - (i % 2) * 2 }))
+  ]
+});

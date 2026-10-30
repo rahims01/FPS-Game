@@ -27,6 +27,7 @@ import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
 import { assignIdentities, basePingFor, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { botFriendByName, botFriends } from './botFriends';
+import { COURSE } from '../sim/layouts';
 import { account, eventOn } from '../net/account';
 import { say, setClassroom } from './words';
 import { wrapAngle, yawTo } from '../sim/math';
@@ -278,7 +279,7 @@ const KILLCAM_DELAY = 0.9;
 
 const causeName = (c: DeathCause): string =>
   c === 'grenade' ? 'Frag Grenade' : c === 'airstrike' ? 'Airstrike' : c === 'zone' ? 'The Zone' : WEAPONS[c as WeaponId]?.name ?? c;
-const causeTag = (c: DeathCause): string => (c === 'grenade' ? 'FRAG' : c === 'airstrike' ? 'AIRSTRIKE' : c === 'zone' ? 'ZONE' : WEAPONS[c as WeaponId]?.tag ?? '');
+const causeTag = (c: DeathCause): string => (c === 'grenade' ? 'FRAG' : c === 'airstrike' ? 'AIRSTRIKE' : c === 'zone' ? 'ZONE' : c === 'ball' ? 'BALL' : WEAPONS[c as WeaponId]?.tag ?? '');
 
 const CORPSE_SECONDS = 25;
 
@@ -600,6 +601,7 @@ export class Game {
     this.yaw = this.match.player.yaw;
     if (this.ids.teamColors) this.arenaView.teamColors = this.ids.teamColors;
     if (this.night) this.setupNight();
+    if (this.match.mode === 'course' || this.match.mode === 'race') this.addCourseMarks();
     this.viewmodel.charm = settings.cosmetics.charm;
 
     this.onResize();
@@ -1328,6 +1330,8 @@ export class Game {
         if (killer === player && victim !== player && !this.spectator && !this.practice) this.awardKill(e, victim);
         if (killer && !this.firstBlood) this.firstBlood = true;
         this.capRagdolls();
+      } else if (e.type === 'stick' && e.kind === 'ball') {
+        this.effects.puff(new THREE.Vector3(e.x, e.y, e.z));
       } else if (e.type === 'stick') {
         const at = new THREE.Vector3(e.x, e.y, e.z);
         const dir = new THREE.Vector3(e.dx, e.dy, e.dz);
@@ -1464,6 +1468,36 @@ export class Game {
       deaths: a.deaths,
       mode: this.match.def.name
     };
+  }
+
+  /** Movement course: the ground glows red (touch it and you go back), the start and finish pads green, and a beacon on each checkpoint. */
+  private addCourseMarks(): void {
+    const H = this.match.sim.arena.half;
+    const flat = (w: number, d: number, color: number, opacity: number, x: number, z: number, y: number) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, y, z);
+      m.renderOrder = 1;
+      this.scene.add(m);
+    };
+    flat(H * 2, H * 2, 0xd32f3a, 0.35, 0, 0, 0.02);
+    for (const b of [COURSE.start, COURSE.finish]) flat(b.maxX - b.minX, b.maxZ - b.minZ, 0x45d483, 0.55, (b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2, 0.03);
+    for (const k of COURSE.checkpoints.slice(1)) {
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6, 8), new THREE.MeshBasicMaterial({ color: 0x5aa0ff, transparent: true, opacity: 0.6 }));
+      beam.position.set(k.x + 2.4, k.h + 3, k.z);
+      this.scene.add(beam);
+    }
+  }
+
+  /** Movement course: keep the best time (and say if it's a new one). */
+  private courseBest(time: number): void {
+    const prof = loadProfile();
+    const best = prof.stats.courseBest ?? 0;
+    if (!best || time < best) {
+      prof.stats.courseBest = Math.round(time * 100) / 100;
+      saveProfile(prof);
+      this.callout(best ? `New best! (was ${best.toFixed(2)} s)` : 'Best time set');
+    }
   }
 
   /** Names of everyone in the match (for bot friends' after-match messages). */
@@ -2117,6 +2151,24 @@ export class Game {
       } else if (n.kind === 'sharp') {
         this.callout(`New weapon: ${WEAPONS[n.weapon].name}`);
         this.audio.weaponSwitch();
+      } else if (n.kind === 'tagit') {
+        if (n.holder === me) {
+          this.callout(n.from >= 0 ? `${this.nameOf(n.from)} tagged you. YOU'RE IT!` : "YOU'RE IT! Hit someone to pass it on");
+          this.audio.whistle();
+        } else if (n.from === me) this.callout(`Tagged ${this.nameOf(n.holder)}! Run!`);
+        else this.callout(`${this.nameOf(n.holder)} is IT`);
+      } else if (n.kind === 'course') {
+        if (n.agent === me) {
+          const t = `${n.time.toFixed(2)} s`;
+          if (n.finished) {
+            this.callout(`Finished in ${t}`);
+            this.audio.fanfare();
+            if (m.mode === 'course') this.courseBest(n.time);
+          } else {
+            this.callout(`${n.name} · ${t}`);
+            this.audio.medal();
+          }
+        } else if (n.finished) this.callout(`${this.nameOf(n.agent)} finished in ${n.time.toFixed(2)} s`);
       } else if (n.kind === 'potato') {
         if (n.holder === me) {
           this.callout('YOU HAVE THE BOMB! Knife someone to pass it!');

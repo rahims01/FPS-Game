@@ -411,6 +411,14 @@ export class Effects {
     this.decal(new THREE.Vector3(p.x, 0.012, p.z), new THREE.Vector3(0, 1, 0), this.scorchMat, 30 * k);
   }
 
+  /** A soft dust puff (a dodgeball landing). */
+  puff(p: THREE.Vector3): void {
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.emit(p.x, p.y, p.z, Math.cos(a) * 1.2, 0.5 + Math.random(), Math.sin(a) * 1.2, 0.75, 0.72, 0.66, 0.3 + Math.random() * 0.2, 4);
+    }
+  }
+
   /** A pool of blood spreading out under a body (y = the ground it lies on). */
   bloodPool(x: number, y: number, z: number): void {
     if (!this.bloodOn) return;

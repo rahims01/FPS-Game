@@ -758,11 +758,11 @@ export class FpsSim {
     if (slot === 'lethal' ? a.grenades <= 0 : a.tacticals <= 0) return false;
     if (slot === 'lethal') a.grenades--;
     else a.tacticals--;
-    a.grenadeCd = kind === 'tknife' ? 0.5 : 1;
+    a.grenadeCd = kind === 'tknife' ? 0.5 : kind === 'ball' ? 0.55 : 1;
     a.protectedUntil = 0;
     const def = THROWABLES[kind];
     const v = speed ?? def.speed;
-    const lift = kind === 'tknife' ? 0.02 : kind === 'spear' ? 0.06 : 0.12;
+    const lift = kind === 'tknife' ? 0.02 : kind === 'spear' ? 0.06 : kind === 'ball' ? 0.05 : 0.12;
     const p = pitch + lift;
     const cp = Math.cos(p);
     const ey = a.y + eyeHeight(a) - 0.1;
@@ -772,7 +772,7 @@ export class FpsSim {
       y: ey,
       z: a.z + Math.cos(yaw) * 0.4,
       vx: Math.sin(yaw) * cp * v + a.vx * 0.5,
-      vy: Math.sin(p) * v + (kind === 'tknife' || kind === 'spear' ? 0.6 : 1.5),
+      vy: Math.sin(p) * v + (kind === 'tknife' || kind === 'spear' || kind === 'ball' ? 0.6 : 1.5),
       vz: Math.cos(yaw) * cp * v + a.vz * 0.5,
       fuse: kind === 'frag' ? GRENADE_FUSE : kind === 'flash' ? 1.5 : kind === 'smoke' ? 1.6 : 4,
       kind
@@ -810,7 +810,7 @@ export class FpsSim {
       const hy = py + uy * best;
       const hz = pz + uz * best;
       this.emit({ type: 'stick', target: victim.id, kind: g.kind, region, x: hx, y: hy, z: hz, dx: ux, dy: uy, dz: uz });
-      const dmg = this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' && region !== 'head' ? 0 : g.kind === 'spear' ? 260 : 160;
+      const dmg = g.kind === 'ball' ? 999 : this.damageRule === 'none' ? 0 : this.damageRule === 'headshot' && region !== 'head' ? 0 : g.kind === 'spear' ? 260 : 160;
       if (owner && dmg > 0) {
         if (region === 'head') owner.headshots++;
         owner.hits++;
@@ -900,8 +900,8 @@ export class FpsSim {
         g.x += g.vx * h;
         g.y += g.vy * h;
         g.z += g.vz * h;
-        // Knives and spears fly until they hit something, and stick in it.
-        if (g.kind === 'tknife' || g.kind === 'spear') {
+        // Knives, spears and dodgeballs fly until they hit something.
+        if (g.kind === 'tknife' || g.kind === 'spear' || g.kind === 'ball') {
           done = this.projectileHit(g, px, py, pz);
           continue;
         }
@@ -936,9 +936,9 @@ export class FpsSim {
         }
       }
       g.fuse -= dt;
-      if (done || (g.kind !== 'tknife' && g.kind !== 'spear' && g.fuse <= 0) || ((g.kind === 'tknife' || g.kind === 'spear') && g.fuse <= 0)) {
+      if (done || g.fuse <= 0) {
         this.grenades.splice(i, 1);
-        if (!done) this.detonate(g);
+        if (!done && g.kind !== 'ball') this.detonate(g);
         continue;
       }
       // A molotov shatters on the first thing it touches.
