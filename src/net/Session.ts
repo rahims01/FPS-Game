@@ -287,7 +287,7 @@ export class HostSession {
       }
       client.profile = { ...msg.profile, name: cleanChat(msg.profile.name.slice(0, 16)) || 'Player', streaks: normalizeStreaks(msg.profile.streaks), perks: normalizePerks(msg.profile.perks) };
       // Late joiners spectate once the mode is full; the host can swap people around.
-      client.playing = this.playingCount < this.slots;
+      client.playing = !msg.profile.spectate && this.playingCount < this.slots;
       this.system(`${client.profile.name} joined`);
       this.broadcastLobby();
       this.onChange?.();
@@ -353,7 +353,7 @@ export class HostSession {
    * Everyone else spectates. The remaining computer players are labelled as
    * bots ("Bot 1", "Bot 2"...) and move like machines.
    */
-  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[], cosmetics: (Cosmetics | null)[] = []): void {
+  begin(match: Match, seed: number, names: string[], colors: number[], teamColors: [number, number] | null, skins: (SkinChoice | null)[], cosmetics: (Cosmetics | null)[] = [], accounts: (string | null)[] = []): void {
     this.match = match;
     this.names = names;
     const sim = match.sim;
@@ -407,6 +407,7 @@ export class HostSession {
       if (a.grenades > 0) a.grenades = THROWABLES[a.lethal].count;
       if (a.tacticals > 0) a.tacticals = THROWABLES[a.tactical].count;
       cosmetics[a.id] = c.profile.cosmetics ?? null;
+      accounts[a.id] = typeof c.profile.account === 'string' ? c.profile.account.slice(0, 16) : null;
       c.agentId = a.id;
       names[a.id] = c.profile.name;
       skins[a.id] = c.profile.skins ?? {};
@@ -440,6 +441,7 @@ export class HostSession {
         skins,
         rules: this.lobby.rules,
         cosmetics,
+        accounts,
         party: this.party,
         night: !!match.opts.night,
         public: this.public

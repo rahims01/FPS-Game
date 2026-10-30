@@ -170,6 +170,8 @@ export interface MatchOptions {
   /** Humans in an online lobby (host included); humans-only modes spawn exactly this many players. */
   humans?: number;
   seed?: number;
+  /** Watch this player (a bot friend) instead of playing: your soldier is played by the computer. */
+  watch?: string;
 }
 
 export type MatchPhase = 'live' | 'roundOver' | 'over';

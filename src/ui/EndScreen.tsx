@@ -8,7 +8,7 @@ import { inkOn } from './ink';
 const acc = (r: ScoreRow) => (r.accuracy < 0 ? '–' : `${r.accuracy}%`);
 const kd = (r: ScoreRow) => (r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2));
 
-const Table = ({ rows, mvp, title, color }: { rows: ScoreRow[]; mvp: number; title?: string; color?: string }) => (
+const Table = ({ rows, mvp, title, color, onPick }: { rows: ScoreRow[]; mvp: number; title?: string; color?: string; onPick?: (id: number) => void }) => (
   <div className="end-table">
     {title && (
       <div className="end-team" style={color ? { background: color, color: inkOn(color) } : undefined}>
@@ -26,7 +26,11 @@ const Table = ({ rows, mvp, title, color }: { rows: ScoreRow[]; mvp: number; tit
       <span>Best</span>
     </div>
     {rows.map((p) => (
-      <div key={p.id} className={`end-row ${p.isPlayer ? 'mine' : ''}`}>
+      <div
+        key={p.id}
+        className={`end-row ${p.isPlayer ? 'mine' : ''} ${onPick ? 'pick' : ''}`}
+        {...(onPick ? { role: 'button', tabIndex: 0, title: `See ${p.name}'s card`, onClick: () => onPick(p.id), onKeyDown: (e: { key: string }) => e.key === 'Enter' && onPick(p.id) } : {})}
+      >
         <span className={`name ${isDark(p.color) ? 'dark' : ''}`} style={{ color: p.color }}>
           <i className="lvl">{p.level}</i>
           {p.emblem && (
@@ -59,7 +63,8 @@ export const EndScreen = ({
   onLobby,
   waitingForHost,
   onMenu,
-  mine
+  mine,
+  onPick
 }: {
   hud: HudState;
   ranked: { delta: number; division: Division; sr: number } | null;
@@ -71,6 +76,8 @@ export const EndScreen = ({
   waitingForHost: boolean;
   onMenu: () => void;
   mine: { card: string; emblem: string; name: string; level: number; title: string; frame: string; prestige: number };
+  /** Opens someone's player card. */
+  onPick?: (id: number) => void;
 }) => {
   const badges = hud.newBadges.map((id) => BADGES.find((b) => b.id === id)).filter((b): b is (typeof BADGES)[number] => !!b);
   const me = hud.players.find((p) => p.isPlayer);
@@ -148,11 +155,11 @@ export const EndScreen = ({
         <div className="end-board">
           {hud.showTeams ? (
             <>
-              <Table rows={hud.players.filter((p) => p.ally)} mvp={hud.mvp} title={hud.spectator ? 'Team 1' : 'Your team'} color={hud.teamColors?.[0]} />
-              <Table rows={hud.players.filter((p) => !p.ally)} mvp={hud.mvp} title={hud.spectator ? 'Team 2' : 'Enemy team'} color={hud.teamColors?.[1]} />
+              <Table rows={hud.players.filter((p) => p.ally)} mvp={hud.mvp} title={hud.spectator ? 'Team 1' : 'Your team'} color={hud.teamColors?.[0]} onPick={onPick} />
+              <Table rows={hud.players.filter((p) => !p.ally)} mvp={hud.mvp} title={hud.spectator ? 'Team 2' : 'Enemy team'} color={hud.teamColors?.[1]} onPick={onPick} />
             </>
           ) : (
-            <Table rows={hud.players} mvp={hud.mvp} />
+            <Table rows={hud.players} mvp={hud.mvp} onPick={onPick} />
           )}
         </div>
         <div className="row">

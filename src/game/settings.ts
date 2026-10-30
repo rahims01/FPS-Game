@@ -3,6 +3,7 @@ import type { SkinChoice } from '../assets/skins';
 import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstreaks';
 import { DEFAULT_PERKS, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { DEFAULT_COSMETICS, type Cosmetics } from './cosmetics';
+import { localSaved } from './saveHook';
 
 /** Rebindable actions. Any of them can take a key or a mouse button ("Mouse0" = left, "Mouse2" = right). */
 export const KEY_ACTIONS = [
@@ -233,6 +234,7 @@ export const saveSettings = (s: GameSettings): void => {
   } catch {
     /* storage unavailable: settings just won't persist */
   }
+  localSaved();
 };
 
 /** A readable name for a key code ("KeyW" -> "W", "ShiftLeft" -> "L-Shift"). */

@@ -29,7 +29,8 @@ export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', c
  * What a cosmetic needs: free, a player level, a badge, a prestige, a
  * tournament win, or weapon mastery (Diamond on `count` guns, say).
  */
-export type Unlock = { level: number } | { badge: string } | { prestige: number } | { tourney: number } | { mastery: number; count: number } | null;
+/** How something unlocks. `special` items are only ever given (by the admin, a code or an event). */
+export type Unlock = { level: number } | { badge: string } | { prestige: number } | { tourney: number } | { mastery: number; count: number } | { special: string } | null;
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export const RARITY: Record<Rarity, { name: string; color: string }> = {
@@ -197,6 +198,8 @@ export interface ProfileLike {
   duelBestSr?: number;
   duelMatches?: number;
   stats: Partial<Record<StatKey, number>>;
+  /** Items given outright (admin gifts, codes); "*" unlocks everything. */
+  granted?: string[];
 }
 
 export interface BadgeDef {
@@ -266,8 +269,10 @@ export const earned = (b: BadgeDef, p: ProfileLike, level: number): boolean => {
 /** Level unlocks stay unlocked after you prestige. */
 export const effectiveLevel = (p: ProfileLike, level: number): number => ((p.prestige ?? 0) > 0 ? 55 : level);
 
-export const unlocked = (u: Unlock, p: ProfileLike, level: number): boolean => {
+export const unlocked = (u: Unlock, p: ProfileLike, level: number, id?: string): boolean => {
   if (!u) return true;
+  if (p.granted && (p.granted.includes('*') || (id !== undefined && p.granted.includes(id)))) return true;
+  if ('special' in u) return false;
   const lvl = effectiveLevel(p, level);
   if ('level' in u) return lvl >= u.level;
   if ('prestige' in u) return (p.prestige ?? 0) >= u.prestige;
@@ -283,6 +288,7 @@ export const unlockText = (u: Unlock): string => {
   if ('prestige' in u) return `Prestige ${u.prestige}`;
   if ('tourney' in u) return u.tourney === 1 ? 'Win a tournament' : `Win ${u.tourney} tournaments`;
   if ('mastery' in u) return `${MASTERY[u.mastery].name} mastery on ${u.count} guns`;
+  if ('special' in u) return u.special;
   const b = BADGES.find((x) => x.id === u.badge);
   return b ? `Badge: ${b.name}` : '';
 };
@@ -300,6 +306,7 @@ export const randomCosmetics = (level: number, rand: () => number = Math.random,
     if ('prestige' in u) return u.prestige <= prestige;
     if ('tourney' in u) return rand() < 0.04;
     if ('mastery' in u) return level > 40 && rand() < 0.15;
+    if ('special' in u) return false;
     return rand() < 0.2;
   };
   const pick = <T extends { id: string; unlock: Unlock; secret?: boolean }>(list: T[], keepDefault: number): string => {

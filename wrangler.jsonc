@@ -16,9 +16,17 @@
     // Only the API runs the script; everything else is plain static files.
     "run_worker_first": ["/api/*"]
   },
-  // Live player counter. Free plan: Durable Objects must use the SQLite backend.
+  // Live player counter, and accounts (sign-in, cloud saves, friends, admin).
+  // Free plan: Durable Objects must use the SQLite backend.
+  // The admin account is made from two dashboard Secrets: ADMIN_EMAIL and ADMIN_PASSWORD.
   "durable_objects": {
-    "bindings": [{ "name": "PRESENCE", "class_name": "Presence" }]
+    "bindings": [
+      { "name": "PRESENCE", "class_name": "Presence" },
+      { "name": "ACCOUNTS", "class_name": "Accounts" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Presence"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Presence"] },
+    { "tag": "v2", "new_sqlite_classes": ["Accounts"] }
+  ]
 }

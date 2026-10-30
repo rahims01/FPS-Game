@@ -103,7 +103,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           <h3>Calling card</h3>
           <div className="card-grid">
             {CARDS.map((c) => {
-              const ok = unlocked(c.unlock, profile, level);
+              const ok = unlocked(c.unlock, profile, level, c.id);
               const hidden = c.secret && !ok;
               return (
                 <button
@@ -123,7 +123,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           <h3>Title</h3>
           <div className="title-grid">
             {TITLES.map((t) => {
-              const ok = unlocked(t.unlock, profile, level);
+              const ok = unlocked(t.unlock, profile, level, t.id);
               const hidden = t.secret && !ok;
               return (
                 <button
@@ -143,7 +143,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           <h3>Level frame</h3>
           <div className="title-grid">
             {FRAMES.map((f) => {
-              const ok = unlocked(f.unlock, profile, level);
+              const ok = unlocked(f.unlock, profile, level, f.id);
               return (
                 <button
                   key={f.id}
@@ -163,7 +163,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           <h3>Emblem</h3>
           <div className="emblem-grid">
             {EMBLEMS.map((e) => {
-              const ok = unlocked(e.unlock, profile, level);
+              const ok = unlocked(e.unlock, profile, level, e.id);
               const hidden = e.secret && !ok;
               return (
                 <button

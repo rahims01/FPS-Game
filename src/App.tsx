@@ -25,6 +25,16 @@ import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
 import { ControlsList } from './ui/ControlsList';
+import { account, isStaff, setPresenceSource, startAccount, subscribeAccount, type AccountState, type PresenceStatus } from './net/account';
+import { botFriendByName, matchEndedWith, resolveMode, subscribeBotFriends, tickBotFriends, unreadBotMessages, type BotFriend } from './game/botFriends';
+import { bringFriends } from './game/identity';
+import type { PlayerCardData } from './game/Game';
+import { Scoreboard } from './ui/Hud';
+import { AccountPanel } from './ui/AccountPanel';
+import { FriendsPanel } from './ui/FriendsPanel';
+import { PlayerCard, type CardSubject } from './ui/PlayerCard';
+import { AdminPanel } from './ui/AdminPanel';
+import { NewsBar, NoticeBox } from './ui/NewsBar';
 import { ArrowIcon, ExitFullscreenIcon, FullscreenIcon, GearIcon, TrophyIcon } from './ui/icons';
 import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
 import { resetHints } from './game/hints';
@@ -32,7 +42,7 @@ import { loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './g
 import { PadMenus } from './game/gamepad';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' } | { kind: 'tourney' };
-type MenuTab = 'play' | 'loadout' | 'armory' | 'profile' | 'settings';
+type MenuTab = 'play' | 'loadout' | 'armory' | 'profile' | 'friends' | 'settings' | 'admin';
 
 interface LobbyView {
   mode: ModeId;
@@ -172,6 +182,18 @@ export const App = () => {
   const [lobbyNames, setLobbyNames] = useState<string[]>([]);
   const [online, setOnline] = useState(() => playersOnline());
   const [profile, setProfile] = useState<Profile>(loadProfile);
+  // Accounts, friends and player cards.
+  const [acct, setAcct] = useState<AccountState>(account);
+  const [showAccount, setShowAccount] = useState(false);
+  const [card, setCard] = useState<CardSubject | null>(null);
+  const [friendOpen, setFriendOpen] = useState<string | null>(null);
+  const [, setBotTick] = useState(0);
+  /** People from recent matches, by name (so you can add someone you just played with). */
+  const recent = useRef(new Map<string, PlayerCardData>());
+  /** Watch this bot friend in the next match instead of playing. */
+  const watchRef = useRef<string | null>(null);
+  const endHandled = useRef(-1);
+  const presence = useRef<PresenceStatus>({ state: 'menu' });
   const mount = useRef<HTMLDivElement>(null);
   const minimap = useRef<HTMLCanvasElement>(null);
   const game = useRef<Game | null>(null);
@@ -193,6 +215,32 @@ export const App = () => {
     root.classList.toggle('hc', settings.access.highContrast);
     root.classList.toggle('reduce-motion', settings.access.reduceMotion);
   }, [settings]);
+
+  // Accounts: resume the session (or fetch the news), and reload when a cloud save replaces local progress.
+  useEffect(() => {
+    startAccount();
+    setPresenceSource(() => presence.current);
+    const off = subscribeAccount(setAcct);
+    const replaced = () => {
+      setProfile(loadProfile());
+      setSettings((prev) => loadSettings(prev.playerName, prev.playerColor));
+    };
+    window.addEventListener('fps-save-replaced', replaced);
+    return () => {
+      off();
+      window.removeEventListener('fps-save-replaced', replaced);
+    };
+  }, []);
+
+  // Bot friends keep their own hours and answer messages.
+  useEffect(() => {
+    const off = subscribeBotFriends(() => setBotTick((n) => n + 1));
+    const t = window.setInterval(() => tickBotFriends(settings.playerName.trim() || 'you'), 2500);
+    return () => {
+      off();
+      window.clearInterval(t);
+    };
+  }, [settings.playerName]);
 
   // First visit: the menu tour, once the menu (and its targets) are on screen.
   useEffect(() => {
@@ -266,6 +314,7 @@ export const App = () => {
         perks: settings.perks,
         night,
         humans: host ? host.playingCount : 1,
+        ...(watchRef.current && !host ? { watch: watchRef.current } : {}),
         ...(host && !host.party && !host.public ? { rules: host.lobby.rules } : {}),
         ...(ranked && !netRef.current ? { skill: rankedDifficulty(queueStats(loadProfile(), rankedQueue).sr) } : {}),
         // Tournament matches: first to 3 rounds, sharper every round.
@@ -277,6 +326,7 @@ export const App = () => {
       netRef.current
     );
     game.current = g;
+    watchRef.current = null;
     // Auto quality: the match lowered the graphics on a slow device; keep that.
     g.onSettings = (changed) => setSettings((prev) => ({ ...prev, quality: changed.quality, graphics: changed.graphics }));
     // Dev hook for scripts/shot.mjs (headless browsers cannot take pointer lock).
@@ -306,6 +356,39 @@ export const App = () => {
     setProfile(p);
     setRankedResult({ delta, division: divisionOf(p, rankedQueue), sr: queueStats(p, rankedQueue).sr });
   }, [hud, ranked, rankedQueue]);
+
+  useEffect(() => {
+    const g = game.current;
+    if (!hud || hud.phase !== 'over' || !g || endHandled.current === round) return;
+    endHandled.current = round;
+    const names = g.names();
+    const friends: string[] = [];
+    names.forEach((n, id) => {
+      const c = g.cardOf(id);
+      if (!c || c.kind === 'me') return;
+      recent.current.set(n.toLowerCase(), c);
+      const f = botFriendByName(n);
+      if (f?.state === 'friends') friends.push(f.key);
+    });
+    // Keep the most recent 200 people.
+    while (recent.current.size > 200) recent.current.delete(recent.current.keys().next().value!);
+    if (friends.length && !hud.spectator) matchEndedWith(friends, hud.result === 'win', settings.playerName);
+  }, [hud, round, settings.playerName]);
+
+  // Friends see where you are; hosted rooms show up for them (and the admin).
+  presence.current =
+    screen.kind === 'playing'
+      ? { state: 'match', mode, ...(hostRef.current && lobby ? { room: { code: roomCode, mode: lobby.mode, players: lobby.players.length, max: lobby.max, open: !lobby.party } } : {}) }
+      : screen.kind === 'host-lobby' && hostRef.current && lobby
+        ? { state: 'lobby', mode: lobby.mode, room: { code: roomCode, mode: lobby.mode, players: lobby.players.length, max: lobby.max, open: !lobby.party } }
+        : screen.kind === 'join-lobby'
+          ? { state: 'lobby' }
+          : { state: 'menu' };
+
+  const openCardFor = (id: number) => {
+    const c = game.current?.cardOf(id);
+    if (c) setCard({ from: 'match', data: c });
+  };
 
   const addChat = useCallback((m: ChatMsg) => {
     setChat((c) => [...c.slice(-80), { id: chatId++, name: m.name, color: m.color, text: m.text, system: m.system, at: Date.now() }]);
@@ -371,6 +454,32 @@ export const App = () => {
     setRound((r) => r + 1);
     if (!PRACTICE_MODES.includes(mode)) seek(mode);
   };
+  /** A bot friend joins you (they take the first seat on your side). */
+  const playWithFriend = (f: BotFriend, modeText: string) => {
+    const m = resolveMode(modeText);
+    audio.unlock();
+    stopSeeking();
+    bringFriends([f.name]);
+    setRanked(false);
+    tourneyMatch.current = false;
+    setMode(m);
+    setTab('play');
+    setScreen({ kind: PRACTICE_MODES.includes(m) ? 'playing' : 'finding' });
+    setRound((n) => n + 1);
+  };
+  /** Watch a bot friend's match as a spectator. */
+  const watchFriend = (f: BotFriend, modeText: string) => {
+    audio.unlock();
+    stopSeeking();
+    bringFriends([f.name]);
+    watchRef.current = f.name;
+    setRanked(false);
+    tourneyMatch.current = false;
+    setMode(resolveMode(modeText));
+    setScreen({ kind: 'playing' });
+    setRound((n) => n + 1);
+  };
+
   const playRanked = (q: RankedQueue) => {
     audio.unlock();
     stopSeeking();
@@ -467,7 +576,8 @@ export const App = () => {
     perks: settings.perks,
     lethal: settings.lethal,
     tactical: settings.tactical,
-    cosmetics: { ...settings.cosmetics, prestige: profile.prestige }
+    cosmetics: { ...settings.cosmetics, prestige: profile.prestige },
+    account: account().user?.name ?? null
   });
 
   const lobbyFrom = (s: HostSession): LobbyView => ({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules, party: s.party });
@@ -562,20 +672,23 @@ export const App = () => {
     };
   };
 
-  const joinGame = async () => {
+  const joinGame = () => joinRoom(joinCode);
+  /** Joins a room by code: from the code box, a friend's Join button, or Watch (as a spectator). */
+  const joinRoom = async (code: string, spectate = false) => {
     audio.unlock();
     setNetError(null);
-    if (joinCode.trim().length < 5) {
+    if (code.trim().length < 5) {
       setNetError('Enter the 5-letter room code from the host.');
       return;
     }
     setNetBusy(true);
+    setTab('play');
     try {
-      const session = await ClientSession.connect(joinCode, profileForNet());
+      const session = await ClientSession.connect(code, { ...profileForNet(), spectate });
       clientRef.current = session;
       setChat([]);
       bindClient(session);
-      setRoomCode(joinCode.trim().toUpperCase());
+      setRoomCode(code.trim().toUpperCase());
       setRanked(false);
       setScreen({ kind: 'join-lobby' });
     } catch (e) {
@@ -623,14 +736,23 @@ export const App = () => {
                     ['loadout', 'Loadout'],
                     ['armory', 'Armory'],
                     ['profile', 'Profile'],
-                    ['settings', 'Settings']
+                    ['friends', 'Friends'],
+                    ['settings', 'Settings'],
+                    ...(isStaff() ? ([['admin', 'Admin']] as [MenuTab, string][]) : [])
                   ] as [MenuTab, string][]
-                ).map(([id, label]) => (
-                  <button key={id} className={`menu-tab ${tab === id ? 'on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-                    {label}
-                  </button>
-                ))}
+                ).map(([id, label]) => {
+                  const badge = id === 'friends' ? unreadBotMessages() + acct.unread + acct.requests : 0;
+                  return (
+                    <button key={id} className={`menu-tab ${tab === id ? 'on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+                      {label}
+                      {badge > 0 && <em aria-label={`${badge} new`}>{badge}</em>}
+                    </button>
+                  );
+                })}
               </nav>
+              <button className="bug-account" onClick={() => setShowAccount(true)} title={acct.user ? 'Your account' : 'Sign in or create an account'}>
+                {acct.user ? acct.user.name : 'Sign in'}
+              </button>
               {canFullscreen && (
                 <button className="bug-full" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title={fullscreen ? 'Exit full screen' : 'Full screen'}>
                   {fullscreen ? <ExitFullscreenIcon size={20} /> : <FullscreenIcon size={20} />}
@@ -644,6 +766,7 @@ export const App = () => {
                 <span className="live-short">{(online / 1000).toFixed(1)}K online</span>
               </div>
             </header>
+            <NewsBar />
 
             {tab === 'play' ? (
               <div className="desk" key="play">
@@ -803,6 +926,20 @@ export const App = () => {
                     }}
                   />
                 )}
+                {tab === 'friends' && (
+                  <FriendsPanel
+                    playerName={settings.playerName.trim() || 'you'}
+                    open={friendOpen}
+                    onOpen={setFriendOpen}
+                    recentPlayer={(n) => recent.current.get(n.toLowerCase()) ?? null}
+                    onCard={setCard}
+                    onJoinRoom={(code, spectate) => void joinRoom(code, spectate)}
+                    onPlayWith={playWithFriend}
+                    onWatch={watchFriend}
+                    onSignIn={() => setShowAccount(true)}
+                  />
+                )}
+                {tab === 'admin' && isStaff() && <AdminPanel onWatchRoom={(code) => void joinRoom(code, true)} />}
                 {tab === 'settings' && (
                   <SettingsPanel
                     settings={settings}
@@ -821,6 +958,24 @@ export const App = () => {
         </div>
       )}
       {showTour && screen.kind === 'menu' && tab === 'play' && <Tour steps={TOUR} onClose={() => setShowTour(false)} />}
+      {showAccount && <AccountPanel onClose={() => setShowAccount(false)} />}
+      {card && (
+        <PlayerCard
+          subject={card}
+          myProfile={profile}
+          onClose={() => setCard(null)}
+          onMessage={
+            screen.kind === 'menu'
+              ? (key) => {
+                  setCard(null);
+                  setTab('friends');
+                  setFriendOpen(key);
+                }
+              : undefined
+          }
+        />
+      )}
+      <NoticeBox />
       {(screen.kind === 'host-lobby' || screen.kind === 'join-lobby') && lobby && (
         <div className="menu">
           <div className="menu-card lobby-card">
@@ -997,6 +1152,11 @@ export const App = () => {
                   <h3>Controls</h3>
                   <ControlsList settings={settings} touch={hud.touch} />
                 </section>
+                <section className="pause-players" aria-label="Players">
+                  <h3>Players</h3>
+                  <p className="set-hint">Click someone to see their card, add them as a friend or report them.</p>
+                  <Scoreboard hud={hud} onPick={openCardFor} />
+                </section>
               </div>
             </div>
           )}
@@ -1032,6 +1192,7 @@ export const App = () => {
               waitingForHost={hud.online && !hostRef.current}
               onMenu={toMenu}
               mine={{ card: settings.cosmetics.card, emblem: settings.cosmetics.emblem, name: settings.playerName, level, title: settings.cosmetics.title, frame: settings.cosmetics.frame, prestige: profile.prestige }}
+              onPick={openCardFor}
             />
           )}
         </>

@@ -29,6 +29,10 @@ export interface PlayerProfile {
   lethal: ThrowableId;
   tactical: ThrowableId;
   cosmetics: Cosmetics;
+  /** Account username when signed in (for friend requests and reports). */
+  account?: string | null;
+  /** Join to watch (friends spectating, the admin checking a room). */
+  spectate?: boolean;
 }
 
 export interface LobbyPlayer {
@@ -103,6 +107,8 @@ export interface StartMsg {
   rules: LobbyRules;
   /** Calling cards and emblems by agent id. */
   cosmetics: (Cosmetics | null)[];
+  /** Account usernames by agent id (signed-in humans only). */
+  accounts?: (string | null)[];
   party: boolean;
   /** Night map. */
   night: boolean;

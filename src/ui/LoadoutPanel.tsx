@@ -187,7 +187,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Each has its own camos, unlocked by kills with it.</p>
           <div className="streak-grid melee-grid">
             {MELEES.map((d) => {
-              const ok = unlocked(d.unlock, profile, level);
+              const ok = unlocked(d.unlock, profile, level, d.id);
               const on = meleeOn.id === d.id;
               return (
                 <button
@@ -236,7 +236,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           </h3>
           <div className="skin-grid">
             {CHARMS.map((c) => {
-              const ok = unlocked(c.unlock, profile, level);
+              const ok = unlocked(c.unlock, profile, level, c.id);
               const hidden = c.secret && !ok;
               return (
                 <button

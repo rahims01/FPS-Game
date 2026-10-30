@@ -12,5 +12,12 @@ import './styles/menu.css';
 import './styles/hud.css';
 import './styles/panels.css';
 import './styles/cosmetics.css';
+import './styles/social.css';
+
+import * as botFriends from './game/botFriends';
+import * as account from './net/account';
+
+// Dev hooks for the headless test scripts (the same module instances the app uses).
+if (import.meta.env.DEV) Object.assign(window, { __bf: botFriends, __acc: account });
 
 createRoot(document.getElementById('root')!).render(<App />);

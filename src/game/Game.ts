@@ -25,7 +25,9 @@ import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
-import { assignIdentities, basePingFor, cssColor, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
+import { assignIdentities, basePingFor, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
+import { botFriendByName } from './botFriends';
+import { account, eventOn } from '../net/account';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
 import { keyLabel, lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
@@ -37,6 +39,22 @@ import { applySnapshot, type NetTarget } from '../net/snapshot';
 export type NetRole = { role: 'host'; session: HostSession; seed: number } | { role: 'client'; session: ClientSession; start: StartMsg };
 
 export type { GameSettings } from './settings';
+
+/** A player card: who someone is, what they wear, and whether you can friend them. */
+export interface PlayerCardData {
+  name: string;
+  level: number;
+  prestige: number;
+  cosmetics: Cosmetics | null;
+  color: number;
+  favorite: WeaponId;
+  /** You, a real person, a computer player, or a bot openly labelled as one (friend rooms). */
+  kind: 'me' | 'human' | 'bot' | 'labelled';
+  account: string | null;
+  kills: number;
+  deaths: number;
+  mode: string;
+}
 
 export interface ScoreRow {
   id: number;
@@ -307,6 +325,8 @@ export class Game {
   private lateAfkDone = false;
   /** Calling card, emblem and charm by agent id. */
   private cosmetics: (Cosmetics | null)[] = [];
+  /** Account usernames by agent id (signed-in humans). */
+  private accounts: (string | null)[] = [];
   private switchQueued = -1;
   private locked = false;
   paused = true;
@@ -343,6 +363,8 @@ export class Game {
   private medalId = 0;
   private xp = 0;
   private xpBanked = false;
+  /** Admin events running when the match started. */
+  private readonly doubleXp = eventOn('doubleXp');
   private killTimes: number[] = [];
   private firstBlood = false;
   private lastKillerOfPlayer = -1;
@@ -435,7 +457,7 @@ export class Game {
       ...(client ? { mode: client.start.mode, difficulty: client.start.difficulty, humans: client.start.humans.length, rules: client.start.rules } : {})
     });
     const sim = this.match.sim;
-    this.spectator = client ? client.start.spectate : net?.role === 'host' ? !net.session.hostPlaying : false;
+    this.spectator = client ? client.start.spectate : net?.role === 'host' ? !net.session.hostPlaying : !!opts.watch;
     this.party = client ? !!client.start.party : net?.role === 'host' ? net.session.party : false;
     this.night = client ? !!client.start.night : !!this.match.opts.night;
     setMetalNight(this.night);
@@ -514,19 +536,32 @@ export class Game {
     if (client) {
       this.ids = { names: client.start.names.slice(), colors: client.start.colors.slice(), teamColors: client.start.teamColors, skins: client.start.skins.slice() };
       this.cosmetics = (client.start.cosmetics ?? []).slice();
+      this.accounts = (client.start.accounts ?? []).slice();
     } else {
-      this.ids = assignIdentities(this.match, settings.playerName || 'Player', settings.playerColor, settings.skins);
+      // Watching a friend: your soldier is just another player, under someone else's name.
+      if (opts.watch) this.match.player.control = opts.botControl;
+      this.ids = assignIdentities(this.match, opts.watch ? freshNames(1)[0] : settings.playerName || 'Player', settings.playerColor, settings.skins);
       // Everyone else's calling card and emblem (yours from the menu).
       this.cosmetics = this.match.sim.agents.map((a) => {
-        if (a === this.match.player) return { ...settings.cosmetics, prestige: loadProfile().prestige };
+        if (a === this.match.player && !opts.watch) return { ...settings.cosmetics, prestige: loadProfile().prestige };
         if (a.dummy) return null;
+        // Bot friends wear what they always wear.
+        const friend = botFriendByName(this.ids.names[a.id]);
+        if (friend?.state === 'friends') return { ...friend.cosmetics, prestige: friend.prestige };
         // Other players wear what they've unlocked; long-time players have often prestiged.
         const lvl = levelFor(this.ids.names[a.id]);
         const prestige = a.smurf ? 0 : lvl > 30 && Math.random() < 0.3 ? 1 + Math.floor(Math.random() * Math.random() * 6) : 0;
         return randomCosmetics(lvl, Math.random, prestige);
       });
       this.clanTags();
-      if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins, this.cosmetics);
+      this.accounts = this.match.sim.agents.map((a) => (a === this.match.player && !opts.watch ? (account().user?.name ?? null) : null));
+      if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins, this.cosmetics, this.accounts);
+      if (opts.watch) this.specId = this.match.sim.agents.find((a) => this.ids.names[a.id] === opts.watch)?.id ?? -1;
+      // Admin events for everyone's casual matches (not ranked or tournaments, which pass an exact skill).
+      if (!opts.skill) {
+        if (eventOn('bigHeads')) this.match.sim.headScale = Math.max(this.match.sim.headScale, 1.8);
+        if (eventOn('lowGravity')) this.match.sim.gravity *= 0.45;
+      }
     }
     // Colourblind modes swap the team colours for a pair that stays distinct.
     const cb = settings.access.colorblind;
@@ -1370,6 +1405,33 @@ export class Game {
     return c === 'rainbow' ? -1 : c;
   }
 
+  /** Everything a player card needs about someone in this match. */
+  cardOf(id: number): PlayerCardData | null {
+    const a = this.match.sim.agents[id];
+    if (!a || a.dummy) return null;
+    const me = a === this.match.player && !this.spectator;
+    const human = me || a.control === 'remote' || (this.net?.role === 'client' && this.net.start.humans.includes(a.id));
+    const cos = this.cosmetics[a.id];
+    return {
+      name: this.nameOf(a.id),
+      level: this.levelOfAgent(a),
+      prestige: cos?.prestige ?? 0,
+      cosmetics: cos ?? null,
+      color: this.colorOf(a.id),
+      favorite: a.weapons[0] ?? 'rifle',
+      kind: me ? 'me' : human ? 'human' : this.isLabelledBot(a) ? 'labelled' : 'bot',
+      account: this.accounts[a.id] ?? null,
+      kills: a.kills,
+      deaths: a.deaths,
+      mode: this.match.def.name
+    };
+  }
+
+  /** Names of everyone in the match (for bot friends' after-match messages). */
+  names(): string[] {
+    return this.match.sim.agents.map((a) => this.nameOf(a.id));
+  }
+
   /** Smurfs show a low level; everyone else's comes from their name. */
   private levelOfAgent(a: Agent): number {
     if (a === this.match.player && !this.spectator) return this.myLevel;
@@ -1859,8 +1921,10 @@ export class Game {
 
   private medal(m: Medal): void {
     const sim = this.match.sim;
-    this.xp += m.xp;
-    this.medals.push({ id: this.medalId++, name: m.name, xp: m.xp, big: !!m.big, at: sim.time });
+    // Double XP weekend (an admin event).
+    const xp = m.xp * (this.doubleXp ? 2 : 1);
+    this.xp += xp;
+    this.medals.push({ id: this.medalId++, name: m.name, xp, big: !!m.big, at: sim.time });
     if (this.medals.length > 8) this.medals.shift();
     if (m.big) this.audio.fanfare();
     else this.audio.medal();

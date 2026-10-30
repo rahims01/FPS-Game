@@ -1,4 +1,5 @@
 import type { StatKey } from './cosmetics';
+import { localSaved } from './saveHook';
 
 /**
  * Persistent player progression: XP, levels and ranks, saved in this browser.
@@ -31,6 +32,8 @@ export interface Profile {
   duelBestSr: number;
   duelMatches: number;
   duelWins: number;
+  /** Items given outright (admin gifts, codes); "*" unlocks everything. */
+  granted?: string[];
 }
 
 export const loadProfile = (): Profile => {
@@ -49,6 +52,7 @@ export const saveProfile = (p: Profile): void => {
   } catch {
     /* storage unavailable: progress just isn't kept */
   }
+  localSaved();
 };
 
 /** Total XP needed to reach `level` (level 1 needs 0). Each level costs 250 more than the last. */

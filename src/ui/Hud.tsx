@@ -372,7 +372,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
 };
 
 /** Full scoreboard while Tab is held. Team modes are split by team. */
-const Scoreboard = ({ hud }: { hud: HudState }) => {
+export const Scoreboard = ({ hud, onPick }: { hud: HudState; onPick?: (id: number) => void }) => {
   const groups: { title: string; color?: string; rows: ScoreRow[] }[] = hud.showTeams
     ? [
         { title: hud.spectator ? 'Team 1' : 'Your team', color: hud.teamColors?.[0], rows: hud.players.filter((p) => p.ally) },
@@ -393,7 +393,11 @@ const Scoreboard = ({ hud }: { hud: HudState }) => {
             <span>Ping</span>
           </div>
           {g.rows.map((p) => (
-            <div key={p.id} className={`sb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'}`}>
+            <div
+              key={p.id}
+              className={`sb-row ${p.isPlayer ? 'mine' : ''} ${p.alive ? '' : 'gone'} ${onPick ? 'pick' : ''}`}
+              {...(onPick ? { role: 'button', tabIndex: 0, title: `See ${p.name}'s card`, onClick: () => onPick(p.id), onKeyDown: (e: { key: string }) => e.key === 'Enter' && onPick(p.id) } : {})}
+            >
               <span className="sb-name">
                 <LevelBadge level={p.level} prestige={p.prestige} frame={p.frame} />
                 {p.emblem && (

@@ -11,3 +11,6 @@ screenshots
 .impeccable/review/
 .impeccable/mocks/
 .impeccable/build/
+
+.dev-api.sqlite
+prompt.md

@@ -236,8 +236,9 @@ export interface Identities {
  */
 export const assignIdentities = (match: Match, playerName: string, playerColor: number, playerSkins: SkinChoice = {}): Identities => {
   const agents = match.sim.agents;
-  const tags = preset && preset.length >= agents.length - 1 ? [...preset] : tagPool(agents.length);
+  const tags = preset && preset.length >= agents.length - 1 ? [...preset] : withFriends(tagPool(agents.length));
   preset = null;
+  friendsNext = [];
   let next = 0;
   const names = agents.map((a) => (a === match.player ? playerName : tags[next++ % tags.length]));
   // Other players show off a camo on the gun they carry now and then.
@@ -267,9 +268,16 @@ export const lateJoinerColor = (ids: Identities, team: number): number =>
 /** Names picked for the matchmaking screen, used by the next match so the lobby you watched fill up is the one you play. */
 let preset: string[] | null = null;
 export const prepareLobby = (count: number): string[] => {
-  preset = tagPool(count);
+  preset = withFriends(tagPool(count)).slice(0, count);
   return preset;
 };
+
+/** Bot friends you invited (or who invited you): they take the first seats on your side. */
+let friendsNext: string[] = [];
+export const bringFriends = (names: string[]): void => {
+  friendsNext = names.slice(0, 3);
+};
+const withFriends = (tags: string[]): string[] => (friendsNext.length ? [...friendsNext, ...tags.filter((t) => !friendsNext.includes(t))] : tags);
 
 /** Fresh names without touching the next match's lobby. */
 export const freshNames = (count: number): string[] => tagPool(count);

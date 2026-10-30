@@ -6,20 +6,27 @@
  *   GET  /api/turn    relay servers for cross-device multiplayer (turn.ts)
  *   GET  /api/online  real players online right now (presence.ts)
  *   POST /api/online  { session, leaving? }: check in or out, returns the count
+ *   /api/account/*, friends, messages, profile, report, redeem, inbox, news,
+ *   rooms and admin/*: accounts and everything social (accounts.ts)
  */
+import { Accounts, type AccountsEnv } from './accounts';
 import { Presence } from './presence';
 import { turn, type TurnEnv } from './turn';
 
-export { Presence };
+export { Accounts, Presence };
+
+/** Paths handled by the Accounts object. */
+const ACCOUNT_PATHS = /^\/api\/(account\/|friends|messages|profile|report|redeem|inbox\/|news$|rooms$|admin\/)/;
 
 interface DurableObjectNamespace {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 }
 
-interface Env extends TurnEnv {
+interface Env extends TurnEnv, AccountsEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   PRESENCE?: DurableObjectNamespace;
+  ACCOUNTS?: DurableObjectNamespace;
 }
 
 export default {
@@ -30,6 +37,11 @@ export default {
       if (!env.PRESENCE) return new Response(JSON.stringify({ error: 'Presence is not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
       // One object for the whole game, so everyone reads the same number.
       return env.PRESENCE.get(env.PRESENCE.idFromName('global')).fetch(request);
+    }
+    if (ACCOUNT_PATHS.test(pathname)) {
+      if (!env.ACCOUNTS) return new Response(JSON.stringify({ error: 'Accounts are not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
+      // One object for every account, so names, friends and messages are all in one place.
+      return env.ACCOUNTS.get(env.ACCOUNTS.idFromName('global')).fetch(request);
     }
     if (pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
     return env.ASSETS.fetch(request);

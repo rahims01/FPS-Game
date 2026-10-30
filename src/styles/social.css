@@ -1,0 +1,697 @@
+/* ---------- accounts, friends, player cards, admin, news ---------- */
+
+/* Text fields: the same square box everywhere. */
+.field {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px 7px;
+  border: 2px solid var(--line-2);
+  border-radius: 0;
+  background: var(--navy);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  user-select: text;
+}
+.field:focus {
+  outline: none;
+  border-color: var(--paper);
+}
+.field::placeholder {
+  color: var(--mute);
+}
+textarea.field {
+  resize: vertical;
+}
+.acc-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.acc-row .field {
+  flex: 1;
+}
+.acc-row .chip {
+  flex: none;
+}
+
+/* Header: the account button beside full screen. */
+.bug-account {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 8px;
+  height: 40px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 0;
+  background: var(--panel);
+  color: var(--fg);
+  font-family: var(--f-cond);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bug-account:hover {
+  background: var(--panel-2);
+}
+.bug-account + .bug-full {
+  margin-left: 8px;
+}
+.bug-account em {
+  min-width: 20px;
+  padding: 1px 6px 0;
+  background: var(--red-slab);
+  color: #fff;
+  font-style: normal;
+  font-size: 13px;
+}
+.menu-tab em {
+  margin-left: 6px;
+  padding: 1px 6px 0;
+  background: var(--red-slab);
+  color: #fff;
+  font-style: normal;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+/* Seven tabs, the account button and the live count share one bar: tighten up below wide screens. */
+@media (max-width: 1440px) {
+  .bug-tabs .menu-tab {
+    padding: 4px 11px 0;
+    font-size: 17px;
+  }
+  .bug-net {
+    font-size: 30px;
+  }
+  .bug-live .live-full {
+    display: none;
+  }
+  .bug-live .live-short {
+    display: inline;
+  }
+}
+@media (max-width: 1180px) {
+  .bug-tabs .menu-tab {
+    padding: 4px 8px 0;
+    font-size: 16px;
+    letter-spacing: 0.03em;
+  }
+  .bug-live {
+    display: none;
+  }
+}
+/* Phones: the tabs get their own row, so the live count fits again. */
+@media (max-width: 640px) {
+  .bug-live {
+    display: flex;
+  }
+}
+
+/* Account window. */
+.account-card {
+  width: min(520px, 100%);
+}
+.acc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.acc-head h2 {
+  margin: 0;
+}
+.acc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.acc-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 14px;
+}
+.acc-form label small {
+  color: var(--mute);
+}
+.acc-form .play {
+  width: 100%;
+}
+.acc-error {
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(211, 47, 58, 0.18);
+  border-left: 4px solid var(--red-slab);
+  color: var(--fg);
+  font-size: 14px;
+}
+.acc-body h3 {
+  margin: 22px 0 8px;
+}
+.acc-body .acc-row + .acc-row {
+  margin-top: 8px;
+}
+.acc-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+/* Player card: above the pause screen and the end screen. */
+.pc-overlay {
+  z-index: 30;
+}
+.player-card {
+  width: min(620px, 100%);
+}
+.pc-top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pc-top .calling-card {
+  flex: 1;
+}
+.pc-close {
+  flex: none;
+}
+.pc-staff {
+  display: inline-block;
+  align-self: center;
+  padding: 3px 10px 1px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-family: var(--f-cond);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 2px;
+  margin: 0;
+}
+.pc-facts > div {
+  padding: 10px 12px;
+  background: var(--navy);
+}
+.pc-facts dt {
+  color: var(--dim);
+  font-size: 13px;
+}
+.pc-facts dd {
+  margin: 2px 0 0;
+  font-family: var(--f-cond);
+  font-size: 20px;
+  font-weight: 700;
+}
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.pc-report {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.pc-report h3 {
+  margin: 0 0 10px;
+}
+.pc-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.pc-note {
+  margin-top: 10px;
+}
+.chip.danger {
+  border-color: var(--red-slab);
+  color: #ffb3b7;
+}
+.chip.danger:hover:not(:disabled) {
+  background: var(--red-slab);
+  border-color: var(--red-slab);
+  color: #fff;
+}
+
+/* Clickable scoreboard rows (pause and end screens). */
+.sb-row.pick,
+.end-row.pick {
+  cursor: pointer;
+}
+.sb-row.pick:hover,
+.end-row.pick:hover {
+  background: rgba(244, 246, 248, 0.08);
+}
+.pause-players {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+.pause-players .scoreboard {
+  position: static;
+  width: 100%;
+  transform: none;
+  max-height: none;
+}
+
+/* Friends. */
+.friends-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 60vh;
+}
+.fr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fr-list section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fr-list .mode-group small {
+  margin-left: 8px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+.fr-signin {
+  margin: 0;
+}
+.fr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  background: var(--panel);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.fr-row:hover {
+  background: var(--panel-2);
+}
+.fr-row.on {
+  background: var(--paper);
+  color: var(--ink);
+}
+.fr-row.on small {
+  color: var(--paper-ink);
+}
+.fr-row.req {
+  cursor: default;
+}
+.fr-row:not(.online):not(.on) b {
+  color: var(--dim);
+}
+.fr-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.fr-text b {
+  overflow: hidden;
+  font-family: var(--f-cond);
+  font-size: 18px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fr-text small {
+  color: var(--dim);
+  font-size: 13px;
+}
+.fr-name {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: var(--f-cond);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.fr-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fr-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--line-2);
+}
+.fr-dot.on {
+  background: var(--green);
+}
+.fr-dot.busy {
+  background: var(--blue);
+}
+.fr-unread {
+  min-width: 22px;
+  padding: 1px 6px 0;
+  background: var(--red-slab);
+  color: #fff;
+  font-style: normal;
+  font-size: 13px;
+  text-align: center;
+}
+.fr-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+}
+.fr-empty {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+}
+.fr-chat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.fr-msgs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 52vh;
+  min-height: 240px;
+  padding: 14px;
+  overflow-y: auto;
+}
+.fr-msg {
+  align-self: flex-start;
+  max-width: 78%;
+  padding: 8px 12px 6px;
+  background: var(--navy);
+}
+.fr-msg.mine {
+  align-self: flex-end;
+  background: var(--paper);
+  color: var(--ink);
+}
+.fr-msg p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.fr-msg small {
+  display: block;
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: 11px;
+}
+.fr-msg.mine small {
+  color: var(--paper-ink);
+}
+.fr-msg .chip {
+  margin-top: 8px;
+}
+.fr-typing {
+  margin: 0;
+  color: var(--dim);
+  font-size: 13px;
+  font-style: italic;
+}
+.fr-send {
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 760px) {
+  .friends-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Admin. */
+.admin-panel h3 {
+  margin: 22px 0 8px;
+}
+.adm-flash {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+}
+.adm-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 2px;
+}
+.adm-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px;
+  border: 0;
+  background: var(--panel);
+  color: var(--fg);
+  text-align: left;
+}
+.adm-tile:not(:disabled) {
+  cursor: pointer;
+}
+.adm-tile:not(:disabled):hover {
+  background: var(--panel-2);
+}
+.adm-tile b {
+  font-family: var(--f-cond);
+  font-size: 34px;
+  line-height: 1;
+}
+.adm-tile small {
+  color: var(--dim);
+}
+.adm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.adm-list li small {
+  color: var(--mute);
+}
+.adm-report {
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.adm-report header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adm-report header small {
+  flex-basis: 100%;
+  color: var(--dim);
+}
+.adm-report p {
+  margin: 8px 0 0;
+}
+.adm-report .pc-actions {
+  margin-top: 10px;
+}
+.adm-tag {
+  padding: 1px 8px 0;
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.adm-tag.hot {
+  border-color: var(--red-slab);
+  color: #ffb3b7;
+}
+.adm-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.adm-table th {
+  padding: 8px 10px;
+  color: var(--dim);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 2px solid var(--line);
+}
+.adm-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.adm-table td small {
+  color: var(--mute);
+}
+.adm-table tbody tr[tabindex] {
+  cursor: pointer;
+}
+.adm-table tbody tr[tabindex]:hover {
+  background: var(--panel);
+}
+.adm-detail h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+}
+.adm-actions {
+  margin-top: 0;
+}
+.adm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adm-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.adm-inline .field {
+  width: 90px;
+}
+.adm-events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px;
+}
+.adm-event {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.adm-event.on {
+  box-shadow: inset 4px 0 0 var(--green);
+}
+.adm-event small {
+  color: var(--dim);
+}
+.adm-event .pc-actions {
+  margin-top: 6px;
+}
+
+/* News under the menu's top bar. */
+.news-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -14px 0 22px;
+}
+.news {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  overflow: hidden;
+  background: var(--panel);
+  border-left: 4px solid var(--blue-slab);
+  font-size: 15px;
+}
+.news > span {
+  flex: 1;
+}
+.news.event {
+  border-left-color: var(--green);
+}
+.news.warning {
+  border-left-color: var(--red-slab);
+}
+.news.celebrate {
+  border-left-color: var(--yellow);
+}
+.news-x {
+  flex: none;
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.news-x:hover {
+  color: var(--fg);
+}
+/* Celebration: a short fall of coloured squares behind the text. */
+.confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--yellow) 2px, transparent 3px), radial-gradient(var(--blue) 2px, transparent 3px), radial-gradient(var(--green) 2px, transparent 3px), radial-gradient(var(--red) 2px, transparent 3px);
+  background-size: 41px 37px, 53px 43px, 47px 31px, 59px 41px;
+  background-position: 0 0, 17px 9px, 29px 21px, 7px 13px;
+  opacity: 0.35;
+  animation: confetti 3s linear infinite;
+}
+@keyframes confetti {
+  from {
+    background-position: 0 -40px, 17px -31px, 29px -19px, 7px -27px;
+  }
+  to {
+    background-position: 0 40px, 17px 49px, 29px 61px, 7px 53px;
+  }
+}
+.reduce-motion .confetti {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    animation: none;
+  }
+}
+.notice-overlay {
+  z-index: 40;
+}
+.notice-text {
+  margin: 0 0 18px;
+  font-size: 17px;
+  line-height: 1.45;
+}

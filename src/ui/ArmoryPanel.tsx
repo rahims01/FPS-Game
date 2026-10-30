@@ -137,7 +137,7 @@ export const ArmoryPanel = ({
 
   /** A picker tile: rarity border, lock with what unlocks it, secrets hidden until earned. */
   const tile = (item: Item, on: boolean, pick: () => void, preview: React.ReactNode) => {
-    const ok = unlocked(item.unlock, profile, level);
+    const ok = unlocked(item.unlock, profile, level, item.id);
     const r = rarityOf(item);
     const hidden = item.secret && !ok;
     return (
