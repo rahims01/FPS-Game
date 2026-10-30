@@ -22,12 +22,15 @@ const GUN_TONE: Record<string, { bright: number; length: number; pitch: number; 
 
 /**
  * Synthesised sound (no audio files): gunshots, hit markers, reloads, pickups.
- * Positional sounds are attenuated by distance and panned by bearing.
+ * Positional sounds are attenuated by distance and panned by bearing, and
+ * everything shares one room reverb, with more of it on far-away sounds.
  */
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private noise: AudioBuffer | null = null;
   private master: GainNode | null = null;
+  /** The shared reverb send. */
+  private verb: GainNode | null = null;
   volume = 0.6;
 
   /** Must be called from a user gesture (browsers block audio until then). */
@@ -46,6 +49,22 @@ export class GameAudio {
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    // Room reverb: a 1.4 s decaying noise impulse, a little darker in the tail.
+    const ir = ctx.createBuffer(2, Math.floor(ctx.sampleRate * 1.4), ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const ch = ir.getChannelData(c);
+      let lp = 0;
+      for (let i = 0; i < ch.length; i++) {
+        const k = i / ch.length;
+        lp += ((Math.random() * 2 - 1) - lp) * (0.6 - k * 0.45);
+        ch[i] = lp * Math.pow(1 - k, 2.6);
+      }
+    }
+    const conv = ctx.createConvolver();
+    conv.buffer = ir;
+    this.verb = ctx.createGain();
+    this.verb.gain.value = 0.55;
+    this.verb.connect(conv).connect(this.master);
   }
 
   setVolume(v: number): void {
@@ -53,7 +72,8 @@ export class GameAudio {
     if (this.master) this.master.gain.value = v;
   }
 
-  private out(gain: number, pan: number): GainNode | null {
+  /** A sound's output: level, stereo position, and how much goes to the room reverb (0..1). */
+  private out(gain: number, pan: number, wet = 0.15): GainNode | null {
     const ctx = this.ctx;
     if (!ctx || !this.master) return null;
     const g = ctx.createGain();
@@ -61,25 +81,63 @@ export class GameAudio {
     const p = ctx.createStereoPanner();
     p.pan.value = Math.max(-1, Math.min(1, pan));
     g.connect(p).connect(this.master);
+    if (this.verb && wet > 0) {
+      const send = ctx.createGain();
+      send.gain.value = wet;
+      p.connect(send).connect(this.verb);
+    }
     return g;
   }
 
-  /** distance in metres, pan -1..1. own = the player's own weapon. */
-  gunshot(distance: number, pan: number, own: boolean, weapon: WeaponId = 'rifle'): void {
+  /** A burst of filtered noise: the building block of clicks, cracks and rustles. */
+  private burst(out: AudioNode, at: number, type: BiquadFilterType, freq: number, dur: number, gain: number, q = 1, sweepTo?: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.setValueAtTime(freq, at);
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, at + dur);
+    f.Q.value = q;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(gain, at);
+    env.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    src.connect(f).connect(env).connect(out);
+    src.start(at, Math.random() * 0.3, dur + 0.02);
+  }
+
+  /**
+   * distance in metres, pan -1..1. own = the player's own weapon. behind: the
+   * shooter is behind you (the sound comes through muffled).
+   */
+  gunshot(distance: number, pan: number, own: boolean, weapon: WeaponId = 'rifle', behind = false): void {
     const tone = GUN_TONE[weapon] ?? GUN_TONE.rifle;
     const ctx = this.ctx;
     if (!ctx || !this.noise) return;
     const att = own ? 1 : Math.min(0.8, 6 / (distance + 6));
     if (att < 0.02) return;
-    const out = this.out(att, own ? 0 : pan);
+    // Far shots are mostly room; your own is mostly dry.
+    const out = this.out(att, own ? 0 : pan, own ? 0.12 : Math.min(0.7, 0.18 + distance * 0.012));
     if (!out) return;
     const t = ctx.currentTime;
+    // The supersonic crack up close; behind you it's dulled.
+    if (own || distance < 25) this.burst(out, t, 'highpass', behind ? 1800 : 3200, 0.018, (own ? 0.7 : 0.5) * tone.gain);
+    // Your own gun: the bolt cycling.
+    if (own) {
+      this.burst(out, t + 0.035 * tone.length, 'bandpass', 2600, 0.025, 0.18, 4);
+      this.burst(out, t + 0.06 * tone.length, 'bandpass', 1700, 0.03, 0.12, 4);
+    }
+    // Far away: the shot comes back off the walls.
+    if (!own && distance > 30) {
+      const echo = this.out(att * 0.35, -pan * 0.5, 0.6);
+      if (echo) this.burst(echo, t + 0.12 + distance * 0.002, 'lowpass', 700, 0.3, 0.6);
+    }
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const bp = ctx.createBiquadFilter();
     bp.type = 'lowpass';
     // Distant shots lose their crack.
-    bp.frequency.value = (own ? 5200 : Math.max(900, 5000 - distance * 60)) * tone.bright;
+    bp.frequency.value = (own ? 5200 : Math.max(900, 5000 - distance * 60)) * tone.bright * (behind ? 0.55 : 1);
     const env = ctx.createGain();
     env.gain.setValueAtTime(tone.gain, t);
     env.gain.exponentialRampToValueAtTime(0.001, t + (own ? 0.16 : 0.22) * tone.length);
@@ -112,8 +170,11 @@ export class GameAudio {
     o.stop(t + dur);
   }
 
-  /** The hit marker "tick": a short bright click, sharper on headshots, with a chime on kills. */
+  /** The hit marker "tick": a short bright click, sharper on headshots, with a chime on kills, over a body thud. */
   hitMarker(head: boolean, kill: boolean): void {
+    const ctx = this.ctx;
+    const thud = this.out(0.35, 0, 0.05);
+    if (ctx && thud && this.noise) this.burst(thud, ctx.currentTime, 'lowpass', 380, 0.07, 1);
     this.click(head ? 0.32 : 0.22, head ? 5200 : 3800);
     if (head) this.click(0.2, 7000, 0.035);
     if (kill) {
@@ -141,14 +202,56 @@ export class GameAudio {
     src.start(t, Math.random() * 0.3, 0.06);
   }
 
+  /** Taking a hit: a dull body impact and a short breathy grunt. */
   hurt(): void {
-    this.beep(90, 0.18, 0.5, 'sawtooth');
+    const ctx = this.ctx;
+    const out = this.out(0.55, 0, 0.05);
+    if (!ctx || !out || !this.noise) return;
+    const t = ctx.currentTime;
+    this.burst(out, t, 'lowpass', 260, 0.12, 1.2);
+    this.burst(out, t + 0.02, 'bandpass', 520, 0.16, 0.5, 2, 380);
   }
 
+  /** Reload: magazine out, magazine in, bolt back and forward. */
   reload(): void {
-    this.beep(520, 0.03, 0.15, 'square', 0.15);
-    this.beep(380, 0.04, 0.15, 'square', 1.2);
-    this.beep(700, 0.04, 0.18, 'square', 1.9);
+    const ctx = this.ctx;
+    const out = this.out(0.3, 0, 0.08);
+    if (!ctx || !out || !this.noise) return;
+    const t = ctx.currentTime;
+    this.burst(out, t + 0.15, 'bandpass', 1800, 0.04, 0.8, 5);
+    this.burst(out, t + 0.22, 'bandpass', 900, 0.18, 0.25, 1.5, 600);
+    this.burst(out, t + 1.15, 'bandpass', 1300, 0.05, 1, 6);
+    this.burst(out, t + 1.2, 'lowpass', 500, 0.05, 0.6);
+    this.burst(out, t + 1.75, 'bandpass', 2400, 0.03, 0.8, 6);
+    this.burst(out, t + 1.9, 'bandpass', 3000, 0.035, 1, 6);
+  }
+
+  /** A bullet passing close by: a quick airy zip, on the side it passed. */
+  whiz(pan: number): void {
+    const ctx = this.ctx;
+    const out = this.out(0.28, pan, 0.05);
+    if (!ctx || !out || !this.noise) return;
+    this.burst(out, ctx.currentTime, 'bandpass', 4200, 0.12, 1, 6, 1600);
+  }
+
+  /** Low health: a heartbeat (two soft thumps). */
+  heartbeat(): void {
+    const ctx = this.ctx;
+    const out = this.out(0.45, 0, 0);
+    if (!ctx || !out) return;
+    const t = ctx.currentTime;
+    for (const [at, f] of [[0, 62], [0.17, 52]] as const) {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(f, t + at);
+      o.frequency.exponentialRampToValueAtTime(30, t + at + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.001, t + at);
+      g.gain.linearRampToValueAtTime(0.9, t + at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + at + 0.14);
+      o.connect(g).connect(out);
+      o.start(t + at);
+      o.stop(t + at + 0.15);
+    }
   }
 
   pickup(): void {
@@ -160,9 +263,11 @@ export class GameAudio {
   explosion(distance: number, pan: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.noise) return;
-    const out = this.out(Math.min(1.2, 14 / (distance + 8)), pan);
+    const out = this.out(Math.min(1.2, 14 / (distance + 8)), pan, 0.5);
     if (!out) return;
     const t = ctx.currentTime;
+    // Debris rattling down afterwards.
+    for (let i = 0; i < 6; i++) this.burst(out, t + 0.25 + Math.random() * 0.6, 'bandpass', 1200 + Math.random() * 2500, 0.04, 0.12, 3);
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const lp = ctx.createBiquadFilter();
@@ -212,24 +317,23 @@ export class GameAudio {
     if (!ctx || !this.noise) return;
     const g = (volume * 0.35) / (1 + distance * 0.25);
     if (g < 0.01) return;
-    const out = this.out(g, pan);
+    const out = this.out(g, pan, 0.1);
     if (!out) return;
     const t = ctx.currentTime;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 500 + Math.random() * 300;
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(1, t);
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-    src.connect(lp).connect(env).connect(out);
-    src.start(t, Math.random() * 0.3, 0.1);
+    // Heel, then toe, with a little gear rattle.
+    this.burst(out, t, 'lowpass', 420 + Math.random() * 260, 0.08, 1);
+    this.burst(out, t + 0.05 + Math.random() * 0.02, 'lowpass', 700 + Math.random() * 300, 0.05, 0.5);
+    if (Math.random() < 0.4) this.burst(out, t + 0.03, 'bandpass', 3000 + Math.random() * 1500, 0.03, 0.12, 4);
   }
 
+  /** Switching weapons: a cloth rustle and the new gun clicking into place. */
   weaponSwitch(): void {
-    this.beep(300, 0.03, 0.12, 'square');
-    this.beep(450, 0.03, 0.12, 'square', 0.12);
+    const ctx = this.ctx;
+    const out = this.out(0.25, 0, 0.05);
+    if (!ctx || !out || !this.noise) return;
+    const t = ctx.currentTime;
+    this.burst(out, t, 'bandpass', 1100, 0.15, 0.35, 1, 700);
+    this.burst(out, t + 0.16, 'bandpass', 2200, 0.03, 0.8, 6);
   }
 
   /** Killstreak / big medal fanfare. */
@@ -263,6 +367,9 @@ export class GameAudio {
   }
 
   dryFire(): void {
-    this.beep(1200, 0.02, 0.1, 'square');
+    const ctx = this.ctx;
+    const out = this.out(0.3, 0, 0.03);
+    if (!ctx || !out || !this.noise) return;
+    this.burst(out, ctx.currentTime, 'bandpass', 2800, 0.025, 1, 8);
   }
 }

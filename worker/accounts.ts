@@ -231,21 +231,30 @@ export class Accounts {
     return `This account is banned ${until}${u.ban_reason ? `: ${u.ban_reason}` : '.'}`;
   }
 
-  /** The admin account comes from the dashboard Secrets, created (or re-promoted) on its first sign-in. */
+  /**
+   * The admin account comes from the dashboard Secrets. Signing in with the
+   * admin email and the ADMIN_PASSWORD secret always works: it creates the
+   * account the first time, and promotes (and re-keys) an account that was
+   * made with that email before the secrets were set. Pasted values are
+   * forgiven surrounding quotes and spaces.
+   */
   private async adminSignIn(login: string, password: string, now: number): Promise<User | null> {
-    const email = this.env.ADMIN_EMAIL?.trim().toLowerCase();
-    const pass = this.env.ADMIN_PASSWORD;
-    if (!email || !pass || login.toLowerCase() !== email) return null;
+    const clean = (v: string | undefined) => (v ?? '').trim().replace(/^["']|["']$/g, '').trim();
+    const email = clean(this.env.ADMIN_EMAIL).toLowerCase();
+    const pass = clean(this.env.ADMIN_PASSWORD);
+    if (!email || !pass || login.trim().toLowerCase() !== email) return null;
     const existing = this.one('SELECT id FROM users WHERE lemail = ?', email);
-    if (existing) {
-      this.sql.exec("UPDATE users SET role = 'admin' WHERE id = ?", existing.id);
-      return null; // fall through to the normal password check
-    }
-    if (!same(password, pass)) return null;
+    if (existing) this.sql.exec("UPDATE users SET role = 'admin', title = COALESCE(title, 'Admin') WHERE id = ?", existing.id);
+    if (!same(password, pass) && !same(password.trim(), pass)) return null; // their own account password may still match below
     const salt = randomHex(16);
-    let name = 'Admin';
-    for (let i = 2; this.one('SELECT id FROM users WHERE lname = ?', name.toLowerCase()); i++) name = `Admin${i}`;
-    this.sql.exec("INSERT INTO users (name, lname, email, lemail, hash, salt, iters, role, created, title) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', ?, 'Admin')", name, name.toLowerCase(), this.env.ADMIN_EMAIL!.trim(), email, await pbkdf2(pass, salt, ITERATIONS), salt, ITERATIONS, now);
+    const hash = await pbkdf2(password, salt, ITERATIONS);
+    if (existing) {
+      this.sql.exec('UPDATE users SET hash = ?, salt = ?, iters = ?, banned_until = 0 WHERE id = ?', hash, salt, ITERATIONS, existing.id);
+    } else {
+      let name = 'Admin';
+      for (let i = 2; this.one('SELECT id FROM users WHERE lname = ?', name.toLowerCase()); i++) name = `Admin${i}`;
+      this.sql.exec("INSERT INTO users (name, lname, email, lemail, hash, salt, iters, role, created, title) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', ?, 'Admin')", name, name.toLowerCase(), clean(this.env.ADMIN_EMAIL), email, hash, salt, ITERATIONS, now);
+    }
     return this.one('SELECT id, name, email, role, created, banned_until, ban_reason, muted_until, title FROM users WHERE lemail = ?', email) as unknown as User;
   }
 
@@ -303,7 +312,7 @@ export class Accounts {
     if (email && !EMAIL.test(email)) return fail("That email doesn't look right");
     if (this.one('SELECT id FROM users WHERE lname = ?', name.toLowerCase())) return fail('That username is taken');
     if (email && this.one('SELECT id FROM users WHERE lemail = ?', email.toLowerCase())) return fail('That email already has an account');
-    if (email && this.env.ADMIN_EMAIL && email.toLowerCase() === this.env.ADMIN_EMAIL.trim().toLowerCase()) return fail('That email already has an account');
+    if (email && this.env.ADMIN_EMAIL && email.toLowerCase() === this.env.ADMIN_EMAIL.trim().replace(/^["']|["']$/g, '').trim().toLowerCase()) return fail('That email already has an account');
     if (!a || now > a.until) this.attempts.set(key, { n: 1, until: now + 60 * MIN });
     else a.n++;
     const salt = randomHex(16);

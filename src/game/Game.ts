@@ -1250,7 +1250,7 @@ export class Game {
             const side = Math.sign(Math.sin(wrapAngle(Math.atan2(dir.x, dir.z) - victim.yaw))) || 1;
             const w = WEAPONS[e.weapon];
             const strength = THREE.MathUtils.clamp((w.damage.torso * w.pellets) / 40, 0.5, 1.5);
-            v.hit(side, e.region ?? 'torso', strength);
+            v.hit(side, e.region ?? 'torso', strength, dir.x, dir.z);
           }
         }
       } else if (e.type === 'damage') {
@@ -1895,7 +1895,7 @@ export class Game {
         if (g && vs) {
           const side = Math.sign(Math.sin(wrapAngle(Math.atan2(dir.x, dir.z) - vs.yaw))) || 1;
           const w = WEAPONS[sh.weapon];
-          g.hit(side, sh.region, THREE.MathUtils.clamp((w.damage.torso * w.pellets) / 40, 0.5, 1.5));
+          g.hit(side, sh.region, THREE.MathUtils.clamp((w.damage.torso * w.pellets) / 40, 0.5, 1.5), dir.x, dir.z);
         }
       }
     }

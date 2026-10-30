@@ -453,11 +453,16 @@ export class SoldierView {
    * A hit: the body twists away from the side it was hit on; a head shot
    * snaps the head back, a leg shot buckles the knees. Bigger hits flinch more.
    */
-  hit(fromSide: number, region: 'head' | 'torso' | 'legs' = 'torso', strength = 1): void {
+  hit(fromSide: number, region: 'head' | 'torso' | 'legs' = 'torso', strength = 1, dirX = 0, dirZ = 0): void {
     this.flinch = Math.min(1.5, Math.max(this.flinch, strength));
     this.flinchSide = fromSide;
     this.flinchRegion = region;
+    // Which way the shot travelled: the body is shoved along it.
+    const len = Math.hypot(dirX, dirZ);
+    if (len > 1e-4) this.pushDir.set(dirX / len, 0, dirZ / len);
   }
+
+  private pushDir = new THREE.Vector3();
 
   private flinchRegion: 'head' | 'torso' | 'legs' = 'torso';
 
@@ -516,8 +521,9 @@ export class SoldierView {
     if (this.root.scale.x !== agent.scale) this.root.scale.setScalar(agent.scale);
     if (!this.frozen && this.style !== 'none' && this.style !== 'realmetal') animateStyle(this.materials, this.style, this.styleBase, agent, time, this.styleSeed);
     setReactive(this.rifle, agent.kills / 10);
-    // Leg hits buckle the knees for a moment.
-    if (this.flinch > 0 && this.flinchRegion === 'legs') this.root.position.y -= this.flinch * 0.07;
+    // Leg hits buckle the knees for a moment; every hit shoves the body a little along the shot.
+    if (this.flinch > 0 && this.flinchRegion === 'legs') this.root.position.y -= this.flinch * 0.12;
+    if (this.flinch > 0) this.root.position.addScaledVector(this.pushDir, this.flinch * this.flinch * 0.05);
 
     const speed = Math.hypot(agent.vx, agent.vz);
     // The whole body faces the aim; walking backwards plays the cycle in reverse.
@@ -560,19 +566,23 @@ export class SoldierView {
     const up = new THREE.Vector3(0, 1, 0);
     const aimRight = new THREE.Vector3(-Math.cos(agent.yaw), 0, Math.sin(agent.yaw));
     const pitchAxis = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw)).cross(up).normalize();
-    const kick = time - agent.lastShotT < 0.07 ? 0.05 : 0;
-    this.flinch = Math.max(0, this.flinch - dt * 4);
+    // A hit also jolts the gun in their hands.
+    const kick = (time - agent.lastShotT < 0.07 ? 0.05 : 0) + this.flinch * 0.05;
+    // Fast snap, slower recovery.
+    this.flinch = Math.max(0, this.flinch - dt * (this.flinch > 0.6 ? 5 : 3));
+    // Shot from the front: rock back. From behind: pitch forward.
+    const facing = new THREE.Vector3(Math.sin(agent.yaw), 0, Math.cos(agent.yaw));
+    const rock = this.pushDir.dot(facing) > 0.3 ? -1 : 1;
     for (const name of ['Spine', 'Spine1', 'Spine2']) {
       const b = this.bones[name];
       if (!b) continue;
       rotateBoneWorld(b, pitchAxis, ((agent.pitch * u) / 3) * 0.6);
-      if (this.flinch > 0) rotateBoneWorld(b, aimRight, (this.flinch * 0.25 * this.flinchSide) / 3);
-      // Torso hits also rock the upper body back a little.
-      if (this.flinch > 0 && this.flinchRegion === 'torso') rotateBoneWorld(b, pitchAxis, (-this.flinch * 0.12) / 3);
+      if (this.flinch > 0) rotateBoneWorld(b, aimRight, (this.flinch * 0.4 * this.flinchSide) / 3);
+      if (this.flinch > 0 && this.flinchRegion !== 'legs') rotateBoneWorld(b, pitchAxis, (-this.flinch * (this.flinchRegion === 'torso' ? 0.28 : 0.12) * rock) / 3);
     }
     if (this.flinch > 0 && this.flinchRegion === 'head') {
-      if (this.bones.Neck) rotateBoneWorld(this.bones.Neck, pitchAxis, -this.flinch * 0.45);
-      if (this.bones.Head) rotateBoneWorld(this.bones.Head, aimRight, this.flinch * 0.25 * this.flinchSide);
+      if (this.bones.Neck) rotateBoneWorld(this.bones.Neck, pitchAxis, -this.flinch * 0.7 * rock);
+      if (this.bones.Head) rotateBoneWorld(this.bones.Head, aimRight, this.flinch * 0.35 * this.flinchSide);
     }
     if (agent.reloadT > 0 && this.bones.Spine1) rotateBoneWorld(this.bones.Spine1, pitchAxis, -0.12);
     this.aimArms(agent, u, kick, time);
