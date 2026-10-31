@@ -274,6 +274,8 @@ export class SoldierView {
   static lowDetail = false;
   /** Golden Guns event: every gun is gold. */
   static goldGuns = false;
+  /** Flying Ragdolls (an admin event): takedowns throw bodies much further, and up. */
+  static flying = false;
   private low = SoldierView.lowDetail;
   private tag: THREE.Sprite | null = null;
   private materials: THREE.Material[] = [];
@@ -679,7 +681,8 @@ export class SoldierView {
     const dir = new THREE.Vector3(agent.deathDirX, 0, agent.deathDirZ);
     if (dir.lengthSq() < 1e-6) dir.set(-Math.sin(agent.yaw), 0, -Math.cos(agent.yaw));
     dir.normalize();
-    const velocity = new THREE.Vector3(agent.vx * 0.6, blast ? 3 : 0.6, agent.vz * 0.6).addScaledVector(dir, speed);
+    if (SoldierView.flying) speed = speed * 2.4 + 4;
+    const velocity = new THREE.Vector3(agent.vx * 0.6, blast ? 3 : SoldierView.flying ? 7 : 0.6, agent.vz * 0.6).addScaledVector(dir, speed);
     this.ragdoll.activate({
       // The kick at the hit region scales with the weapon too, so heavy hits also twist the body more.
       impulse: dir.clone().setY(0.25).normalize().multiplyScalar(blast ? 0 : (agent.deathRegion === 'head' ? 5 : 7) * Math.max(0.8, speed / 3)),

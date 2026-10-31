@@ -37,6 +37,11 @@ export interface InboxItem {
   at: number;
 }
 
+export interface EventTime {
+  from: number;
+  until: number;
+}
+
 export interface AccountState {
   user: AccountUser | null;
   /** Friends online, unread messages and friend requests (real accounts). */
@@ -44,7 +49,8 @@ export interface AccountState {
   unread: number;
   requests: number;
   news: NewsItem[];
-  events: Record<string, number>;
+  /** Running and scheduled events (start and end, ms). */
+  events: Record<string, EventTime>;
   maintenance: string | null;
   /** Messages to show the player once (warnings, gifts, renames). */
   notices: string[];
@@ -298,7 +304,7 @@ const handleInbox = async (items: InboxItem[]) => {
 
 export const heartbeat = async (): Promise<void> => {
   if (!token) return;
-  const r = await api<{ user: AccountUser; online: number; unread: number; requests: number; inbox: InboxItem[]; news: NewsItem[]; events: Record<string, number>; maintenance: string | null }>('account/heartbeat', { body: { status: statusOf() } });
+  const r = await api<{ user: AccountUser; online: number; unread: number; requests: number; inbox: InboxItem[]; news: NewsItem[]; events: Record<string, EventTime>; maintenance: string | null }>('account/heartbeat', { body: { status: statusOf() } });
   if (!r.ok) return;
   const d = r.data;
   if (token) remember(token, d.user);
@@ -328,12 +334,19 @@ function stopHeartbeat() {
 
 /** Signed out, news still shows (events, maintenance notices). */
 export const refreshNews = async (): Promise<void> => {
-  const r = await api<{ news: NewsItem[]; events: Record<string, number>; maintenance: string | null }>('news');
+  const r = await api<{ news: NewsItem[]; events: Record<string, EventTime>; maintenance: string | null }>('news');
   if (r.ok) set({ news: r.data.news, events: r.data.events, maintenance: r.data.maintenance });
 };
 
 /** Is a global event (double XP...) running right now? */
-export const eventOn = (key: string): boolean => (state.events[key] ?? 0) > Date.now();
+export const eventOn = (key: string): boolean => {
+  const e = state.events[key];
+  const now = Date.now();
+  return !!e && e.from <= now && now < e.until;
+};
+
+/** The events running right now. */
+export const liveEvents = (): string[] => Object.keys(state.events).filter(eventOn);
 
 /** Change your account's username (once a week for players). */
 export const renameAccount = async (name: string): Promise<string | null> => {

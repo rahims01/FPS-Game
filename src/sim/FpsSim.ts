@@ -905,8 +905,11 @@ export class FpsSim {
     return false;
   }
 
+  /** Speed Demon (an admin event): everyone moves faster. */
+  moveMul = 1;
+
   perkSpeed(a: Agent): number {
-    let k = 1;
+    let k = this.moveMul;
     if (a.admin) k *= 1.08;
     if (hasPerk(a, 'lightweight')) k *= 1.07;
     if (a.sprinting && hasPerk(a, 'marathon')) k *= 1.1;

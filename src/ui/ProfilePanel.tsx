@@ -57,7 +57,7 @@ export const LevelBadge = ({ level, prestige, frame }: { level: number; prestige
 
 type Tab = 'look' | 'badges' | 'collections' | 'mastery' | 'stats';
 
-const GROUPS: (BadgeGroup | 'All')[] = ['All', 'Combat', 'Weapons', 'Modes', 'Career', 'Social', 'Secret'];
+const GROUPS: (BadgeGroup | 'All')[] = ['All', 'Combat', 'Weapons', 'Modes', 'Career', 'Social', 'Secret', 'Events'];
 const hours = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`);
 
 /** Your calling card, title, frame and emblem, badges, weapon mastery and lifetime stats. */

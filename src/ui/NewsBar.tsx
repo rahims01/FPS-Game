@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { account, dismissNotice, subscribeAccount, type AccountState } from '../net/account';
-
-const EVENT_NAMES: Record<string, string> = { doubleXp: 'Double XP', bigHeads: 'Big Heads', lowGravity: 'Low Gravity' };
+import { countdown, eventDef } from '../game/events';
 const DISMISSED = 'fps-news-seen-v1';
 
 const seen = (): number[] => {
@@ -16,9 +15,16 @@ const seen = (): number[] => {
 export const NewsBar = () => {
   const [st, setSt] = useState<AccountState>(account);
   const [hidden, setHidden] = useState<number[]>(seen);
+  const [now, setNow] = useState(Date.now);
   useEffect(() => subscribeAccount(setSt), []);
-  const now = Date.now();
-  const events = Object.entries(st.events).filter(([, until]) => until > now);
+  // The countdowns tick.
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const events = Object.entries(st.events)
+    .filter(([, e]) => e.until > now)
+    .sort((a, b) => a[1].from - b[1].from);
   const news = st.news.filter((n) => !hidden.includes(n.id));
   if (!st.maintenance && !events.length && !news.length) return null;
   const hide = (id: number) => {
@@ -33,11 +39,37 @@ export const NewsBar = () => {
   return (
     <div className="news-bar" role="region" aria-label="News">
       {st.maintenance && <p className="news warning">{st.maintenance}</p>}
-      {events.map(([k, until]) => (
-        <p key={k} className="news event">
-          <b>{EVENT_NAMES[k] ?? k}</b> is on until {new Date(until).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+      {events.length > 2 ? (
+        // Lots on at once: one row of chips (the blurb on hover).
+        <p className="news event multi">
+          <b>Events</b>
+          {events.map(([k, e]) => {
+            const d = eventDef(k);
+            const live = e.from <= now;
+            return (
+              <span key={k} className={`ev-chip ${live ? '' : 'soon'}`} title={d?.blurb}>
+                <span aria-hidden="true">{d?.icon ?? '★'}</span> {d?.name ?? k}
+                <span className="news-clock">{live ? countdown(e.until - now) : `starts in ${countdown(e.from - now)}`}</span>
+              </span>
+            );
+          })}
         </p>
-      ))}
+      ) : events.map(([k, e]) => {
+        const d = eventDef(k);
+        const live = e.from <= now;
+        return (
+          <p key={k} className={`news event ${live ? '' : 'soon'}`}>
+            <span aria-hidden="true" className="news-icon">
+              {d?.icon ?? '★'}
+            </span>
+            <span>
+              <b>{d?.name ?? k}</b> {live ? 'is on' : 'starts soon'}
+              {d && <small> · {d.blurb}</small>}
+            </span>
+            <span className="news-clock">{live ? `ends in ${countdown(e.until - now)}` : `in ${countdown(e.from - now)}`}</span>
+          </p>
+        );
+      })}
       {news.map((n) => (
         <p key={n.id} className={`news ${n.kind}`}>
           {n.kind === 'celebrate' && <span className="confetti" aria-hidden="true" />}

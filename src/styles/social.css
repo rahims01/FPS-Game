@@ -689,6 +689,33 @@ textarea.field {
 .adm-event.on {
   box-shadow: inset 4px 0 0 var(--green);
 }
+.adm-event.soon {
+  box-shadow: inset 4px 0 0 var(--yellow);
+}
+.adm-subhead {
+  margin: 14px 0 6px;
+  font-family: var(--f-cond);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.adm-subhead small {
+  margin-left: 8px;
+  color: var(--dim);
+  font-family: var(--f-body, inherit);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.adm-form.adm-sched {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adm-sched .field {
+  width: auto;
+}
 .adm-event small {
   color: var(--dim);
 }
@@ -720,6 +747,48 @@ textarea.field {
 }
 .news.event {
   border-left-color: var(--green);
+}
+.news.multi {
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.news > .ev-chip {
+  display: inline-flex;
+  flex: none;
+  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: rgb(255 255 255 / 0.05);
+  font-size: 14px;
+}
+.ev-chip .news-clock {
+  font-size: 13px;
+}
+.news.event.soon {
+  border-left-color: var(--yellow);
+}
+.news > .news-icon,
+.news > .news-clock {
+  flex: none;
+}
+.news-icon {
+  font-size: 18px;
+}
+.news small {
+  color: var(--dim);
+}
+.news-clock {
+  font-family: var(--f-cond);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+.news.soon .news-clock,
+.ev-chip.soon .news-clock {
+  color: var(--yellow);
 }
 .news.warning {
   border-left-color: var(--red-slab);

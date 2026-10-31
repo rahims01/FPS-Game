@@ -25,7 +25,7 @@ import { TouchControls } from './ui/TouchControls';
 import { ChatBox } from './ui/ChatBox';
 import { EndScreen } from './ui/EndScreen';
 import { ControlsList } from './ui/ControlsList';
-import { account, isStaff, setPresenceSource, startAccount, subscribeAccount, type AccountState, type PresenceStatus } from './net/account';
+import { account, eventOn, isStaff, setPresenceSource, startAccount, subscribeAccount, type AccountState, type PresenceStatus } from './net/account';
 import { botFriendByName, matchEndedWith, resolveMode, subscribeBotFriends, tickBotFriends, unreadBotMessages, type BotFriend } from './game/botFriends';
 import { bringFriends } from './game/identity';
 import { setClassroom } from './game/words';
@@ -37,6 +37,18 @@ import { PlayerCard, type CardSubject } from './ui/PlayerCard';
 import { AdminPanel } from './ui/AdminPanel';
 import { NewsBar, NoticeBox } from './ui/NewsBar';
 import { CampaignPanel, Stars } from './ui/CampaignPanel';
+import { SKINS } from './assets/skins';
+
+/** Camos you can wear: unlocked by kills, given, or anything during Free Camo Weekend. */
+const wearableSkins = (skins: GameSettings['skins'], p: Profile): GameSettings['skins'] => {
+  if (eventOn('freeCamos') || p.granted?.includes('*')) return skins;
+  const out: GameSettings['skins'] = {};
+  for (const [w, id] of Object.entries(skins)) {
+    const s = SKINS.find((k) => k.id === id);
+    if (!s || s.kills <= (p.weaponKills[w] ?? 0) || p.granted?.includes(s.id)) out[w] = id;
+  }
+  return out;
+};
 import { campaignStars, MISSIONS, scoreMission, type Mission } from './game/campaign';
 import { ArrowIcon, ExitFullscreenIcon, FullscreenIcon, GearIcon, TrophyIcon } from './ui/icons';
 import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
@@ -306,7 +318,7 @@ export const App = () => {
     setRankedResult(null);
     // Night maps: the host decides online; otherwise now and then on generated maps.
     const time = host ? host.lobby.rules.time : 'random';
-    const night = !NO_NIGHT.includes(mode) && (forceNight || time === 'night' || (time === 'random' && Math.random() < NIGHT_CHANCE));
+    const night = !NO_NIGHT.includes(mode) && (forceNight || time === 'night' || (time === 'random' && (eventOn('nightOps') || Math.random() < NIGHT_CHANCE)));
     // The admin's gear and perks: never in ranked or tournaments (or for anyone else).
     const adminPerks = account().user?.role === 'admin' && !ranked && !tourneyMatch.current;
     const g = new Game(
@@ -328,13 +340,14 @@ export const App = () => {
         humans: host ? host.playingCount : 1,
         ...(watchRef.current && !host ? { watch: watchRef.current } : {}),
         ...(missionRef.current?.timeLimit && !host ? { timeLimit: missionRef.current.timeLimit } : {}),
+        ...(missionRef.current && !host ? { campaign: true } : {}),
         ...(host && !host.party && !host.public ? { rules: host.lobby.rules } : {}),
         ...(ranked && !netRef.current ? { skill: rankedDifficulty(queueStats(loadProfile(), rankedQueue).sr) } : {}),
         // Tournament matches: first to 3 rounds, sharper every round.
         ...(tourneyMatch.current && tourney ? { skill: roundDifficulty(tourney.round), rules: { ...DEFAULT_RULES, score: 0.6 } } : {})
       },
       brain,
-      { ...settings, playerName: name },
+      { ...settings, playerName: name, skins: wearableSkins(settings.skins, loadProfile()) },
       audio,
       netRef.current
     );
@@ -472,6 +485,16 @@ export const App = () => {
     audio.unlock();
     setRanked(false);
     tourneyMatch.current = false;
+    // Mystery Playlist (an admin event): a random mode instead.
+    if (eventOn('mystery') && !PRACTICE_MODES.includes(mode)) {
+      const pool = MODES.filter((d) => !d.humansOnly && !PRACTICE_MODES.includes(d.id) && d.id !== mode);
+      const pick = pool[Math.floor(Math.random() * pool.length)].id;
+      setMode(pick);
+      setScreen({ kind: 'finding' });
+      setRound((r) => r + 1);
+      seek(pick);
+      return;
+    }
     // Practice needs no lobby: straight in.
     setScreen({ kind: PRACTICE_MODES.includes(mode) ? 'playing' : 'finding' });
     setRound((r) => r + 1);
@@ -611,7 +634,7 @@ export const App = () => {
     color: settings.playerColor,
     primary: settings.primary,
     secondary: settings.secondary,
-    skins: settings.skins,
+    skins: wearableSkins(settings.skins, loadProfile()),
     streaks: settings.streaks,
     perks: settings.perks,
     lethal: settings.lethal,

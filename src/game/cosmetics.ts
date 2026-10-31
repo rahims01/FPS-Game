@@ -5,6 +5,7 @@
  */
 
 import { MELEES } from '../assets/melees';
+import { EVENTS } from './events';
 
 export interface Cosmetics {
   /** Staff accounts: the admin's spawn and kill effects, the crown in the feed. Looks only. */
@@ -166,6 +167,8 @@ export const CHARMS: CharmDef[] = [
   { id: 'diamondcharm', name: 'Diamond', shape: 'gem', color: 0x9fe8ff, unlock: { badge: 'diamondhands' } },
   { id: 'prestigestar', name: 'Prestige Star', shape: 'star', color: 0xb46bff, unlock: { prestige: 1 } },
   { id: 'trophycharm', name: 'Mini Trophy', shape: 'cone', color: 0xd4a933, unlock: { tourney: 1 } },
+  { id: 'pumpkin', name: 'Jack-o’-Lantern', shape: 'ball', color: 0xff7a1a, unlock: { special: 'Halloween event' }, rarity: 'legendary' },
+  { id: 'snowflake', name: 'Snowflake', shape: 'star', color: 0xd6f0ff, unlock: { special: 'Winter event' }, rarity: 'legendary' },
   { id: 'goldenduck', name: 'Golden Duck', shape: 'duck', color: 0xffcc00, unlock: { badge: 'giantslayer' }, secret: true, rarity: 'mythic' }
 ];
 
@@ -227,13 +230,15 @@ export interface ProfileLike {
   stats: Partial<Record<StatKey, number>>;
   /** Items given outright (admin gifts, codes); "*" unlocks everything. */
   granted?: string[];
+  /** Admin events you've played a match during (each gives a badge). */
+  eventsPlayed?: string[];
   /** Lifetime count of each medal (by MEDALS key). */
   medals?: Record<string, number>;
   /** Matches played and won in each mode. */
   modes?: Record<string, { played: number; won: number }>;
 }
 
-export type BadgeGroup = 'Combat' | 'Weapons' | 'Modes' | 'Career' | 'Social' | 'Secret';
+export type BadgeGroup = 'Combat' | 'Weapons' | 'Modes' | 'Career' | 'Social' | 'Secret' | 'Events';
 
 export interface BadgeDef {
   id: string;
@@ -369,7 +374,9 @@ export const BADGES: BadgeDef[] = [
   { id: 'rampage', name: 'Rampage', blurb: '50 kills in one match.', icon: '🦖', group: 'Secret', secret: true, progress: (p) => [stat(p, 'bestMatchKills'), 50] },
   { id: 'satellite', name: 'Satellite', blurb: 'A kill from 150 m away.', icon: '🛰', group: 'Secret', secret: true, progress: (p) => [stat(p, 'longestKill'), 150] },
   { id: 'nuke3', name: 'Mushroom Season', blurb: 'Call in 3 nukes.', icon: '🍄', group: 'Secret', secret: true, progress: (p) => [stat(p, 'nukes'), 3] },
-  { id: 'everything', name: 'Completionist', blurb: 'Earn every other achievement.', icon: '🏛', group: 'Secret', secret: true, progress: (p, level) => [BADGES.filter((b) => b.id !== 'everything' && earned(b, p, level)).length, BADGES.length - 1] }
+  { id: 'everything', name: 'Completionist', blurb: 'Earn every other achievement (event badges don’t count).', icon: '🏛', group: 'Secret', secret: true, progress: (p, level) => [BADGES.filter((b) => b.id !== 'everything' && b.group !== 'Events' && earned(b, p, level)).length, BADGES.filter((b) => b.group !== 'Events').length - 1] },
+  // Events: play a match while one is on. Only there while it lasts.
+  ...EVENTS.map((e): BadgeDef => ({ id: `ev_${e.key}`, name: e.name, blurb: `Play a match during the ${e.name} event.`, icon: e.icon, group: 'Events', progress: (p) => [p.eventsPlayed?.includes(e.key) ? 1 : 0, 1] }))
 ];
 
 /**

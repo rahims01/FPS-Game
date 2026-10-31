@@ -100,6 +100,20 @@ export class ArenaView {
     this.sun.color.set(on ? 0x8fa8ff : 0xfff1d6);
   }
 
+  /** A themed sky light (Halloween, Winter). */
+  tint(sky: number, ground: number, sun: number): void {
+    this.hemi.color.set(sky);
+    this.hemi.groundColor.set(ground);
+    this.sun.color.set(sun);
+  }
+
+  /** Disco: the light cycles through every colour. */
+  disco(t: number): void {
+    const h = (t * 0.15) % 1;
+    this.hemi.color.setHSL(h, 0.85, 0.62);
+    this.sun.color.setHSL((h + 0.5) % 1, 0.8, 0.7);
+  }
+
   constructor(private sim: FpsSim) {
     const arena = sim.arena;
     const H = arena.half;

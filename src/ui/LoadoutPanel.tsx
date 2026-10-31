@@ -7,7 +7,7 @@ import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, typ
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { ADMIN_PRIMARIES, ADMIN_SECONDARIES, PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
-import { account } from '../net/account';
+import { account, eventOn } from '../net/account';
 import { GunPreview } from './GunPreview';
 import { ATTACHMENTS, SLOT_NAMES, attachmentDef, fits, type AttachSlot } from '../sim/attachments';
 import { camoKey, MELEES, meleeDef } from '../assets/melees';
@@ -266,7 +266,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <div className="skin-grid">
             {SKINS.map((s) => {
               const given = !!profile.granted && (profile.granted.includes('*') || profile.granted.includes(s.id));
-              const locked = focusKills < s.kills && !given;
+              const locked = focusKills < s.kills && !given && !eventOn('freeCamos');
               const on = (settings.skins[slotKey] ?? 'none') === s.id;
               return (
                 <button

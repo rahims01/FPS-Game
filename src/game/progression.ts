@@ -34,6 +34,8 @@ export interface Profile {
   duelWins: number;
   /** Items given outright (admin gifts, codes); "*" unlocks everything. */
   granted?: string[];
+  /** Admin events played during (badges). */
+  eventsPlayed?: string[];
   /** Lifetime count of each medal (by MEDALS key). */
   medals?: Record<string, number>;
   /** Matches played and won in each mode. */

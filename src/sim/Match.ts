@@ -185,6 +185,8 @@ export interface MatchOptions {
   attachments?: AttachChoice;
   /** A campaign mission's time limit (seconds): the match ends, won, when it runs out. */
   timeLimit?: number;
+  /** A campaign mission (rule-changing events stay out of it). */
+  campaign?: boolean;
   /** You're the admin and this isn't ranked or a tournament: the admin perks apply to you. */
   adminPerks?: boolean;
 }
@@ -1220,6 +1222,9 @@ export class Match {
     this.notices.push({ kind: 'streak', id, name: s.name, kills: s.kills, agent: a.id });
   }
 
+  /** Streak Frenzy (an admin event): killstreaks cost this share of their kills. */
+  streakScale = 1;
+
   /** Ban Wave lightning still to land. */
   private pendingBolts: { at: number; agent: number; target: number }[] = [];
 
@@ -1787,7 +1792,7 @@ export class Match {
         const s = streakDef(id);
         // Killstreak Royalty: the admin's cost one kill less (admin streaks are the admin's alone).
         if (s.admin && !killer.admin) continue;
-        if (killer.streak === s.kills - (hasPerk(killer, 'hardline') ? 1 : 0) - (killer.admin ? 1 : 0)) this.callStreak(killer, id);
+        if (killer.streak === Math.max(1, Math.ceil(s.kills * this.streakScale) - (hasPerk(killer, 'hardline') ? 1 : 0) - (killer.admin ? 1 : 0))) this.callStreak(killer, id);
       }
     }
   }

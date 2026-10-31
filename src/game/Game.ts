@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { ArenaView } from '../render/ArenaView';
+import { Weather } from '../render/Weather';
+import { ragdollTuning } from '../physics/RagdollSystem';
+import { EVENT_CHARMS } from './events';
 import { Effects, flashTexture } from '../render/Effects';
 import { SoldierView } from '../render/SoldierView';
 import { Viewmodel } from '../render/Viewmodel';
@@ -29,7 +32,7 @@ import { assignIdentities, basePingFor, COLORS, cssColor, freshNames, lateJoiner
 import { botFriendByName, botFriends } from './botFriends';
 import { COURSE } from '../sim/layouts';
 import type { MissionRun } from './campaign';
-import { account, eventOn } from '../net/account';
+import { account, eventOn, liveEvents } from '../net/account';
 import { say, setClassroom } from './words';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
@@ -412,8 +415,16 @@ export class Game {
   private xp = 0;
   private xpBanked = false;
   /** Admin events running when the match started. */
-  private readonly doubleXp = eventOn('doubleXp');
+  private readonly xpMul = eventOn('tripleXp') ? 3 : eventOn('doubleXp') ? 2 : 1;
+  private readonly happyHour = eventOn('happyHour');
+  private readonly weaponXp = eventOn('doubleWeaponXp') ? 2 : 1;
   private readonly confettiKills = eventOn('confettiKills');
+  private readonly rainbow = eventOn('rainbowTracers');
+  private readonly paintParty = eventOn('paintParty');
+  private readonly discoOn = eventOn('disco');
+  private readonly retro = eventOn('retro');
+  private readonly eventsAtStart = liveEvents();
+  private weather: Weather | null = null;
   private killTimes: number[] = [];
   private firstBlood = false;
   private lastKillerOfPlayer = -1;
@@ -616,17 +627,31 @@ export class Game {
       // Admin events for everyone's casual matches (not ranked or tournaments, which pass an exact skill).
       // Golden Guns (an admin event): everyone's guns are gold. Looks only.
       SoldierView.goldGuns = Viewmodel.goldGuns = eventOn('goldenGuns');
-      if (!opts.skill) {
-        if (eventOn('bigHeads')) this.match.sim.headScale = Math.max(this.match.sim.headScale, 1.8);
-        if (eventOn('lowGravity')) this.match.sim.gravity *= 0.45;
+      if (!opts.skill && !opts.campaign && !PRACTICE_MODES.includes(this.match.mode)) {
+        const sim = this.match.sim;
+        if (eventOn('bigHeads')) sim.headScale = Math.max(sim.headScale, 1.8);
+        if (eventOn('lowGravity')) sim.gravity *= 0.45;
+        if (eventOn('speedDemon')) sim.moveMul = 1.3;
+        if (eventOn('streakFrenzy')) this.match.streakScale = 0.5;
+        if (sim.damageRule === 'normal' && eventOn('headshotsOnly')) sim.damageRule = 'headshot';
+        if (sim.damageRule === 'normal' && eventOn('oneShot')) sim.damageRule = 'instagib';
+        if (eventOn('knivesOut') && !['zombies', 'survival', 'boss', 'infected'].includes(this.match.mode)) {
+          for (const a of sim.agents) {
+            setLoadout(a, ['knife']);
+            a.grenades = 0;
+          }
+        }
       }
     }
+    SoldierView.flying = eventOn('flyingRagdolls');
+    ragdollTuning.maxSpeed = SoldierView.flying ? 24 : 8;
     // Colourblind modes swap the team colours for a pair that stays distinct.
     const cb = settings.access.colorblind;
     if (cb !== 'off' && this.ids.teamColors) this.ids.teamColors = cb === 'tritanopia' ? [0xd9483d, 0x2fb8b0] : [0x3d7bd9, 0xe08a2e];
     this.yaw = this.match.player.yaw;
     if (this.ids.teamColors) this.arenaView.teamColors = this.ids.teamColors;
     if (this.night) this.setupNight();
+    this.setupEventLooks(settings);
     if (this.match.mode === 'course' || this.match.mode === 'race') this.addCourseMarks();
     this.viewmodel.charm = settings.cosmetics.charm;
 
@@ -883,7 +908,7 @@ export class Game {
     this.settings = s;
     this.audio.setVolume(s.volume);
     const g = s.graphics;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * g.renderScale);
+    this.renderer.setPixelRatio(this.retro ? 0.3 : Math.min(window.devicePixelRatio, 2) * g.renderScale);
     this.onResize();
     this.renderer.shadowMap.enabled = g.shadows !== 'off';
     this.arenaView.setShadows(g.shadows);
@@ -1271,7 +1296,7 @@ export class Game {
         }
         if (WEAPONS[e.weapon].pierce) this.effects.beam(from, end);
         else this.effects.tracer(from, end, WEAPONS[e.weapon].admin ? 0xffd34d : this.tracerColor(shooter.id));
-        const paintball = this.match.mode === 'paintball';
+        const paintball = this.match.mode === 'paintball' || this.paintParty;
         const paint = paintball ? this.colorOf(shooter.id) : 0;
         if (e.world) {
           if (paintball) this.effects.paint(end, this.tmpN.set(e.nx, e.ny, e.nz), paint);
@@ -1483,6 +1508,7 @@ export class Game {
 
   /** Bullet tracer colour for a shooter (-1 = rainbow). */
   private tracerColor(id: number): number {
+    if (this.rainbow) return -1;
     const c = tracerDef(this.cosmetics[id]?.tracer ?? 'default').color;
     return c === 'rainbow' ? -1 : c;
   }
@@ -1590,6 +1616,37 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- night
+
+  /** Admin events that change how a match looks: themes, weather, fog, Retro. */
+  private setupEventLooks(settings: GameSettings): void {
+    const fog = this.scene.fog as THREE.Fog;
+    const sky = (c: number) => {
+      if (this.night) return;
+      this.scene.background = new THREE.Color(c);
+      fog.color = new THREE.Color(c);
+    };
+    if (eventOn('halloween')) {
+      sky(0x3a1a3f);
+      if (!this.night) this.arenaView.tint(0xffa25a, 0x3a1a4a, 0xff8a3a);
+    } else if (eventOn('winter')) {
+      sky(0xdfe7f0);
+      if (!this.night) this.arenaView.tint(0xe8f2ff, 0xb8c4d4, 0xf4f8ff);
+    }
+    if (eventOn('fog')) {
+      this.baseFogFar *= 0.5;
+      sky(0xb9c4cc);
+    }
+    const kind = eventOn('rain') ? 'rain' : eventOn('snow') || eventOn('winter') ? 'snow' : null;
+    if (kind) {
+      this.weather = new Weather(kind, settings.graphics.effects === 'low');
+      this.scene.add(this.weather.object);
+    }
+    if (this.retro) {
+      const c = this.renderer.domElement;
+      c.style.imageRendering = 'pixelated';
+      c.style.filter = 'contrast(1.12) saturate(1.35)';
+    }
+  }
 
   /** Dark sky and fog, a flashlight on your gun, and a few lights for other players' flashlights. */
   private setupNight(): void {
@@ -2065,8 +2122,8 @@ export class Game {
     const sim = this.match.sim;
     const key = (Object.keys(MEDALS) as (keyof typeof MEDALS)[]).find((k) => MEDALS[k] === m);
     if (key) this.medalCounts[key] = (this.medalCounts[key] ?? 0) + 1;
-    // Double XP weekend (an admin event).
-    const xp = m.xp * (this.doubleXp ? 2 : 1);
+    // Double / Triple XP and Happy Hour (admin events).
+    const xp = m.xp * this.xpMul + (this.happyHour ? 50 : 0);
     this.xp += xp;
     this.medals.push({ id: this.medalId++, name: say(m.name), xp, big: !!m.big, at: sim.time });
     if (this.medals.length > 8) this.medals.shift();
@@ -2088,11 +2145,11 @@ export class Game {
     if (WEAPONS[e.cause as WeaponId]) {
       // Knife kills count toward the melee in hand, which has its own camos.
       const w = camoKey(e.cause, this.settings.cosmetics.melee);
-      this.weaponKills[w] = (this.weaponKills[w] ?? 0) + 1;
+      this.weaponKills[w] = (this.weaponKills[w] ?? 0) + this.weaponXp;
       const total = (this.baseWeaponKills[w] ?? 0) + this.weaponKills[w];
       const name = e.cause === 'knife' ? meleeDef(w).name : WEAPONS[e.cause as WeaponId].name;
       // Several camos can unlock at the same kill count; name them all.
-      const unlocked = SKINS.filter((s) => s.kills > 0 && s.kills === total).map((s) => s.name);
+      const unlocked = SKINS.filter((s) => s.kills > 0 && s.kills <= total && s.kills > total - this.weaponXp).map((s) => s.name);
       if (unlocked.length) this.callout(`Unlocked: ${unlocked.join(' and ')} ${unlocked.length > 1 ? 'camos' : 'camo'} for the ${name}`);
     }
     if (gun && e.region === 'head') this.medal(MEDALS.headshot);
@@ -2328,6 +2385,15 @@ export class Game {
       const matchWeapons = { ...this.weaponKills };
       for (const [w, k] of Object.entries(this.weaponKills)) prof.weaponKills[w] = (prof.weaponKills[w] ?? 0) + k;
       this.weaponKills = {};
+      // Events: their badge, and a limited charm for the seasonal ones.
+      if (this.eventsAtStart.length) {
+        prof.eventsPlayed = [...new Set([...(prof.eventsPlayed ?? []), ...this.eventsAtStart])];
+        const charms = this.eventsAtStart.map((k) => EVENT_CHARMS[k]).filter((c): c is string => !!c && !(prof.granted ?? []).includes(c));
+        if (charms.length) {
+          prof.granted = [...(prof.granted ?? []), ...charms];
+          this.callout(`Event charm unlocked: ${charms.map((c) => (c === 'pumpkin' ? 'Jack-o’-Lantern' : 'Snowflake')).join(' and ')}`);
+        }
+      }
       const levelAfter = levelOf(prof.xp).level;
       this.newBadges = BADGES.filter((b) => !before.has(b.id) && earned(b, prof, levelAfter)).map((b) => b.id);
       const newTitles = claimCollections(prof, levelAfter);
@@ -2337,7 +2403,7 @@ export class Game {
         medals: Object.entries(this.medalCounts)
           .map(([k, count]) => {
             const md = MEDALS[k as keyof typeof MEDALS];
-            return { name: say(md.name), count, xp: md.xp * count * (this.doubleXp ? 2 : 1) };
+            return { name: say(md.name), count, xp: (md.xp * this.xpMul + (this.happyHour ? 50 : 0)) * count };
           })
           .sort((a, b) => b.xp - a.xp),
         kills: pl.kills,
@@ -2354,7 +2420,7 @@ export class Game {
           .map(([w, kills]) => ({ name: WEAPONS[w as WeaponId]?.name ?? meleeDef(w).name, kills }))
           .sort((a, b) => b.kills - a.kills),
         newTitles,
-        doubleXp: this.doubleXp
+        doubleXp: this.xpMul > 1
       };
     }
   }
@@ -2542,6 +2608,8 @@ export class Game {
       this.wallStuck.splice(i, 1);
     }
     if (this.night) this.updateNight();
+    this.weather?.update(dt, this.camera.position);
+    if (this.discoOn) this.arenaView.disco(time);
 
     tickSkins(time);
     const inKillcam = this.updateKillcam(dt);
@@ -3200,6 +3268,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.weather?.dispose();
     this.ticker?.terminate();
     if (this.net?.role === 'host' && !this.keepNet) this.net.session.close();
     if (this.net?.role === 'client' && !this.keepNet) this.net.session.leave();

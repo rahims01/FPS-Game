@@ -265,6 +265,9 @@ const deriveForward = (model: THREE.Object3D): THREE.Vector3 => {
   return forward.normalize();
 };
 
+/** Tunables an event can change (Flying Ragdolls raises the speed cap). */
+export const ragdollTuning = { maxSpeed: 8 };
+
 export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): RagdollHandle => {
   let runtimes: BoneRuntime[] = [];
   let constraints: CANNON.Constraint[] = [];
@@ -735,8 +738,8 @@ export const createRagdoll = (model: THREE.Object3D, world: CANNON.World): Ragdo
   // Safety net: nothing should ever exceed a sane speed, regardless of how
   // many frames of contact/impulses stack up. Cheap insurance against any
   // runaway velocity turning the ragdoll into a rocket.
-  const MAX_BODY_SPEED = 8;
   const clampVelocities = () => {
+    const MAX_BODY_SPEED = ragdollTuning.maxSpeed;
     runtimes.forEach(({ body }) => {
       const speedSq = body.velocity.lengthSquared();
       if (speedSq > MAX_BODY_SPEED * MAX_BODY_SPEED) {

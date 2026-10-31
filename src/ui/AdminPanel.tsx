@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { EVENTS, eventDef, type EventGroup } from '../game/events';
 import { api, heartbeat, isAdmin } from '../net/account';
 import { modeName } from '../game/botFriends';
 import { levelOf, type Profile } from '../game/progression';
@@ -18,13 +19,12 @@ const ago = (at: number) => {
 };
 const when = (at: number) => (at >= 8_640_000_000_000_000 ? 'forever' : new Date(at).toLocaleString());
 
-const EVENTS: [string, string, string][] = [
-  ['doubleXp', 'Double XP', 'Every medal is worth twice the XP.'],
-  ['bigHeads', 'Big Heads', 'Huge heads (and headshot hitboxes) in casual matches.'],
-  ['lowGravity', 'Low Gravity', 'Moon jumps in casual matches.'],
-  ['goldenGuns', 'Golden Guns', 'Every gun in every match is gold. Looks only.'],
-  ['confettiKills', 'Confetti Kills', 'Every takedown bursts into confetti. Looks only.']
-];
+const GROUP_NOTE: Record<EventGroup, string> = {
+  Rewards: 'Extra XP and unlocks.',
+  Looks: 'Looks only: nothing about a fight changes.',
+  Rules: 'Casual matches only (never ranked, tournaments or the campaign).'
+};
+type EventTimes = Record<string, { from: number; until: number }>;
 
 export const AdminPanel = ({ onWatchRoom, onDressUp }: { onWatchRoom: (code: string) => void; onDressUp?: () => void }) => {
   const admin = isAdmin();
@@ -218,7 +218,7 @@ const Overview = ({ onGo }: { onGo: (s: Section) => void }) => {
     ['Live rooms', o.rooms, 'rooms'],
     ['Messages today', o.messagesToday]
   ];
-  const events = (o.events ?? {}) as Record<string, number>;
+  const events = (o.events ?? {}) as EventTimes;
   return (
     <>
       <div className="adm-tiles">
@@ -231,9 +231,9 @@ const Overview = ({ onGo }: { onGo: (s: Section) => void }) => {
       </div>
       <h3>Running now</h3>
       <ul className="adm-list">
-        {Object.entries(events).map(([k, until]) => (
+        {Object.entries(events).map(([k, e]) => (
           <li key={k}>
-            Event: <b>{EVENTS.find((e) => e[0] === k)?.[1] ?? k}</b> until {new Date(until).toLocaleString()}
+            Event: <b>{eventDef(k)?.name ?? k}</b> {e.from > Date.now() ? `starts ${new Date(e.from).toLocaleString()}` : `until ${new Date(e.until).toLocaleString()}`}
           </li>
         ))}
         {((o.news ?? []) as Any[]).map((n) => (
@@ -578,7 +578,18 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
     if (r.ok) setText('');
     reload();
   };
-  const events = (o?.events ?? {}) as Record<string, number>;
+  const events = (o?.events ?? {}) as EventTimes;
+  const [schedKey, setSchedKey] = useState(EVENTS[0].key);
+  const [schedAt, setSchedAt] = useState('');
+  const [schedHours, setSchedHours] = useState(24);
+  const schedule = async (e: FormEvent) => {
+    e.preventDefault();
+    const from = new Date(schedAt).getTime();
+    if (!from) return;
+    const r = await api('admin/event', { body: { key: schedKey, hours: schedHours, from } });
+    say(r.ok ? `${eventDef(schedKey)?.name} scheduled` : (r.data.error ?? 'Failed'));
+    reload();
+  };
   return (
     <>
       <h3>Announcement on everyone’s menu</h3>
@@ -621,13 +632,41 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
       {admin && (
         <>
           <h3>Events</h3>
+          <p className="set-hint">Start one now, or schedule it: everyone sees a countdown on their menu, and playing a match during an event earns its badge.</p>
+          <form className="adm-form adm-sched" onSubmit={schedule}>
+            <select className="field" value={schedKey} onChange={(e) => setSchedKey(e.target.value)} aria-label="Event">
+              {EVENTS.map((ev) => (
+                <option key={ev.key} value={ev.key}>
+                  {ev.icon} {ev.name}
+                </option>
+              ))}
+            </select>
+            <input className="field" type="datetime-local" value={schedAt} onChange={(e) => setSchedAt(e.target.value)} aria-label="Starts" required />
+            <label className="adm-inline">
+              for
+              <input className="field" type="number" min={1} max={336} value={schedHours} onChange={(e) => setSchedHours(Number(e.target.value))} />
+              hours
+            </label>
+            <button className="chip on" disabled={!schedAt}>
+              Schedule
+            </button>
+          </form>
+          {(['Rewards', 'Looks', 'Rules'] as EventGroup[]).map((g) => (
+          <div key={g}>
+          <h4 className="adm-subhead">
+            {g} <small>{GROUP_NOTE[g]}</small>
+          </h4>
           <div className="adm-events">
-            {EVENTS.map(([key, name, blurb]) => {
-              const on = (events[key] ?? 0) > Date.now();
+            {EVENTS.filter((ev) => ev.group === g).map(({ key, name, blurb, icon }) => {
+              const ev = events[key];
+              const on = !!ev && ev.from <= Date.now();
+              const soon = !!ev && !on;
               return (
-                <div key={key} className={`adm-event ${on ? 'on' : ''}`}>
-                  <b>{name}</b>
-                  <small>{on ? `On until ${new Date(events[key]).toLocaleString()}` : blurb}</small>
+                <div key={key} className={`adm-event ${on ? 'on' : ''} ${soon ? 'soon' : ''}`}>
+                  <b>
+                    <span aria-hidden="true">{icon}</span> {name}
+                  </b>
+                  <small>{on ? `On until ${new Date(ev.until).toLocaleString()}` : soon ? `Starts ${new Date(ev.from).toLocaleString()}` : blurb}</small>
                   <span className="pc-actions">
                     {[2, 24, 48].map((h) => (
                       <button
@@ -642,16 +681,16 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
                         {h} h
                       </button>
                     ))}
-                    {on && (
+                    {(on || soon) && (
                       <button
                         className="chip"
                         onClick={async () => {
                           await api('admin/event', { body: { key, hours: 0 } });
-                          say(`${name} off`);
+                          say(`${name} ${soon ? 'cancelled' : 'off'}`);
                           reload();
                         }}
                       >
-                        Stop
+                        {soon ? 'Cancel' : 'Stop'}
                       </button>
                     )}
                   </span>
@@ -659,6 +698,8 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
               );
             })}
           </div>
+          </div>
+          ))}
 
           <h3>Maintenance notice</h3>
           <p className="set-hint">Shown at the top of everyone’s menu until you clear it (the game keeps working).</p>
