@@ -17,7 +17,13 @@ const GUN_TONE: Record<string, { bright: number; length: number; pitch: number; 
   autoshotgun: { bright: 0.75, length: 1.5, pitch: 0.75, gain: 1.25 },
   barrett: { bright: 0.75, length: 3, pitch: 0.5, gain: 1.6 },
   deagle: { bright: 0.95, length: 1.5, pitch: 0.8, gain: 1.3 },
-  mpistol: { bright: 1.3, length: 0.6, pitch: 1.5, gain: 0.75 }
+  mpistol: { bright: 1.3, length: 0.6, pitch: 1.5, gain: 0.75 },
+  sovereign: { bright: 1.05, length: 1.05, pitch: 0.9, gain: 1.1 },
+  sovburst: { bright: 1.05, length: 0.95, pitch: 1, gain: 1.05 },
+  moderator: { bright: 0.9, length: 1.8, pitch: 0.7, gain: 1.3 },
+  kick: { bright: 0.65, length: 2, pitch: 0.6, gain: 1.4 },
+  permaban: { bright: 1.4, length: 3.2, pitch: 0.45, gain: 1.5 },
+  gavel: { bright: 0.85, length: 1.7, pitch: 0.65, gain: 1.4 }
 };
 
 /**
@@ -122,6 +128,13 @@ export class GameAudio {
     const out = this.out(att, own ? 0 : pan, own ? 0.12 : Math.min(0.7, 0.18 + distance * 0.012));
     if (!out) return;
     const t = ctx.currentTime;
+    // The Gavel: a wooden courtroom knock under the shot.
+    if (weapon === 'gavel') {
+      this.burst(out, t + 0.01, 'bandpass', 420, 0.09, 1.4, 3);
+      this.burst(out, t + 0.12, 'bandpass', 380, 0.07, 0.9, 3);
+    }
+    // The Permaban: a rising electric whine.
+    if (weapon === 'permaban') this.burst(out, t, 'bandpass', 900, 0.35, 0.5, 8, 4200);
     // The supersonic crack up close; behind you it's dulled.
     if (own || distance < 25) this.burst(out, t, 'highpass', behind ? 1800 : 3200, 0.018, (own ? 0.7 : 0.5) * tone.gain);
     // Your own gun: the bolt cycling.

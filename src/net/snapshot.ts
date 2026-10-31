@@ -157,6 +157,10 @@ const applyAgent = (a: Agent, r: AgentNet, me: boolean, targets: Map<number, Net
   a.lethal = (r[45] as ThrowableId) ?? 'frag';
   a.tactical = (r[46] as ThrowableId) ?? 'flash';
   a.reloadDur = num(r[47] ?? 1);
+  a.stunUntil = num(r[48] ?? 0);
+  a.flaggedUntil = num(r[49] ?? 0);
+  a.flaggedTeam = num(r[50] ?? -1);
+  a.admin = r[51] === 1 || undefined;
   const pos = { x: num(r[1]), y: num(r[2]), z: num(r[3]), yaw: num(r[7]), pitch: num(r[8]) };
   if (me) {
     // Our own movement is simulated locally; only take the host's position on respawn.

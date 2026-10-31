@@ -1,3 +1,4 @@
+import { isAdminWeapon } from '../sim/weapons';
 import Peer, { type DataConnection } from 'peerjs';
 import { setLoadout, type Agent } from '../sim/Agent';
 import type { PlayerInput, SimEvent } from '../sim/FpsSim';
@@ -400,7 +401,11 @@ export class HostSession {
       a.control = 'remote';
       a.style = 'soldier';
       a.attach = c.profile.attachments;
-      if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [c.profile.primary, c.profile.secondary ?? 'pistol']);
+      const isAdmin = c.profile.cosmetics?.staff === 'admin';
+      a.admin = isAdmin || undefined;
+      const prim = !isAdmin && isAdminWeapon(c.profile.primary) ? 'rifle' : c.profile.primary;
+      const sec = !isAdmin && c.profile.secondary && isAdminWeapon(c.profile.secondary) ? 'pistol' : (c.profile.secondary ?? 'pistol');
+      if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [prim, sec]);
       else setLoadout(a, a.weapons);
       match.streakChoices[a.id] = c.profile.streaks;
       a.perks = c.profile.perks ?? a.perks;

@@ -1,6 +1,9 @@
 import type { HitRegion } from './config';
 
-export type WeaponId = 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife' | 'burst' | 'dmr' | 'ak' | 'revolver' | 'scar' | 'uzi' | 'autoshotgun' | 'barrett' | 'deagle' | 'mpistol';
+export type WeaponId =
+  | 'rifle' | 'smg' | 'shotgun' | 'sniper' | 'lmg' | 'pistol' | 'knife' | 'burst' | 'dmr' | 'ak' | 'revolver' | 'scar' | 'uzi' | 'autoshotgun' | 'barrett' | 'deagle' | 'mpistol'
+  // The admin's arsenal (see ADMIN_WEAPONS).
+  | 'sovereign' | 'sovburst' | 'moderator' | 'kick' | 'permaban' | 'gavel';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -48,6 +51,11 @@ export interface WeaponDef {
   optic?: 'reddot' | 'holo';
   suppressed?: boolean;
   laser?: boolean;
+  /** Admin guns: goes through walls and every player in the line; shoves whoever it hits; marks hits on the shooter's team's minimaps. */
+  pierce?: boolean;
+  knockback?: number;
+  flag?: boolean;
+  admin?: boolean;
 }
 
 const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' | 'range' | 'pattern'> & Partial<WeaponDef>): WeaponDef => ({
@@ -61,6 +69,154 @@ const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' 
 });
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
+  // ---- The admin's arsenal.
+  sovereign: gun({
+    id: 'sovereign',
+    name: 'Sovereign',
+    tag: 'SOVEREIGN',
+    slot: 'primary',
+    admin: true,
+    // M16 accuracy, AK punch: three body hits.
+    damage: { head: 100, torso: 36, legs: 26 },
+    interval: 0.095,
+    auto: true,
+    magazine: 40,
+    reload: 1.6,
+    spreadStill: 0.0035,
+    spreadMoving: 0.019,
+    falloffStart: 35,
+    falloffEnd: 80,
+    minMul: 0.8,
+    recoil: 0.009,
+    move: 1,
+    adsFov: 18,
+    preferredRange: 20,
+    pattern: [[1, 0], [1.05, 0.05], [1.1, 0.12], [1.1, 0.25], [1, 0.35], [0.9, 0.3], [0.8, 0.05], [0.7, -0.2], [0.6, -0.4], [0.6, -0.3], [0.5, 0], [0.5, 0.3]]
+  }),
+  sovburst: gun({
+    id: 'sovburst',
+    name: 'Sovereign Burst',
+    tag: 'SOV BURST',
+    slot: 'primary',
+    admin: true,
+    damage: { head: 110, torso: 38, legs: 27 },
+    interval: 0.26,
+    burst: 3,
+    burstGap: 0.06,
+    auto: false,
+    magazine: 36,
+    reload: 1.7,
+    spreadStill: 0.0025,
+    spreadMoving: 0.017,
+    falloffStart: 40,
+    falloffEnd: 90,
+    minMul: 0.85,
+    recoil: 0.009,
+    move: 1,
+    adsFov: 20,
+    preferredRange: 24,
+    pattern: [[1, 0.1], [1.1, -0.1], [1.15, 0.12]]
+  }),
+  moderator: gun({
+    id: 'moderator',
+    name: 'Moderator',
+    tag: 'MODERATOR',
+    slot: 'primary',
+    admin: true,
+    flag: true,
+    damage: { head: 150, torso: 55, legs: 40 },
+    interval: 0.28,
+    auto: false,
+    magazine: 15,
+    reload: 2.0,
+    spreadStill: 0.016,
+    spreadMoving: 0.04,
+    adsSpread: 0.06,
+    falloffStart: 999,
+    falloffEnd: 1000,
+    minMul: 1,
+    range: 260,
+    recoil: 0.028,
+    move: 0.97,
+    adsFov: 34,
+    preferredRange: 30,
+    pattern: [[1, 0.1], [1, -0.1]]
+  }),
+  kick: gun({
+    id: 'kick',
+    name: 'Kick',
+    tag: 'KICK',
+    slot: 'primary',
+    admin: true,
+    knockback: 1.1,
+    damage: { head: 24, torso: 16, legs: 11 },
+    pellets: 9,
+    interval: 0.7,
+    auto: false,
+    magazine: 8,
+    reload: 2.2,
+    spreadStill: 0.065,
+    spreadMoving: 0.075,
+    adsSpread: 0.75,
+    falloffStart: 6,
+    falloffEnd: 20,
+    minMul: 0.15,
+    range: 60,
+    recoil: 0.05,
+    move: 1,
+    adsFov: 10,
+    preferredRange: 5,
+    pattern: [[1, 0.15], [1, -0.15]]
+  }),
+  permaban: gun({
+    id: 'permaban',
+    name: 'Permaban',
+    tag: 'PERMABAN',
+    slot: 'primary',
+    admin: true,
+    pierce: true,
+    damage: { head: 200, torso: 150, legs: 120 },
+    interval: 1.5,
+    auto: false,
+    magazine: 5,
+    reload: 2.8,
+    spreadStill: 0.001,
+    spreadMoving: 0.012,
+    adsSpread: 0.2,
+    falloffStart: 999,
+    falloffEnd: 1000,
+    minMul: 1,
+    range: 300,
+    recoil: 0.06,
+    move: 0.93,
+    adsFov: 30,
+    preferredRange: 35,
+    pattern: [[1, 0]]
+  }),
+  gavel: gun({
+    id: 'gavel',
+    name: 'Gavel',
+    tag: 'GAVEL',
+    slot: 'secondary',
+    admin: true,
+    // Two to the body, one to the head, at any range.
+    damage: { head: 150, torso: 55, legs: 40 },
+    interval: 0.35,
+    auto: false,
+    magazine: 8,
+    reload: 1.6,
+    spreadStill: 0.005,
+    spreadMoving: 0.016,
+    adsSpread: 0.4,
+    falloffStart: 999,
+    falloffEnd: 1000,
+    minMul: 1,
+    recoil: 0.06,
+    move: 1.04,
+    adsFov: 12,
+    preferredRange: 16,
+    pattern: [[1, 0.25], [1.1, -0.2]]
+  }),
   rifle: gun({
     id: 'rifle',
     name: 'M16 Assault Rifle',
@@ -440,6 +596,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     preferredRange: 0
   })
 };
+
+/** The admin's guns: only the admin account can carry them, and never in ranked or tournaments. */
+export const ADMIN_PRIMARIES: WeaponId[] = ['sovereign', 'sovburst', 'moderator', 'kick', 'permaban'];
+export const ADMIN_SECONDARIES: WeaponId[] = ['gavel'];
+export const isAdminWeapon = (w: WeaponId): boolean => !!WEAPONS[w]?.admin;
 
 export const PRIMARIES: WeaponId[] = ['rifle', 'ak', 'scar', 'burst', 'smg', 'uzi', 'shotgun', 'autoshotgun', 'dmr', 'sniper', 'barrett', 'lmg'];
 export const SECONDARIES: WeaponId[] = ['pistol', 'revolver', 'deagle', 'mpistol'];

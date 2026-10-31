@@ -1087,6 +1087,44 @@
   color: var(--dim);
 }
 
+/* Server Restart (an admin killstreak): a fake "lost connection" screen. */
+.reconnecting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgb(8 6 16 / 0.72);
+  backdrop-filter: grayscale(1);
+}
+.reconnecting i {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgb(255 255 255 / 0.2);
+  border-top-color: #b46bff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.reconnecting b {
+  color: #fff;
+  font-family: var(--f-cond);
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.reconnecting span {
+  color: var(--dim);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Tab scoreboard. */
 .scoreboard {
   position: absolute;

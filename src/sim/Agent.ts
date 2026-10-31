@@ -142,6 +142,18 @@ export interface Agent {
   deathT: number;
   /** What killed it: a weapon, a grenade, an airstrike or the zone. */
   deathCause: DeathCause;
+  /**
+   * The admin account outside ranked and tournaments: faster reloads and swaps,
+   * 15% less damage taken, 8% faster, hits mark enemies, one extra life a match
+   * in round modes, killstreaks one kill cheaper, and nearby teammates reload faster.
+   */
+  admin?: boolean;
+  appealUsed?: boolean;
+  /** Stunned (Server Restart): can't move or shoot, but can be hit. */
+  stunUntil: number;
+  /** Marked on a team's minimap (Moderator hits, the admin's Spotlight). */
+  flaggedUntil: number;
+  flaggedTeam: number;
   /** Attachments chosen for each gun, and the stats they give (rebuilt by setLoadout). */
   attach?: AttachChoice;
   mods?: Partial<Record<WeaponId, WeaponDef>>;
@@ -262,6 +274,9 @@ export const createAgent = (id: number, team: number, control: Control, x: numbe
   armor: 1,
   streak: 0,
   frozenUntil: 0,
+  stunUntil: 0,
+  flaggedUntil: 0,
+  flaggedTeam: -1,
   tier: 0,
   tierKills: 0,
   ammo: WEAPONS.rifle.magazine,

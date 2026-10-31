@@ -232,5 +232,9 @@ export const packAgent = (a: Agent): AgentNet => [
   a.tacticals,
   a.lethal,
   a.tactical,
-  r3(a.reloadDur)
+  r3(a.reloadDur),
+  r3(a.stunUntil),
+  r3(a.flaggedUntil),
+  a.flaggedTeam,
+  a.admin ? 1 : 0
 ];

@@ -185,6 +185,8 @@ export interface MatchOptions {
   attachments?: AttachChoice;
   /** A campaign mission's time limit (seconds): the match ends, won, when it runs out. */
   timeLimit?: number;
+  /** You're the admin and this isn't ranked or a tournament: the admin perks apply to you. */
+  adminPerks?: boolean;
 }
 
 export type MatchPhase = 'live' | 'roundOver' | 'over';
@@ -204,6 +206,10 @@ export type MatchNotice =
   | { kind: 'sharp'; weapon: WeaponId }
   | { kind: 'potato'; holder: number; from: number }
   | { kind: 'tagit'; holder: number; from: number }
+  /** A Ban Wave lightning strike. */
+  | { kind: 'bolt'; x: number; z: number }
+  /** Server Restart: every enemy of `team` is stunned for 3 s. */
+  | { kind: 'restart'; team: number }
   | { kind: 'course'; agent: number; checkpoint: number; name: string; finished: boolean; time: number }
   | { kind: 'frozen'; agent: number; by: number }
   | { kind: 'thawed'; agent: number; by: number[] }
@@ -614,6 +620,10 @@ export class Match {
       }
     }
     if (mode === 'gunfight') this.gunfightLoadout();
+    // The admin's perks (never in ranked or tournaments, which pass an exact skill).
+    if (opts.adminPerks && !opts.skill && !opts.watch) this.player.admin = true;
+    // Round modes: the admin may get back up once a match.
+    sim.allowAppeal = ['1v1', '2v2', '3v3', 'gunfight', 'snd', 'dodgeball', 'lms'].includes(mode);
     // Your attachments (online players get theirs from the host's session).
     if (opts.attachments && !opts.watch) {
       this.player.attach = opts.attachments;
@@ -1186,6 +1196,20 @@ export class Match {
       case 'jugg':
         a.armor = 0.45;
         break;
+      case 'godview':
+        this.uavUntil[a.id] = sim.time + 45;
+        for (const b of sim.agents) if (b.team === a.team) this.uavUntil[b.id] = sim.time + 45;
+        break;
+      case 'banwave': {
+        // Up to four enemies, nearest first, each struck a beat apart.
+        const targets = sim.agents.filter((b) => b.alive && b.team !== a.team).sort((x, y) => Math.hypot(x.x - a.x, x.z - a.z) - Math.hypot(y.x - a.x, y.z - a.z)).slice(0, 4);
+        targets.forEach((b, i) => this.pendingBolts.push({ at: sim.time + 0.6 + i * 0.45, agent: a.id, target: b.id }));
+        break;
+      }
+      case 'restart':
+        for (const b of sim.agents) if (b.alive && b.team !== a.team) b.stunUntil = sim.time + 3;
+        this.notices.push({ kind: 'restart', team: a.team });
+        break;
       case 'nuke':
         this.notices.push({ kind: 'streak', id, name: s.name, kills: s.kills, agent: a.id });
         for (const b of sim.agents) if (b.alive && b.team !== a.team) sim.damage(b, a, 9999, 'torso', 0, -1, 0, 'airstrike');
@@ -1196,9 +1220,22 @@ export class Match {
     this.notices.push({ kind: 'streak', id, name: s.name, kills: s.kills, agent: a.id });
   }
 
+  /** Ban Wave lightning still to land. */
+  private pendingBolts: { at: number; agent: number; target: number }[] = [];
+
   /** Timed killstreak effects. Runs every rules tick. */
   private tickStreaks(): void {
     const sim = this.sim;
+    for (let i = this.pendingBolts.length - 1; i >= 0; i--) {
+      const b = this.pendingBolts[i];
+      if (sim.time < b.at) continue;
+      this.pendingBolts.splice(i, 1);
+      const t = sim.agents[b.target];
+      const owner = sim.agents[b.agent];
+      if (!t || !t.alive || !owner) continue;
+      this.notices.push({ kind: 'bolt', x: t.x, z: t.z });
+      sim.damage(t, owner, 999, 'torso', 0, -1, 0, 'airstrike');
+    }
     for (const [id, until] of this.adrenalineUntil) {
       const a = sim.agents[id];
       if (sim.time < until && a?.alive) continue;
@@ -1748,7 +1785,9 @@ export class Match {
     if (killer && isHuman(killer) && this.phase === 'live' && !PRACTICE_MODES.includes(this.mode)) {
       for (const id of this.streaksFor(killer)) {
         const s = streakDef(id);
-        if (killer.streak === s.kills - (hasPerk(killer, 'hardline') ? 1 : 0)) this.callStreak(killer, id);
+        // Killstreak Royalty: the admin's cost one kill less (admin streaks are the admin's alone).
+        if (s.admin && !killer.admin) continue;
+        if (killer.streak === s.kills - (hasPerk(killer, 'hardline') ? 1 : 0) - (killer.admin ? 1 : 0)) this.callStreak(killer, id);
       }
     }
   }

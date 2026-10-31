@@ -422,6 +422,46 @@ export class Effects {
     }
   }
 
+  /** The Permaban: a violet beam the whole length of the shot, lingering a moment. */
+  beam(from: THREE.Vector3, to: THREE.Vector3): void {
+    const len = from.distanceTo(to);
+    const n = Math.min(140, Math.ceil(len / 0.45));
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      const x = from.x + (to.x - from.x) * k;
+      const y = from.y + (to.y - from.y) * k;
+      const z = from.z + (to.z - from.z) * k;
+      this.emit(x, y, z, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, 0.72, 0.42, 1, 0.35 + Math.random() * 0.3, 0);
+    }
+    const l = this.lights[this.lightNext];
+    this.lightNext = (this.lightNext + 1) % this.lights.length;
+    l.light.position.copy(from);
+    l.light.color.setHex(0xb46bff);
+    l.light.intensity = 20;
+    l.light.distance = 12;
+    l.life = 0.25;
+  }
+
+  /** A Ban Wave strike: a white-violet bolt from the sky and a burst of sparks. */
+  bolt(p: THREE.Vector3): void {
+    for (let i = 0; i < 70; i++) {
+      const y = p.y + (i / 70) * 18;
+      const jag = Math.sin(i * 1.7) * 0.35;
+      this.emit(p.x + jag, y, p.z + jag * 0.6, 0, 0, 0, 0.9, 0.85, 1, 0.25 + Math.random() * 0.15, 0);
+    }
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.emit(p.x, p.y + 0.2, p.z, Math.cos(a) * 4, 2 + Math.random() * 3, Math.sin(a) * 4, 0.75, 0.55, 1, 0.5 + Math.random() * 0.3, 9);
+    }
+    const l = this.lights[this.lightNext];
+    this.lightNext = (this.lightNext + 1) % this.lights.length;
+    l.light.position.set(p.x, p.y + 4, p.z);
+    l.light.color.setHex(0xd8c8ff);
+    l.light.intensity = this.reduceFlash ? 20 : 80;
+    l.light.distance = 25;
+    l.life = 0.3;
+  }
+
   /** The admin arriving: a column of golden light and a ring of sparks. */
   adminArrive(p: THREE.Vector3): void {
     for (let i = 0; i < 40; i++) {

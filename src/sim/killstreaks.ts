@@ -2,13 +2,15 @@
  * Killstreak rewards. Each player picks three in the loadout menu; reaching
  * a reward's kill count without dying calls it in.
  */
-export type StreakId = 'adrenaline' | 'uav' | 'supply' | 'counter' | 'airstrike' | 'cluster' | 'jugg' | 'nuke';
+export type StreakId = 'adrenaline' | 'uav' | 'supply' | 'counter' | 'airstrike' | 'cluster' | 'jugg' | 'nuke' | 'godview' | 'banwave' | 'restart';
 
 export interface StreakDef {
   id: StreakId;
   name: string;
   kills: number;
   blurb: string;
+  /** The admin account only (and never in ranked or tournaments). */
+  admin?: boolean;
 }
 
 export const KILLSTREAKS: StreakDef[] = [
@@ -19,7 +21,10 @@ export const KILLSTREAKS: StreakDef[] = [
   { id: 'airstrike', name: 'Airstrike', kills: 5, blurb: 'A bombing run on the nearest enemy.' },
   { id: 'cluster', name: 'Cluster Strike', kills: 7, blurb: 'Three airstrikes, one after another.' },
   { id: 'jugg', name: 'Juggernaut', kills: 8, blurb: 'Heavy armour: take less than half damage until you die.' },
-  { id: 'nuke', name: 'Tactical Nuke', kills: 20, blurb: 'Every enemy dies and your side wins the match.' }
+  { id: 'nuke', name: 'Tactical Nuke', kills: 20, blurb: 'Every enemy dies and your side wins the match.' },
+  { id: 'godview', name: 'God View', kills: 5, blurb: 'Every enemy on your team’s minimap for 45 s. Can’t be jammed.', admin: true },
+  { id: 'banwave', name: 'Ban Wave', kills: 9, blurb: 'Lightning strikes down on up to four enemies.', admin: true },
+  { id: 'restart', name: 'Server Restart', kills: 14, blurb: 'Every enemy freezes for 3 s while their game “reconnects”.', admin: true }
 ];
 
 export const DEFAULT_STREAKS: StreakId[] = ['uav', 'airstrike', 'jugg'];

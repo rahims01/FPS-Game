@@ -39,6 +39,12 @@ const DEATH_PUSH: Record<string, number> = {
   sniper: 5.5,
   shotgun: 6,
   barrett: 6.5,
+  sovereign: 3.6,
+  sovburst: 4.4,
+  moderator: 4.6,
+  kick: 7.5,
+  permaban: 7.5,
+  gavel: 5,
   knife: 2,
   molotov: 1.5,
   tknife: 2.8,
@@ -50,7 +56,7 @@ const DEATH_PUSH: Record<string, number> = {
 };
 
 /** Knife kills push by what was swung: a sledgehammer sends you further than a karambit. */
-const MELEE_PUSH: Record<string, number> = { knife: 2, karambit: 2, kunai: 2, machete: 3, katana: 3.5, shovel: 4, bat: 4.5, axe: 4.5, hammer: 5.5 };
+const MELEE_PUSH: Record<string, number> = { knife: 2, karambit: 2, kunai: 2, machete: 3, katana: 3.5, shovel: 4, bat: 4.5, axe: 4.5, hammer: 5.5, banhammer: 7.5 };
 
 /** Shotguns hit hardest point blank, fading to about a third of that by 18 m. */
 const SHOTGUN_FULL = 4;

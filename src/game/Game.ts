@@ -201,6 +201,8 @@ export interface HudState {
   modeStatus: string | null;
   /** Hide & Seek: seconds a blindfolded seeker still has to wait. */
   blind: number | null;
+  /** Stunned by the admin's Server Restart: seconds left. */
+  reconnecting: number | null;
   /** A killcam is about to play (the end screen waits for it). */
   killcamPending: boolean;
   fps: number;
@@ -1267,7 +1269,8 @@ export class Game {
           // A miss that passes close to your head: the whiz of the bullet going by.
           if (player.alive && !this.spectator && e.hit !== player.id && shooter.team !== player.team && this.nearMiss(e, player)) this.audio.whiz(this.panTo(e.ex, e.ez));
         }
-        this.effects.tracer(from, end, this.tracerColor(shooter.id));
+        if (WEAPONS[e.weapon].pierce) this.effects.beam(from, end);
+        else this.effects.tracer(from, end, WEAPONS[e.weapon].admin ? 0xffd34d : this.tracerColor(shooter.id));
         const paintball = this.match.mode === 'paintball';
         const paint = paintball ? this.colorOf(shooter.id) : 0;
         if (e.world) {
@@ -1289,6 +1292,12 @@ export class Game {
             v.hit(side, e.region ?? 'torso', strength, dir.x, dir.z);
           }
         }
+      } else if (e.type === 'appeal') {
+        if (!live) continue;
+        const a = sim.agents[e.agent];
+        if (a) this.effects.adminArrive(new THREE.Vector3(a.x, a.y, a.z));
+        this.callout(a === player && !this.spectator ? 'APPEAL GRANTED: back in the fight' : `${this.nameOf(e.agent)} appealed the ban!`);
+        this.audio.fanfare();
       } else if (e.type === 'damage') {
         const victim = sim.agents[e.target];
         if (victim && e.attacker >= 0 && e.amount > 0) {
@@ -2147,7 +2156,10 @@ export class Game {
           counter: 'Counter-UAV: enemy minimaps jammed',
           airstrike: 'Airstrike inbound!',
           cluster: 'Cluster strike inbound!',
-          jugg: 'Juggernaut armour equipped'
+          jugg: 'Juggernaut armour equipped',
+          godview: 'God View: every enemy on your team’s map',
+          banwave: 'BAN WAVE incoming',
+          restart: 'Server Restart: the enemy is reconnecting…'
         };
         this.callout(lines[n.id] ?? `${n.name}!`);
         this.audio.fanfare();
@@ -2201,6 +2213,14 @@ export class Game {
       } else if (n.kind === 'sharp') {
         this.callout(`New weapon: ${WEAPONS[n.weapon].name}`);
         this.audio.weaponSwitch();
+      } else if (n.kind === 'bolt') {
+        if (this.killcam) continue;
+        const at = this.tmpB.set(n.x, 0, n.z);
+        this.effects.bolt(at);
+        this.audio.explosion(this.distTo(n.x, n.z), this.panTo(n.x, n.z));
+        if (!this.settings.access.reduceMotion) this.shake = Math.max(this.shake, Math.max(0, 1 - this.distTo(n.x, n.z) / 30) * 0.6);
+      } else if (n.kind === 'restart') {
+        if (n.team !== m.player.team && !this.spectator) this.audio.whistle();
       } else if (n.kind === 'tagit') {
         if (n.holder === me) {
           this.callout(n.from >= 0 ? `${this.nameOf(n.from)} tagged you. YOU'RE IT!` : "YOU'RE IT! Hit someone to pass it on");
@@ -2917,6 +2937,7 @@ export class Game {
       netMessage: this.netMessage,
       modeStatus: ((st) => (m.opts.timeLimit ? `${st ? `${st} · ` : ''}Mission: ${Math.max(0, Math.ceil(m.opts.timeLimit - (sim.time - m.startTime)))} s left` : st))(m.statusFor(p, (id) => this.nameOf(id))),
       blind: p.alive && sim.time < p.frozenUntil ? Math.ceil(p.frozenUntil - sim.time) : null,
+      reconnecting: p.alive && sim.time < p.stunUntil ? Math.ceil(p.stunUntil - sim.time) : null,
       killcamPending: !!this.pendingKillcam,
       fps: Math.round(this.fps),
       hardcore: m.mode === 'hardcore',
@@ -3078,7 +3099,15 @@ export class Game {
       const party = this.match.party;
       const marked = a.id === party.juggId || a.id === party.holder || (this.match.mode === 'vip' && party.vipIds.includes(a.id));
       const ghost = hasPerk(a, 'ghost');
-      if (!ally && ((!firing && !uav) || ghost) && !marked) continue;
+      const flagged = !ally && sim.time < a.flaggedUntil && a.flaggedTeam === p.team;
+      if (!ally && ((!firing && !uav) || ghost) && !marked && !flagged) continue;
+      if (flagged) {
+        ctx.strokeStyle = '#b46bff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(X(a.x), Z(a.z), 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       if (marked) {
         ctx.fillStyle = '#ffd34d';
         ctx.beginPath();

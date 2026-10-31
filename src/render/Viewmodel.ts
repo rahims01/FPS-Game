@@ -27,7 +27,7 @@ interface Pose {
 const poseFor = (id: WeaponId, m: WeaponModel): Pose => {
   if (id === 'rifle') return { hip: new THREE.Vector3(0.2, -0.24, -0.5), ads: new THREE.Vector3(0.0018, -0.1504, -0.161), tilt: 0.1225, yaw: -0.0064 };
   if (id === 'knife') return { hip: new THREE.Vector3(0.24, -0.25, -0.38), ads: new THREE.Vector3(0.24, -0.25, -0.38), tilt: 0 };
-  const handgun = id === 'pistol' || id === 'revolver' || id === 'deagle' || id === 'mpistol';
+  const handgun = id === 'pistol' || id === 'revolver' || id === 'deagle' || id === 'mpistol' || id === 'gavel';
   const hip = handgun ? new THREE.Vector3(0.16, -0.19, -0.46) : new THREE.Vector3(0.2, -0.23, -0.42);
   const eyeBehind = handgun ? 0.3 : 0.16;
   return { hip, ads: new THREE.Vector3(0, -(m.sightZ + 0.008), m.sightY - eyeBehind), tilt: 0 };

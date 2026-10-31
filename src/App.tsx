@@ -11,7 +11,7 @@ import type { Brain } from './sim/FpsSim';
 import { DEFAULT_RULES, MODES, PRACTICE_MODES, modeDef, type Difficulty, type LobbyRules, type ModeDef, type ModeId } from './sim/Match';
 import { streakDef } from './sim/killstreaks';
 import { perkDef, THROWABLES } from './sim/gear';
-import { PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
+import { isAdminWeapon, PRIMARIES, WEAPONS, type WeaponId } from './sim/weapons';
 import { divisionOf, levelOf, loadProfile, prestigeUp, queueStats, rankedDifficulty, RANKED_MODES, rankOf, recordRanked, saveProfile, type Division, type Profile, type RankedQueue } from './game/progression';
 import { Hud } from './ui/Hud';
 import { SettingsPanel } from './ui/SettingsPanel';
@@ -307,6 +307,8 @@ export const App = () => {
     // Night maps: the host decides online; otherwise now and then on generated maps.
     const time = host ? host.lobby.rules.time : 'random';
     const night = !NO_NIGHT.includes(mode) && (forceNight || time === 'night' || (time === 'random' && Math.random() < NIGHT_CHANCE));
+    // The admin's gear and perks: never in ranked or tournaments (or for anyone else).
+    const adminPerks = account().user?.role === 'admin' && !ranked && !tourneyMatch.current;
     const g = new Game(
       mount.current,
       assets,
@@ -314,9 +316,10 @@ export const App = () => {
         mode,
         difficulty,
         botControl: brain && !forceHeuristic ? 'learned' : 'heuristic',
-        primary: settings.primary,
-        secondary: settings.secondary,
+        primary: !adminPerks && isAdminWeapon(settings.primary) ? 'rifle' : settings.primary,
+        secondary: !adminPerks && isAdminWeapon(settings.secondary) ? 'pistol' : settings.secondary,
         streaks: settings.streaks,
+        adminPerks,
         lethal: settings.lethal,
         tactical: settings.tactical,
         perks: settings.perks,

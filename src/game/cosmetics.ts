@@ -377,7 +377,7 @@ export const BADGES: BadgeDef[] = [
  * any other way (added to your granted items the moment it's done).
  */
 /** Everything the admin account gets (given on sign-in; see account.ts). */
-export const ADMIN_ITEMS = ['command', 'crown', 'admin', 'admin_gold', 'admin_glow', 'sovereign', 'staff_admin'];
+export const ADMIN_ITEMS = ['command', 'crown', 'admin', 'admin_gold', 'admin_glow', 'sovereign', 'staff_admin', 'banhammer'];
 
 export interface CollectionDef {
   id: string;

@@ -6,13 +6,20 @@ import { levelOf, type Profile } from '../game/progression';
 import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, type Cosmetics } from '../game/cosmetics';
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
-import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
+import { ADMIN_PRIMARIES, ADMIN_SECONDARIES, PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
+import { account } from '../net/account';
 import { GunPreview } from './GunPreview';
 import { ATTACHMENTS, SLOT_NAMES, attachmentDef, fits, type AttachSlot } from '../sim/attachments';
 import { camoKey, MELEES, meleeDef } from '../assets/melees';
 import { LockIcon } from './icons';
 
 const BLURB: Record<string, string> = {
+  sovereign: 'The admin’s rifle: fast, accurate, 40 rounds',
+  sovburst: 'The admin’s M4: 3-round bursts that hit hard',
+  moderator: 'Hits mark the target on your team’s map',
+  kick: 'A shotgun that knocks people off their feet',
+  permaban: 'Fires through walls and everyone in a line',
+  gavel: 'A hand cannon: two to the body',
   rifle: 'Accurate all-rounder',
   ak: 'Hits harder, kicks harder',
   burst: '3-round bursts, deadly at range',
@@ -76,6 +83,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
   const level = levelOf(profile.xp).level;
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<Cosmetics>) => set({ cosmetics: { ...cos, ...patch } });
+  const admin = account().user?.role === 'admin';
 
   const toggleStreak = (id: StreakId) => {
     let next = picked.includes(id) ? picked.filter((s) => s !== id) : [...picked, id];
@@ -219,6 +227,15 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <div className="gun-grid">{PRIMARIES.map((w) => gun(w, 'primary'))}</div>
           <h3>Secondary</h3>
           <div className="gun-grid">{SECONDARIES.map((w) => gun(w, 'secondary'))}</div>
+          {admin && (
+            <>
+              <h3>Admin arsenal</h3>
+              <p className="set-hint">Yours alone. Switched off in ranked and tournaments, where you get the M4 and the pistol instead.</p>
+              <div className="gun-grid">{ADMIN_PRIMARIES.map((w) => gun(w, 'primary'))}</div>
+              <div className="gun-grid">{ADMIN_SECONDARIES.map((w) => gun(w, 'secondary'))}</div>
+              <p className="set-hint">Admin perks, always on outside ranked: Overclocked (faster reloads and swaps), Iron Will (15% less damage), Command Presence (teammates near you reload faster), Royal Stride (8% faster), Spotlight (enemies you hit show on your team’s map), Appeal (one extra life a match in round modes) and Killstreak Royalty (streaks cost a kill less).</p>
+            </>
+          )}
           <h3>Melee</h3>
           <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Each has its own camos, unlocked by kills with it.</p>
           <div className="streak-grid melee-grid">
@@ -323,7 +340,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
       {tab === 'streaks' && (
         <>
           <div className="streak-grid">
-            {KILLSTREAKS.map((k) => (
+            {KILLSTREAKS.filter((k) => !k.admin || admin).map((k) => (
               <button key={k.id} className={`streak-card ${picked.includes(k.id) ? 'on' : ''}`} onClick={() => toggleStreak(k.id)}>
                 <b>
                   {k.name} <em>{k.kills}</em>

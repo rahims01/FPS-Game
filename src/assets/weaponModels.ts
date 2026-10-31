@@ -294,6 +294,41 @@ const knife = (): WeaponModel => {
   return { object: g, length: 0.24, bore: 0, sightZ: 0, sightY: 0 };
 };
 
+const regalGold = new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: 0.85, roughness: 0.25, emissive: 0x2a1c00 });
+const onyx = new THREE.MeshStandardMaterial({ color: 0x0e0e12, metalness: 0.4, roughness: 0.35 });
+const banRed = new THREE.MeshStandardMaterial({ color: 0xb3001b, metalness: 0.5, roughness: 0.3, emissive: 0x2a0006 });
+const plasma = new THREE.MeshStandardMaterial({ color: 0xb46bff, emissive: 0x8a3dff, emissiveIntensity: 1.4, roughness: 0.3 });
+plasma.userData.keep = true;
+
+/** The admin's guns: a base gun redone in gold and black (sights and lenses keep their look). */
+const regal = (base: WeaponModel, trim: THREE.Material = regalGold, body: THREE.Material = onyx): WeaponModel => {
+  base.object.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m.material as THREE.Material).userData.keep) return;
+    m.material = m.material === metal || m.material === steel ? trim : body;
+  });
+  // A small gold crown plate on the receiver.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.04, 0.03), regalGold);
+  plate.position.set(0, 0.02, base.bore);
+  base.object.add(plate);
+  return base;
+};
+
+/** Permaban: a long black rail with purple coils down the barrel. */
+const permaban = (): WeaponModel => {
+  const m = regal(sniper(), regalGold, onyx);
+  for (let i = 0; i < 5; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14), plasma);
+    ring.position.set(0, 0.35 + i * 0.09, m.bore);
+    ring.rotation.x = Math.PI / 2;
+    m.object.add(ring);
+  }
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.45, 6), plasma);
+  core.position.set(0, 0.55, m.bore + 0.03);
+  m.object.add(core);
+  return m;
+};
+
 let cache: Record<WeaponId, WeaponModel> | null = null;
 
 export const weaponModels = (rifle: PropTemplate): Record<WeaponId, WeaponModel> => {
@@ -315,7 +350,13 @@ export const weaponModels = (rifle: PropTemplate): Record<WeaponId, WeaponModel>
     autoshotgun: autoshotgun(),
     barrett: barrett(),
     deagle: deagle(),
-    mpistol: mpistol()
+    mpistol: mpistol(),
+    sovereign: regal(burst()),
+    sovburst: regal(burst(), regalGold, banRed),
+    moderator: regal(dmr()),
+    kick: regal(shotgun()),
+    permaban: permaban(),
+    gavel: regal(deagle())
   };
   return cache!;
 };

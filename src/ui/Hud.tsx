@@ -205,6 +205,13 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           <span>Hiders get a head start. Released in {hud.blind}s</span>
         </div>
       )}
+      {hud.reconnecting !== null && (
+        <div className="reconnecting">
+          <i />
+          <b>Reconnecting…</b>
+          <span>The admin restarted the server · {hud.reconnecting}s</span>
+        </div>
+      )}
       {hud.killcam && (
         <div className="killcam">
           <div className="kc-bar kc-top" />

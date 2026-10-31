@@ -8,7 +8,7 @@ import { box, metal, polymer, steel, tube, wood, type WeaponModel } from './weap
  * kill), so picking one never changes a fight. Kills with any of them count
  * as knife kills (badges, mastery, camos).
  */
-export type MeleeId = 'knife' | 'karambit' | 'machete' | 'bat' | 'axe' | 'shovel' | 'katana' | 'hammer' | 'kunai';
+export type MeleeId = 'knife' | 'karambit' | 'machete' | 'bat' | 'axe' | 'shovel' | 'katana' | 'hammer' | 'kunai' | 'banhammer';
 
 export interface MeleeDef {
   id: MeleeId;
@@ -28,7 +28,8 @@ export const MELEES: MeleeDef[] = [
   { id: 'shovel', name: 'Entrenching Tool', tag: 'SHOVEL', blurb: 'Folding army shovel', unlock: { level: 30 } },
   { id: 'katana', name: 'Katana', tag: 'KATANA', blurb: 'Long single-edged sword', unlock: { level: 38 } },
   { id: 'hammer', name: 'Sledgehammer', tag: 'SLEDGE', blurb: 'Heavy steel head', unlock: { level: 46 } },
-  { id: 'kunai', name: 'Kunai', tag: 'KUNAI', blurb: 'Ring-handled throwing blade', unlock: { badge: 'knifemaster' } }
+  { id: 'kunai', name: 'Kunai', tag: 'KUNAI', blurb: 'Ring-handled throwing blade', unlock: { badge: 'knifemaster' } },
+  { id: 'banhammer', name: 'Ban Hammer', tag: 'BANNED', blurb: 'The admin’s gold hammer, crown and all', unlock: { special: 'Admin only' } }
 ];
 
 export const meleeDef = (id: string | undefined): MeleeDef => MELEES.find((m) => m.id === id) ?? MELEES[0];
@@ -38,6 +39,8 @@ export const camoKey = (weapon: string, melee: string | undefined): string => (w
 
 const red = new THREE.MeshStandardMaterial({ color: 0xb3261e, metalness: 0.1, roughness: 0.6 });
 const wrap = new THREE.MeshStandardMaterial({ color: 0x24201c, metalness: 0, roughness: 0.9 });
+const banGold = new THREE.MeshStandardMaterial({ color: 0xf0c040, metalness: 0.85, roughness: 0.22, emissive: 0x3a2800 });
+const banHandle = new THREE.MeshStandardMaterial({ color: 0x140f08, metalness: 0.3, roughness: 0.5 });
 
 /** Prop space as for guns: the grip at the origin, the business end along +Y, +Z up. */
 const build = (id: MeleeId): WeaponModel => {
@@ -93,6 +96,16 @@ const build = (id: MeleeId): WeaponModel => {
       box(g, 0.07, 0.07, 0.17, 0.37, 0, metal);
       length = 0.41;
       break;
+    case 'banhammer': {
+      tube(g, 0.017, -0.16, 0.36, 0, banHandle);
+      box(g, 0.085, 0.085, 0.2, 0.39, 0, banGold);
+      box(g, 0.095, 0.02, 0.21, 0.35, 0, banHandle);
+      box(g, 0.095, 0.02, 0.21, 0.43, 0, banHandle);
+      // A crown on top of the head.
+      for (const x of [-0.035, 0, 0.035]) box(g, 0.018, 0.018, 0.035, 0.39, 0.12, banGold, 0).position.x = x;
+      length = 0.44;
+      break;
+    }
     case 'kunai': {
       tube(g, 0.011, -0.09, 0.0, 0, wrap);
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 6, 14), metal);

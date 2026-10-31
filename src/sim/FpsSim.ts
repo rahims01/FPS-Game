@@ -49,6 +49,8 @@ export type SimEvent =
       first: boolean;
     }
   | { type: 'damage'; target: number; attacker: number; amount: number; region: HitRegion; killed: boolean }
+  /** The admin got back up (their once-a-match appeal). */
+  | { type: 'appeal'; agent: number }
   | { type: 'death'; target: number; attacker: number; region: HitRegion; cause: DeathCause; distance: number; victimStreak: number; attackerHp: number }
   | { type: 'reload'; agent: number }
   | { type: 'switch'; agent: number }
@@ -211,6 +213,8 @@ export class FpsSim {
   onLethal: ((victim: Agent, attacker: Agent | null, cause: DeathCause) => boolean) | null = null;
   /** Called when a knife connects; return true to cancel the damage (hot potato passes the bomb instead). */
   onMeleeHit: ((attacker: Agent, target: Agent) => boolean) | null = null;
+  /** Round modes: the admin may get back up once a match. */
+  allowAppeal = false;
   /** Online host: latest inputs of remote (human) players, by agent id. */
   readonly remoteInputs = new Map<number, PlayerInput>();
   /**
@@ -403,8 +407,8 @@ export class FpsSim {
   // ---------------------------------------------------------------- player
 
   private drivePlayer(a: Agent, input: PlayerInput, dt: number): void {
-    if (this.time < a.frozenUntil) {
-      // Frozen (a blindfolded seeker): look around, but no moving or shooting.
+    if (this.time < a.frozenUntil || this.time < a.stunUntil) {
+      // Frozen (a blindfolded seeker) or stunned: look around, but no moving or shooting.
       input = { ...NO_INPUT, yaw: input.yaw, pitch: input.pitch };
     }
     a.yaw = input.yaw;
@@ -563,7 +567,7 @@ export class FpsSim {
   startReload(a: Agent): void {
     const w = weaponOf(a);
     if (this.noReload || a.reloadT > 0 || a.ammo >= w.magazine || a.switchT > 0) return;
-    a.reloadT = w.reload * (hasPerk(a, 'quickhands') ? 0.65 : 1);
+    a.reloadT = w.reload * (hasPerk(a, 'quickhands') ? 0.65 : 1) * (a.admin ? 0.6 : 1) * (this.nearAdmin(a) ? 0.85 : 1);
     a.reloadDur = a.reloadT;
     a.aiming = false;
     this.emit({ type: 'reload', agent: a.id });
@@ -607,7 +611,7 @@ export class FpsSim {
     a.slot = slot;
     a.ammo = a.stash[slot];
     a.reloadT = 0;
-    a.switchT = hasPerk(a, 'quickhands') ? 0.27 : 0.45;
+    a.switchT = (hasPerk(a, 'quickhands') ? 0.27 : 0.45) * (a.admin ? 0.6 : 1);
     a.aiming = false;
     this.emit({ type: 'switch', agent: a.id });
   }
@@ -649,6 +653,23 @@ export class FpsSim {
       const dy = Math.sin(pt);
       const dz = Math.cos(yw) * Math.cos(pt);
       const n = { x: 0, y: 0, z: 0 };
+      if (w.pierce) {
+        // Every enemy along the line, walls or not.
+        const hits: { b: Agent; t: number; region: HitRegion }[] = [];
+        for (const b of this.agents) {
+          if (!b.alive || b === a || b.team === a.team || this.isFrozen(b)) continue;
+          const hit = rayHitAgent(ox, oy, oz, dx, dy, dz, b, this.headScale);
+          if (hit && hit.t < w.range) hits.push({ b, t: hit.t, region: hit.region });
+        }
+        this.emit({ type: 'shot', shooter: a.id, weapon: w.id, ox, oy, oz, ex: ox + dx * w.range, ey: oy + dy * w.range, ez: oz + dz * w.range, hit: hits[0]?.b.id ?? -1, region: hits[0]?.region ?? null, nx: 0, ny: 0, nz: 0, world: false, first: p === 0 });
+        for (const h of hits.sort((x, y) => x.t - y.t)) {
+          hitAny = true;
+          if (h.region === 'head') a.headshots++;
+          const raw = this.damageRule === 'none' ? 0 : this.damageRule === 'instagib' ? 999 : this.damageRule === 'headshot' && h.region !== 'head' ? 0 : w.damage[h.region];
+          if (raw > 0) this.damage(h.b, a, raw, h.region, dx, dy, dz, w.id);
+        }
+        continue;
+      }
       const wallT = this.arena.raycast(ox, oy, oz, dx, dy, dz, w.range, n);
       let bestT = wallT;
       let victim: Agent | null = null;
@@ -877,8 +898,16 @@ export class FpsSim {
   }
 
   /** Movement multiplier from perks. */
+  /** Command Presence: a teammate within 8 m of the admin reloads faster. */
+  private nearAdmin(a: Agent): boolean {
+    if (a.admin) return false;
+    for (const b of this.agents) if (b.admin && b.alive && b.team === a.team && Math.hypot(b.x - a.x, b.z - a.z) < 8) return true;
+    return false;
+  }
+
   perkSpeed(a: Agent): number {
     let k = 1;
+    if (a.admin) k *= 1.08;
     if (hasPerk(a, 'lightweight')) k *= 1.07;
     if (a.sprinting && hasPerk(a, 'marathon')) k *= 1.1;
     return k;
@@ -1013,6 +1042,19 @@ export class FpsSim {
     if (this.puppet || !v.alive || this.time < v.protectedUntil) return;
     let amount = v.control === 'player' ? raw * this.damageToPlayerScale : raw;
     amount *= v.armor;
+    if (v.admin) amount *= 0.85;
+    if (attacker && attacker.team !== v.team && (attacker.admin || WEAPONS[cause as WeaponId]?.flag)) {
+      v.flaggedUntil = this.time + 3;
+      v.flaggedTeam = attacker.team;
+    }
+    // The Kick: whoever it hits is shoved back along the shot.
+    const kb = WEAPONS[cause as WeaponId]?.knockback;
+    if (kb && attacker) {
+      v.vx += dx * kb * 6;
+      v.vz += dz * kb * 6;
+      v.vy = Math.max(v.vy, 2.5 * kb);
+      v.onGround = false;
+    }
     if (attacker) amount *= this.damageMul;
     // The boss hits less hard per bullet than its size suggests, so a squad has a chance.
     if (attacker && attacker.scale > 1) amount *= 0.55;
@@ -1031,6 +1073,14 @@ export class FpsSim {
       v.lastSeenX = attacker.x;
       v.lastSeenZ = attacker.z;
       v.lastSeenT = this.time;
+    }
+    // The admin's appeal: once a match, in round modes, get back up instead of going down.
+    if (v.hp <= 0 && v.admin && !v.appealUsed && this.allowAppeal) {
+      v.appealUsed = true;
+      v.hp = 35;
+      v.protectedUntil = this.time + 1;
+      this.emit({ type: 'appeal', agent: v.id });
+      return;
     }
     if (v.hp <= 0 && this.onLethal?.(v, attacker, cause)) {
       this.emit({ type: 'damage', target: v.id, attacker: attacker ? attacker.id : -1, amount: dealt, region, killed: true });
@@ -1285,7 +1335,7 @@ export class FpsSim {
   }
 
   private driveBot(a: Agent, dt: number): void {
-    if (this.isFrozen(a)) {
+    if (this.isFrozen(a) || this.time < a.stunUntil) {
       this.accelerate(a, 0, 0, dt);
       return;
     }
