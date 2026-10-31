@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MELEES } from '../assets/melees';
-import { BADGES, CARDS, COLLECTIONS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, claimCollections, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type BadgeGroup, type Cosmetics } from '../game/cosmetics';
+import { BADGES, CARDS, COLLECTIONS, EMBLEMS, FRAMES, MASTERY, RARITY, TITLES, claimCollections, earned, frameDef, masteryOf, rarityOf, titleDef, unlockText, unlocked, type BadgeGroup, type Cosmetics, listedFor } from '../game/cosmetics';
 import type { GameSettings } from '../game/settings';
 import { canPrestige, divisionOf, levelLabel, levelOf, loadProfile, MAX_PRESTIGE, MEDALS, rankOf, saveProfile, type Profile } from '../game/progression';
 import { MODES } from '../sim/Match';
@@ -66,6 +66,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
   const [group, setGroup] = useState<BadgeGroup | 'All'>('All');
   const [, bump] = useState(0);
   const level = levelOf(profile.xp).level;
+  const listed = listedFor(profile, level);
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<Cosmetics>) => onChange({ ...settings, cosmetics: { ...cos, ...patch } });
   const earnedCount = BADGES.filter((b) => earned(b, profile, level)).length;
@@ -126,7 +127,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
         <>
           <h3>Calling card</h3>
           <div className="card-grid">
-            {CARDS.map((c) => {
+            {CARDS.filter(listed).map((c) => {
               const ok = unlocked(c.unlock, profile, level, c.id);
               const hidden = c.secret && !ok;
               return (
@@ -146,7 +147,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           </div>
           <h3>Title</h3>
           <div className="title-grid">
-            {TITLES.map((t) => {
+            {TITLES.filter(listed).map((t) => {
               const ok = unlocked(t.unlock, profile, level, t.id);
               const hidden = t.secret && !ok;
               return (
@@ -166,7 +167,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           </div>
           <h3>Level frame</h3>
           <div className="title-grid">
-            {FRAMES.map((f) => {
+            {FRAMES.filter(listed).map((f) => {
               const ok = unlocked(f.unlock, profile, level, f.id);
               return (
                 <button
@@ -186,7 +187,7 @@ export const ProfilePanel = ({ settings, onChange, profile, onPrestige }: { sett
           </div>
           <h3>Emblem</h3>
           <div className="emblem-grid">
-            {EMBLEMS.map((e) => {
+            {EMBLEMS.filter(listed).map((e) => {
               const ok = unlocked(e.unlock, profile, level, e.id);
               const hidden = e.secret && !ok;
               return (

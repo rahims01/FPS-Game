@@ -7,6 +7,7 @@ import { classicLayout, COURSE, courseLayout, randomLayout, rangeLayout } from '
 import { yawTo } from './math';
 import { GUN_GAME_KILLS_PER_TIER, GUN_GAME_LADDER, PRIMARIES, SECONDARIES, WEAPONS, type WeaponId } from './weapons';
 import { DEFAULT_STREAKS, normalizeStreaks, streakDef, type StreakId } from './killstreaks';
+import { Operation, type OpSpec } from './ops';
 import { hasPerk, LETHALS, normalizePerks, PERKS, TACTICALS, THROWABLES, type PerkId, type ThrowableId } from './gear';
 
 const WEAPONS_NAME = (w: WeaponId) => WEAPONS[w].name;
@@ -44,6 +45,7 @@ export type ModeId =
   | 'hardcore'
   | 'lms'
   | 'zombies'
+  | 'op'
   | 'cranked'
   | 'roulette'
   | 'defender'
@@ -75,6 +77,8 @@ export interface ModeDef {
   humansOnly?: boolean;
   /** Fewest humans needed to start (online-only modes). */
   minPlayers?: number;
+  /** Not in the mode list (campaign operations). */
+  hidden?: boolean;
 }
 
 export const MODES: ModeDef[] = [
@@ -119,6 +123,7 @@ export const MODES: ModeDef[] = [
   { id: 'roulette', name: 'Weapon Roulette', blurb: 'Free-for-all where every life hands you a random gun. First to 20.', players: 8, teams: false, group: 'Party' },
   { id: 'marksman', name: 'Marksmen', blurb: 'DMRs and magnums only. Free-for-all, first to 20.', players: 8, teams: false, group: 'Free-for-all' },
   { id: 'lms', name: 'Last Man Standing', blurb: '8 players, normal loadouts, 3 lives each. Last one standing wins.', players: 8, teams: false, group: 'Free-for-all' },
+  { id: 'op', name: 'Operation', blurb: 'A campaign mission.', players: 1, teams: true, group: 'Special', hidden: true },
   { id: 'zombies', name: 'Zombies', blurb: 'Waves of zombies that get faster and tougher every round. Play co-op online with friends. Survive as long as you can.', players: 1, teams: true, group: 'Special' },
   { id: 'br', name: 'Battle Royale', blurb: 'Huge random 250 m map, 24 players, one life. Grab medkits and stay inside the shrinking zone.', players: 24, teams: false, group: 'Special' },
   { id: 'br_duos', name: 'Battle Royale Duos', blurb: '24 players in 12 pairs on a huge random map. Stick with your partner; the last pair standing wins.', players: 24, teams: false, group: 'Special' },
@@ -187,6 +192,8 @@ export interface MatchOptions {
   timeLimit?: number;
   /** A campaign mission (rule-changing events stay out of it). */
   campaign?: boolean;
+  /** A campaign operation (mode 'op'): the mission's objective and enemies. */
+  op?: OpSpec;
   /** You're the admin and this isn't ranked or a tournament: the admin perks apply to you. */
   adminPerks?: boolean;
 }
@@ -485,7 +492,9 @@ export class Match {
     const mode = opts.mode;
     const seed = opts.seed ?? (Math.random() * 1e9) | 0;
     const layout: ArenaLayout =
-      mode === 'training' || mode === 'aimtrainer'
+      mode === 'op'
+        ? randomLayout(seed, opts.op?.size ?? 44)
+        : mode === 'training' || mode === 'aimtrainer'
         ? rangeLayout()
         : mode === 'course' || mode === 'race'
           ? courseLayout()
@@ -563,6 +572,10 @@ export class Match {
         else other(team, p).squad = team;
       }
       this.player.squad = 0;
+    } else if (mode === 'op') {
+      // An operation: you alone (the operation places the enemies, target and hostage).
+      const s = sim.arena.teamSpawns[0][0];
+      this.player = sim.spawn(0, 'player', s.x, s.z, 0);
     } else if (mode === 'boss') {
       const spawns = sim.arena.teamSpawns[0];
       this.player = sim.spawn(0, 'player', spawns[0].x, spawns[0].z, 0);
@@ -622,6 +635,20 @@ export class Match {
       }
     }
     if (mode === 'gunfight') this.gunfightLoadout();
+    if (mode === 'op' && opts.op) {
+      this.op = new Operation(
+        {
+          sim,
+          player: this.player,
+          announce: (t, s) => this.announce(t, s),
+          end: (win, text) => {
+            this.finish(win, 0, win ? 0 : 1);
+            this.announce(text, 9999);
+          }
+        },
+        opts.op
+      );
+    }
     // The admin's perks (never in ranked or tournaments, which pass an exact skill).
     if (opts.adminPerks && !opts.skill && !opts.watch) this.player.admin = true;
     // Round modes: the admin may get back up once a match.
@@ -709,6 +736,9 @@ export class Match {
         break;
       case 'zombies':
         this.startZombieWave();
+        break;
+      case 'op':
+        this.announce(opts.op?.stealth ? 'Stay out of sight' : 'Go!');
         break;
       case 'snd':
         this.setupSnd();
@@ -983,6 +1013,9 @@ export class Match {
       case 'zombies':
         this.rulesZombies();
         break;
+      case 'op':
+        this.op?.tick();
+        break;
       case 'hideseek':
         this.rulesHideSeek();
         break;
@@ -1224,6 +1257,9 @@ export class Match {
 
   /** Streak Frenzy (an admin event): killstreaks cost this share of their kills. */
   streakScale = 1;
+
+  /** The campaign operation being played (mode 'op'). */
+  op: Operation | null = null;
 
   /** Ban Wave lightning still to land. */
   private pendingBolts: { at: number; agent: number; target: number }[] = [];
@@ -1584,6 +1620,7 @@ export class Match {
     const sim = this.sim;
     const p = this.party;
     const sec = (t: number) => `${Math.max(0, Math.ceil(t))}s`;
+    if (this.op) return this.op.status();
     switch (this.mode) {
       case 'jugg': {
         const j = sim.agents[p.juggId];
@@ -1700,6 +1737,7 @@ export class Match {
 
   private onKill(victim: Agent, killer: Agent | null, cause: DeathCause): void {
     const sim = this.sim;
+    this.op?.onKill(victim, killer);
     // Kill order: the enemy VIP down is a point.
     if (this.mode === 'vip' && victim.id === this.party.vipIds[victim.team]) {
       this.party.vipIds[victim.team] = -1;
@@ -2058,14 +2096,18 @@ export class Match {
   private startZombieWave(): void {
     const sim = this.sim;
     this.wave++;
-    this.waveQueue = 5 + this.wave * 3;
+    // Fewer per wave on your own; co-op adds half a wave per extra survivor.
+    const survivors = sim.agents.filter((a) => a.team === 0).length;
+    this.waveQueue = Math.round((4 + this.wave * 2) * (1 + 0.5 * (survivors - 1)));
     this.phase = 'live';
-    // Fallen players come back for the new wave.
+    // Fallen players come back for the new wave, healed and with full ammo.
     for (const a of sim.agents) {
       if (a.team !== 0) continue;
       if (!a.alive) sim.respawn(a, sim.rng.range(-4, 4), sim.rng.range(-10, -4), 0);
       a.hp = 100;
       a.grenades = Math.max(a.grenades, 2);
+      a.weapons.forEach((w, i) => (a.stash[i] = magOf(a, w)));
+      a.ammo = a.stash[a.slot];
     }
     this.announce(this.wave === 1 ? 'Here they come…' : `Wave ${this.wave}`);
   }
@@ -2103,7 +2145,7 @@ export class Match {
         z.lastSeenT = sim.time;
       }
     }
-    const maxAlive = Math.min(14, 4 + this.wave);
+    const maxAlive = Math.min(10, 3 + this.wave);
     if (this.waveQueue > 0 && alive.length < maxAlive) {
       const living = humans.filter((h) => h.alive);
       const far = (p: Point) => Math.min(...living.map((h) => Math.hypot(h.x - p.x, h.z - p.z)));
@@ -2118,16 +2160,18 @@ export class Match {
       setLoadout(z, ['knife']);
       z.grenades = 0;
       z.style = 'rusher';
-      z.meleeDamage = 30 + this.wave * 2;
-      z.armor = Math.max(0.35, 1 - 0.05 * (this.wave - 1));
-      // Early waves shamble (slower than you walk); later ones run you down.
-      z.speedMul = Math.min(1.2, 0.55 + 0.06 * this.wave);
+      // Early waves take 5 claws to down you, late ones 3; never fewer.
+      z.meleeDamage = Math.min(34, 20 + this.wave * 1.5);
+      z.meleeRate = 1.8;
+      z.armor = Math.max(0.65, 1 - 0.03 * (this.wave - 1));
+      // Early waves shamble (slower than you walk); later ones only just keep up when you sprint.
+      z.speedMul = Math.min(1, 0.5 + 0.045 * this.wave);
       this.waveQueue--;
       return;
     }
     if (this.waveQueue === 0 && alive.length === 0) {
       this.phase = 'roundOver';
-      this.breakUntil = sim.time + 6;
+      this.breakUntil = sim.time + 10;
       this.announce(`Wave ${this.wave} survived`, 4);
     }
   }

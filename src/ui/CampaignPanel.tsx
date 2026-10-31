@@ -42,8 +42,10 @@ export const CampaignPanel = ({ onStart, onClose }: { onStart: (m: Mission) => v
           <ol className="m-list">
             {MISSIONS.map((x, i) => {
               const ok = missionOpen(i, stars);
+              const act = i === 0 || MISSIONS[i - 1].act !== x.act ? x.act : null;
               return (
                 <li key={x.id}>
+                  {act && <h4 className="m-act">{act}</h4>}
                   <button className={`m-row ${i === pick ? 'on' : ''} ${ok ? '' : 'locked'}`} onClick={() => setPick(i)}>
                     <span className="m-num">{i + 1}</span>
                     <span className="m-text">
@@ -69,7 +71,7 @@ export const CampaignPanel = ({ onStart, onClose }: { onStart: (m: Mission) => v
                 </li>
               ))}
             </ul>
-            <p className="set-hint">+{XP_PER_STAR} XP for every new star. Finish all ten for the “Campaign Hero” title.</p>
+            <p className="set-hint">+{XP_PER_STAR} XP for every new star. Finish every mission for the “Campaign Hero” title.</p>
             <button className="play" disabled={!open} onClick={() => onStart(m)}>
               {open ? ((stars[m.id] ?? 0) > 0 ? 'PLAY AGAIN' : 'START MISSION') : 'LOCKED'}
             </button>

@@ -498,7 +498,7 @@ export class Game {
   showScores = false;
   private touchMode = false;
   /** Touch controls: stick (-1..1) and held buttons. */
-  readonly touch = { moveX: 0, moveY: 0, fire: false, aim: false, sprint: false, crouch: false };
+  readonly touch = { moveX: 0, moveY: 0, fire: false, aim: false, sprint: false, crouch: false, stickSprint: false, runLock: false };
 
   constructor(
     private container: HTMLElement,
@@ -624,6 +624,13 @@ export class Game {
         return randomCosmetics(lvl, Math.random, prestige);
       });
       this.clanTags();
+      // Campaign operations: the target, hostage and guards go by their roles, with no gamer cosmetics.
+      if (this.match.op) {
+        for (const [id, n] of Object.entries(this.match.op.names)) {
+          this.ids.names[+id] = n;
+          this.cosmetics[+id] = null;
+        }
+      }
       this.accounts = this.match.sim.agents.map((a) => (a === this.match.player && !opts.watch ? (account().user?.name ?? null) : null));
       if (net?.role === 'host') net.session.begin(this.match, net.seed, this.ids.names, this.ids.colors, this.ids.teamColors, this.ids.skins, this.cosmetics, this.accounts);
       if (opts.watch) this.specId = this.match.sim.agents.find((a) => this.ids.names[a.id] === opts.watch)?.id ?? -1;
@@ -672,7 +679,7 @@ export class Game {
 
     this.applySettings(settings);
     // Offline matches open with the lineup (practice drops you straight in).
-    if (!net && !this.practice && this.match.mode !== 'survival' && this.match.mode !== 'zombies') this.introPending = true;
+    if (!net && !this.practice && this.match.mode !== 'survival' && this.match.mode !== 'zombies' && this.match.mode !== 'op') this.introPending = true;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
     if (net) this.startBackgroundTicker();
@@ -711,7 +718,7 @@ export class Game {
   private clearTouch(): void {
     const t = this.touch;
     t.moveX = t.moveY = 0;
-    t.fire = t.aim = t.sprint = t.crouch = false;
+    t.fire = t.aim = t.sprint = t.crouch = t.stickSprint = t.runLock = false;
   }
 
   /** Touch: drag to look (pixels). */
@@ -957,7 +964,7 @@ export class Game {
       aim: (this.settings.toggleAim ? this.aimToggled : k.has(b.aim)) || t.aim || !!pd?.aim,
       reload: this.reloadQueued,
       jump: this.jumpQueued,
-      sprint: k.has(b.sprint) || t.sprint || -t.moveY > 0.92 || !!pd?.sprint,
+      sprint: k.has(b.sprint) || t.sprint || t.stickSprint || !!pd?.sprint,
       crouch: (this.settings.toggleCrouch ? this.crouchToggled : k.has(b.crouch)) || t.crouch || !!pd?.crouch,
       melee: this.meleeQueued,
       grenade: this.grenadeQueued,
@@ -1605,7 +1612,10 @@ export class Game {
       seconds: Math.round(m.sim.time - m.startTime),
       wave: m.wave,
       courseTime: m.party.course.finished[p.id] ?? 0,
-      medals: { ...this.medalCounts }
+      medals: { ...this.medalCounts },
+      undetected: m.op?.report.undetected ?? false,
+      guardsDown: m.op?.report.guardsDown ?? 0,
+      hostageHp: m.op?.report.hostageHp ?? 0
     };
   }
 
@@ -2974,7 +2984,7 @@ export class Game {
     const state: HudState = {
       hint: hintId ? this.hintFor(hintId) : null,
       mode: m.mode,
-      modeName: m.def.name,
+      modeName: m.op?.spec.title ?? m.def.name,
       hp: Math.max(0, Math.ceil(p.hp)),
       ammo: p.ammo,
       magazine: w.magazine,
@@ -2987,7 +2997,7 @@ export class Game {
       result: this.myResult(),
       scores: m.scores,
       teamCounts: m.teamCounts(),
-      showTeams: teamMode,
+      showTeams: teamMode && !m.op,
       teamColors: this.ids.teamColors ? [cssColor(this.ids.teamColors[0]), cssColor(this.ids.teamColors[1])] : null,
       players,
       showScoreboard: (this.keys.has(this.settings.keys.scores) || this.showScores) && !this.paused,
@@ -3191,6 +3201,19 @@ export class Game {
       ctx.arc(X(t.x), Z(t.z), Math.max(0, t.r * s), 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+    // Mission objectives as yellow diamonds.
+    ctx.fillStyle = '#ffc400';
+    for (const o of this.match.op ? sim.objectives : []) {
+      const x = X(o.x);
+      const z = Z(o.z);
+      ctx.beginPath();
+      ctx.moveTo(x, z - 5);
+      ctx.lineTo(x + 5, z);
+      ctx.lineTo(x, z + 5);
+      ctx.lineTo(x - 5, z);
+      ctx.closePath();
+      ctx.fill();
     }
     // Medkits as small green crosses (red is reserved for enemies).
     ctx.fillStyle = '#4cff7a';

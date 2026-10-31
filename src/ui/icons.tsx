@@ -67,3 +67,12 @@ export const ArrowIcon = (p: { size?: number }) => (
     <path d="M5 12h13M13 6l6 6-6 6" />
   </Svg>
 );
+
+/** A phone turning on its side. */
+export const RotateIcon = (p: { size?: number }) => (
+  <Svg {...p}>
+    <path d="M4 9h10v12H4z" />
+    <path d="M14 4h6v10" />
+    <path d="M17 1l3 3-3 3" />
+  </Svg>
+);

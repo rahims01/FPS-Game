@@ -691,7 +691,7 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
             <select className="field" value={schedKey} onChange={(e) => setSchedKey(e.target.value)} aria-label="Event">
               {EVENTS.map((ev) => (
                 <option key={ev.key} value={ev.key}>
-                  {ev.icon} {ev.name}
+                  {ev.name}
                 </option>
               ))}
             </select>
@@ -711,15 +711,13 @@ const News = ({ admin, say }: { admin: boolean; say: (s: string) => void }) => {
             {g} <small>{GROUP_NOTE[g]}</small>
           </h4>
           <div className="adm-events">
-            {EVENTS.filter((ev) => ev.group === g).map(({ key, name, blurb, icon }) => {
+            {EVENTS.filter((ev) => ev.group === g).map(({ key, name, blurb }) => {
               const ev = events[key];
               const on = !!ev && ev.from <= Date.now();
               const soon = !!ev && !on;
               return (
                 <div key={key} className={`adm-event ${on ? 'on' : ''} ${soon ? 'soon' : ''}`}>
-                  <b>
-                    <span aria-hidden="true">{icon}</span> {name}
-                  </b>
+                  <b>{name}</b>
                   <small>{on ? `On until ${new Date(ev.until).toLocaleString()}` : soon ? `Starts ${new Date(ev.from).toLocaleString()}` : blurb}</small>
                   <span className="pc-actions">
                     {[2, 24, 48].map((h) => (

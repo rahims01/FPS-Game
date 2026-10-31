@@ -82,7 +82,7 @@ export class ArenaView {
   private hill: THREE.Group | null = null;
   /** Team colours (team 0, team 1) for objective markers. */
   teamColors: [number, number] = [0x4ccf6a, 0xe0453a];
-  private flagViews: { group: THREE.Group; ring: THREE.Mesh; cloth: THREE.Mesh; label: THREE.Sprite }[] = [];
+  private flagViews: { group: THREE.Group; ring: THREE.Mesh; cloth: THREE.Mesh; label: THREE.Sprite; text: string }[] = [];
   private medkitMeshes: THREE.Mesh[] = [];
   private medkitGeo = new THREE.BoxGeometry(0.5, 0.32, 0.5);
   private medkitMat: THREE.MeshStandardMaterial;
@@ -298,8 +298,28 @@ export class ArenaView {
         label.renderOrder = 9;
         g.add(pole, cloth, ring, label);
         this.group.add(g);
-        fv = { group: g, ring, cloth, label };
+        fv = { group: g, ring, cloth, label, text: o.label };
         this.flagViews.push(fv);
+      }
+      if (fv.text !== o.label) {
+        fv.text = o.label;
+        const c = document.createElement('canvas');
+        c.width = c.height = 128;
+        const ctx = c.getContext('2d')!;
+        ctx.font = `bold ${o.label.length > 1 ? 40 : 96}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 10;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(o.label, 64, 68);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(o.label, 64, 68);
+        const mat = fv.label.material as THREE.SpriteMaterial;
+        mat.map?.dispose();
+        mat.map = new THREE.CanvasTexture(c);
+        mat.needsUpdate = true;
+        fv.ring.geometry.dispose();
+        fv.ring.geometry = new THREE.RingGeometry(o.r - 0.12, o.r, 64);
       }
       const color = o.owner === 0 || o.owner === 1 ? this.teamColors[o.owner] : 0xf2f2f2;
       (fv.cloth.material as THREE.MeshStandardMaterial).color.setHex(color);

@@ -1,4 +1,4 @@
-# FPS Shooter
+# Stickman FPS Game
 
 First-person shooter built with Vite, React, TypeScript, three.js and cannon-es. The bots are trained with reinforcement learning (PPO). Bodies ragdoll when they die, the player's included.
 
@@ -16,6 +16,7 @@ npm install
 npm run dev        # http://localhost:5190
 npm run dev:api    # the /api endpoints (accounts, friends, admin) on Node, for npm run dev
 npm run build      # type-check + production build
+npm test           # the game's tests (sim, missions, admin gear, accounts)
 ```
 
 ## Modes
@@ -116,7 +117,15 @@ npm run build      # type-check + production build
 
 ## Campaign
 
-Ten solo missions on the Play tab, each a match with a short briefing and three star goals: Basic Training, First Contact, Run and Gun, Hold the Line, Overwatch, Point Taken, Cold Steel, Bomb Squad, Last One Standing and The Titan. Missions unlock in order, every new star gives 500 XP, and finishing all ten gives the "Campaign Hero" title.
+A story campaign on the Play tab: Basic Training, then fifteen operations against the Syndicate in four acts (Recruit, Operative, Specialist, Ghost). Each has a briefing, three lives and three star goals:
+
+- **Stealth:** guards stand watch until they spot you (a meter fills while they can see you; crouching halves it), hear an unsuppressed shot, get hurt or find a body. Then the alarm goes up and reinforcements arrive.
+- **Assassinate** a named target among bodyguards. Once the alarm sounds the target runs, and you have a short time to finish it.
+- **Rescue** a hostage, who follows you once freed, and bring them back alive.
+- **Intel** and **sabotage:** take every intel case, or plant a charge at every site and beat the fuse.
+- **Defend** a position for a set time, or **escape** from behind enemy lines.
+
+After the objective you head back to extraction. Missions unlock in order, every new star gives 500 XP, and finishing them all gives the "Campaign Hero" title.
 
 ## Accounts, friends and admin
 
@@ -124,7 +133,7 @@ Ten solo missions on the Play tab, each a match with a short briefing and three 
 - **Friends:** add people by username or straight from a player card; see who's online and what they're playing; chat; Join or Watch a friend's room. Computer players you meet can be friended too: they keep their own hours, chat back, invite you to play and can be watched.
 - **Player cards:** click anyone on the pause or end-screen scoreboard for their card (username, level, stats, cosmetics, pinned achievements) with Add friend and Report.
 - **Admin:** set two Secrets on the Worker, `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then sign in with that email. The admin (and any moderators they appoint) get an Admin tab: reports, warnings, mutes, bans, renames, password resets, gifts, gift codes, announcements, events (see below), a maintenance notice, live rooms to watch, giveaways, XP rain, shout-outs and a log of every action. The admin also has their own cosmetics (6 cards, 6 emblems, 6 camos, 5 styles, 5 name tags, 5 tracers and flashes, 5 charms, 6 colours, 6 titles and the Ban Hammer) and effects: four one-click looks (Sovereign Gold, Royalty, Cosmic, Developer), a pick of takedown effect (confetti, lightning, fireworks, shockwave, a BANNED stamp), spawn effect (pillar of light, portal, meteor, lightning) and aura, an announcement when they join, a gold name in the kill feed and a crown when they win. All looks only.
-- **Events:** the admin can start any of 27 events for everyone, now or scheduled ahead with a countdown on everyone's menu. Rewards: Double XP, Triple XP Hour, Double Weapon XP, Free Camo Weekend, Happy Hour Medals. Looks: Golden Guns, Confetti Kills, Night Ops, Snowfall, Rain, Fog, Disco, Rainbow Tracers, Flying Ragdolls, Paint Party, Retro, Halloween and Winter (each of the last two gives a limited charm). Rules, casual matches only: Big Heads, Low Gravity, Speed Demon, Streak Frenzy, Headshots Only, One Shot Party, Knives Out and Mystery Playlist. Playing a match during an event earns its badge (an Events group of achievements).
+- **Events:** the admin can start any of 26 events for everyone, now or scheduled ahead with a countdown on everyone's menu. Rewards: Double XP, Triple XP Hour, Double Weapon XP, Free Camo Weekend, Happy Hour Medals. Looks: Golden Guns, Confetti Kills, Night Ops, Snowfall, Rain, Fog, Disco, Rainbow Tracers, Flying Ragdolls, Paint Party, Retro, Halloween and Winter (each of the last two gives a limited charm). Rules, casual matches only: Big Heads, Low Gravity, Speed Demon, Streak Frenzy, Headshots Only, One Shot Party, Knives Out and Mystery Playlist. Playing a match during an event earns its badge (an Events group of achievements).
 - **Admin arsenal:** the admin account also gets the Ban Hammer melee, six guns of its own (Sovereign rifle, Sovereign Burst M4, Gavel hand cannon, Moderator marksman rifle whose hits mark the target on your team's map, Kick shotgun that knocks people back, Permaban railgun that fires through walls and everyone in a line), seven always-on perks (Overclocked, Iron Will, Command Presence, Royal Stride, Spotlight, Appeal, Killstreak Royalty) and three admin-only killstreaks (God View, Ban Wave, Server Restart). None of it applies in ranked or tournaments, where the admin plays with the standard M4 and pistol.
 - **Local testing:** `npm run dev:api` runs the same Worker code on your computer (Node's built-in SQLite), and `npm run dev` sends `/api` to it.
 
@@ -291,3 +300,9 @@ node scripts/shot.mjs <1v1|2v2|3v3|ffa|survival|br> [outDir]
 ```
 
 The script loads `puppeteer-core` from the Battle Simulator project if it isn't installed here.
+
+## Credits
+
+- **Player model:** Stickman by [TALE](https://sketchfab.com/TALE) on Sketchfab.
+- **M16 rifle model:** M16 Assault Rifle by [SpatialNeglect](https://sketchfab.com/SpatialNeglect) on Sketchfab.
+- Built with three.js, cannon-es, React, PeerJS and Vite.

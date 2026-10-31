@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The game's stickman soldier, rifle shouldered, mid-stride: network yellow on studio navy. -->
+  <rect width="64" height="64" fill="#0b1220"/>
+  <g fill="none" stroke="#ffc400" stroke-linecap="round" stroke-linejoin="round">
+    <!-- legs -->
+    <path d="M27 38 L21 49 L18 58" stroke-width="7"/>
+    <path d="M30 38 L36 48 L41 57" stroke-width="7"/>
+    <!-- body -->
+    <path d="M27.5 23 L28.5 37" stroke-width="10"/>
+    <!-- arms up to the rifle -->
+    <path d="M28 25 L36 31 L44 27" stroke-width="5.5"/>
+    <path d="M27 25 L33 28" stroke-width="5.5"/>
+  </g>
+  <!-- head -->
+  <circle cx="27" cy="12.5" r="7.5" fill="#ffc400"/>
+  <!-- visor slit -->
+  <path d="M28 11.5 h6" stroke="#0b1220" stroke-width="2.4" stroke-linecap="round"/>
+  <!-- rifle -->
+  <g fill="#f4f6f8">
+    <rect x="31" y="22" width="27" height="5" rx="1" transform="rotate(-8 31 24)"/>
+    <rect x="40" y="25" width="4" height="8" transform="rotate(-8 31 24)"/>
+  </g>
+</svg>

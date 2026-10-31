@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_KEYS, KEY_ACTIONS, keyLabel, QUALITY_PRESETS, type GameSettings, type Graphics, type KeyAction, type Quality } from '../game/settings';
 
-type Tab = 'gameplay' | 'graphics' | 'controls' | 'controller' | 'crosshair' | 'access' | 'audio';
+type Tab = 'gameplay' | 'graphics' | 'controls' | 'controller' | 'crosshair' | 'access' | 'audio' | 'credits';
 const TABS: [Tab, string][] = [
   ['gameplay', 'Gameplay'],
   ['graphics', 'Graphics'],
@@ -9,7 +9,8 @@ const TABS: [Tab, string][] = [
   ['controller', 'Controller'],
   ['crosshair', 'Crosshair'],
   ['access', 'Accessibility'],
-  ['audio', 'Audio']
+  ['audio', 'Audio'],
+  ['credits', 'Credits']
 ];
 
 const Slider = ({ label, value, min, max, step, fmt, onChange }: { label: string; value: number; min: number; max: number; step: number; fmt?: (v: number) => string; onChange: (v: number) => void }) => (
@@ -287,6 +288,30 @@ export const SettingsPanel = ({ settings, onChange, onReplayTour }: { settings: 
           </>
         )}
         {tab === 'audio' && <Slider label="Master volume" value={settings.volume} min={0} max={1} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => set({ volume: v })} />}
+        {tab === 'credits' && (
+          <dl className="credits">
+            <dt>Stickman FPS Game</dt>
+            <dd>Design, code, bots and everything else not listed below.</dd>
+            <dt>Player model</dt>
+            <dd>
+              Stickman by{' '}
+              <a href="https://sketchfab.com/TALE" target="_blank" rel="noopener noreferrer">
+                TALE
+              </a>{' '}
+              on Sketchfab
+            </dd>
+            <dt>M16 rifle model</dt>
+            <dd>
+              M16 Assault Rifle by{' '}
+              <a href="https://sketchfab.com/SpatialNeglect" target="_blank" rel="noopener noreferrer">
+                SpatialNeglect
+              </a>{' '}
+              on Sketchfab
+            </dd>
+            <dt>Built with</dt>
+            <dd>three.js, cannon-es, React, PeerJS and Vite</dd>
+          </dl>
+        )}
       </div>
     </div>
   );

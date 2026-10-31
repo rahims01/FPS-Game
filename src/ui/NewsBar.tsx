@@ -48,7 +48,7 @@ export const NewsBar = () => {
             const live = e.from <= now;
             return (
               <span key={k} className={`ev-chip ${live ? '' : 'soon'}`} title={d?.blurb}>
-                <span aria-hidden="true">{d?.icon ?? '★'}</span> {d?.name ?? k}
+                {d?.name ?? k}
                 <span className="news-clock">{live ? countdown(e.until - now) : `starts in ${countdown(e.from - now)}`}</span>
               </span>
             );
@@ -59,9 +59,6 @@ export const NewsBar = () => {
         const live = e.from <= now;
         return (
           <p key={k} className={`news event ${live ? '' : 'soon'}`}>
-            <span aria-hidden="true" className="news-icon">
-              {d?.icon ?? '★'}
-            </span>
             <span>
               <b>{d?.name ?? k}</b> {live ? 'is on' : 'starts soon'}
               {d && <small> · {d.blurb}</small>}

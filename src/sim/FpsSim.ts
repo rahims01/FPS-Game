@@ -739,7 +739,7 @@ export class FpsSim {
   /** Knife swing: hits the nearest enemy in front within reach. */
   melee(a: Agent): void {
     if (a.meleeCd > 0 || a.switchT > 0) return;
-    a.meleeCd = WEAPONS.knife.interval;
+    a.meleeCd = WEAPONS.knife.interval * (a.meleeRate ?? 1);
     a.protectedUntil = 0;
     a.lastShotT = this.time;
     let best: Agent | null = null;
@@ -1344,6 +1344,12 @@ export class FpsSim {
     }
     if (a.dummy) {
       this.driveDummy(a, dt);
+      return;
+    }
+    if (a.passive) {
+      // On watch: stand still and slowly look around.
+      this.accelerate(a, 0, 0, dt);
+      a.yaw += Math.sin(this.time * 0.35 + a.id * 1.7) * 0.5 * dt;
       return;
     }
     // Still loading in at the start of the match (until shot at).

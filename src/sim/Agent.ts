@@ -149,6 +149,8 @@ export interface Agent {
    */
   admin?: boolean;
   appealUsed?: boolean;
+  /** Campaign guards on watch: they stand and look around until the alarm. */
+  passive?: boolean;
   /** Stunned (Server Restart): can't move or shoot, but can be hit. */
   stunUntil: number;
   /** Marked on a team's minimap (Moderator hits, the admin's Spotlight). */
@@ -201,6 +203,8 @@ export interface Agent {
   holdUntil: number;
   /** Movement speed multiplier (zombies get faster each wave). */
   speedMul: number;
+  /** Seconds between melee swings, as a multiple of the knife's (zombies claw slower). */
+  meleeRate?: number;
   /** Knife damage (zombies claw for less than a one-hit knife kill). */
   meleeDamage: number;
   /** How long a bot has been trying to move without getting anywhere. */

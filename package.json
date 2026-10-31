@@ -8,6 +8,7 @@
     "dev:api": "tsx scripts/dev-api.mts",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.mts",
     "preview": "vite preview",
     "train": "tsx training/train.ts",
     "eval": "tsx training/evaluate.ts"

@@ -1,5 +1,5 @@
 ---
-name: FPS Shooter
+name: Stickman FPS Game
 description: A browser FPS whose menus and HUD are one sports-broadcast graphics package.
 colors:
   navy: "#0b1220"
@@ -153,7 +153,7 @@ components:
     padding: "5px 30px 3px 14px"
 ---
 
-# Design System: FPS Shooter
+# Design System: Stickman FPS Game
 
 ## Overview
 

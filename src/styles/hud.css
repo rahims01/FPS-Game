@@ -587,9 +587,20 @@
   font-weight: 800;
   letter-spacing: 0.04em;
 }
+.hint > :last-child {
+  min-width: 0;
+}
+/* Touch: clear of the health and ammo column on the left and the buttons on the right,
+   and the words wrap instead of running off the plate. */
 .hud.touch .hint {
-  top: 34%;
+  top: 30%;
   bottom: auto;
+  left: 170px;
+  right: 170px;
+  font-size: 13px;
+}
+.hud.touch .hint kbd {
+  font-size: 14px;
 }
 
 .warning,
@@ -1545,4 +1556,101 @@ b.dark {
 :root.hc .hud .ammo,
 :root.hc .hud .medal {
   padding: 4px 8px;
+}
+
+/* Phones play in landscape only: this covers a match held upright. */
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--navy);
+  color: var(--fg);
+  text-align: center;
+}
+.rotate-gate .icon {
+  color: var(--yellow);
+}
+.rotate-gate b {
+  font-family: var(--f-cond);
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.rotate-gate p {
+  max-width: 30ch;
+  margin: 0;
+  color: var(--dim);
+  font-size: 15px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rotate-gate .icon {
+    animation: rotate-hint 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+}
+@keyframes rotate-hint {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  70%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+/* Touch sprint: the stick's guide, the lock notice and toggled buttons. */
+.tc-stick.run {
+  border-color: var(--yellow);
+}
+.tc-run-guide {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  padding: 3px 8px 2px;
+  background: var(--hud);
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tc-run-guide.sprint {
+  color: var(--fg);
+}
+.tc-run-guide.lock {
+  background: var(--yellow);
+  color: var(--ink);
+}
+.tc-lock {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 6px 10px 5px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-family: var(--f-cond);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.tc-btn.sprint {
+  right: 30px;
+  bottom: 196px;
+  font-size: 10px;
+}
+.tc-btn.on {
+  border-color: var(--yellow);
+  background: rgba(255, 196, 0, 0.35);
 }

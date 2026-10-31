@@ -3,7 +3,7 @@ import type { LoadedAssets } from '../assets/AssetRegistry';
 import { SKINS, type SkinId } from '../assets/skins';
 import { keyLabel, type GameSettings } from '../game/settings';
 import { levelOf, type Profile } from '../game/progression';
-import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, type Cosmetics } from '../game/cosmetics';
+import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, type Cosmetics, listedFor } from '../game/cosmetics';
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { ADMIN_PRIMARIES, ADMIN_SECONDARIES, PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
@@ -81,6 +81,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
   const mastery = masteryOf(focusKills);
   const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const level = levelOf(profile.xp).level;
+  const listed = listedFor(profile, level);
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<Cosmetics>) => set({ cosmetics: { ...cos, ...patch } });
   const admin = account().user?.role === 'admin';
@@ -180,7 +181,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
               </p>
               <div className="showcase-jumps">
                 <button className="chip" onClick={() => jumpTo('camo-picker')}>
-                  Change camo · {SKINS.filter((sk) => focusKills >= sk.kills).length}/{SKINS.length} unlocked
+                  Change camo · {SKINS.filter((sk) => focusKills >= sk.kills).length}/{SKINS.filter((sk) => sk.kills < 1_000_000_000).length} unlocked
                 </button>
                 <button className="chip" onClick={() => jumpTo('charm-picker')}>
                   Charm
@@ -239,7 +240,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
           <h3>Melee</h3>
           <p className="set-hint">Every melee fights like the Combat Knife (same reach, speed and one-stab kill); pick the one you like the look of. Each has its own camos, unlocked by kills with it.</p>
           <div className="streak-grid melee-grid">
-            {MELEES.map((d) => {
+            {MELEES.filter(listed).map((d) => {
               const ok = unlocked(d.unlock, profile, level, d.id);
               const on = meleeOn.id === d.id;
               return (
@@ -264,7 +265,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
             Camo · {focusName} <small>({focusKills} kills; click a gun or melee above to see its camos)</small>
           </h3>
           <div className="skin-grid">
-            {SKINS.map((s) => {
+            {SKINS.filter((s) => s.kills < 1_000_000_000 || profile.granted?.includes('*') || profile.granted?.includes(s.id)).map((s) => {
               const given = !!profile.granted && (profile.granted.includes('*') || profile.granted.includes(s.id));
               const locked = focusKills < s.kills && !given && !eventOn('freeCamos');
               const on = (settings.skins[slotKey] ?? 'none') === s.id;
@@ -289,7 +290,7 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
             Charm <small>(hangs off every gun)</small>
           </h3>
           <div className="skin-grid">
-            {CHARMS.map((c) => {
+            {CHARMS.filter(listed).map((c) => {
               const ok = unlocked(c.unlock, profile, level, c.id);
               const hidden = c.secret && !ok;
               return (

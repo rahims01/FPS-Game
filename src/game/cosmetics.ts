@@ -436,6 +436,15 @@ export const earned = (b: BadgeDef, p: ProfileLike, level: number): boolean => {
 /** Level unlocks stay unlocked after you prestige. */
 export const effectiveLevel = (p: ProfileLike, level: number): number => ((p.prestige ?? 0) > 0 ? 55 : level);
 
+/** Charms anyone can earn by playing (not secret, not given by the admin or an event). */
+const earnable = (c: CharmDef) => !c.secret && !(c.unlock && 'special' in c.unlock);
+
+/** Lists hide staff-only items from everyone who doesn't have them: nobody else can ever earn them. */
+export const listedFor =
+  (p: ProfileLike, level: number) =>
+  (item: { id: string; unlock: Unlock }): boolean =>
+    !(item.unlock && 'special' in item.unlock && /admin|staff/i.test(item.unlock.special)) || unlocked(item.unlock, p, level, item.id);
+
 export const unlocked = (u: Unlock, p: ProfileLike, level: number, id?: string): boolean => {
   if (!u) return true;
   if (p.granted && (p.granted.includes('*') || (id !== undefined && p.granted.includes(id)))) return true;
@@ -763,7 +772,7 @@ export const COLLECTIONS: CollectionDef[] = [
   { id: 'sharp', name: 'Sharp Things', blurb: 'Unlock every melee weapon.', reward: 'blademaster', progress: (p, level) => [MELEE_UNLOCKS.filter((u) => unlocked(u, p, level)).length, MELEE_UNLOCKS.length] },
   { id: 'medals', name: 'Medal Case', blurb: 'Earn 50 achievements.', reward: 'decorated', progress: (p, level) => [BADGES.filter((b) => earned(b, p, level)).length, 50] },
   { id: 'wardrobe', name: 'Wardrobe', blurb: 'Unlock 30 calling cards.', reward: 'fashionista', progress: (p, level) => [CARDS.filter((c) => unlocked(c.unlock, p, level, c.id)).length, 30] },
-  { id: 'charmed', name: 'Charmed', blurb: 'Unlock every charm.', reward: 'luckycharm', progress: (p, level) => [CHARMS.filter((c) => !c.secret && unlocked(c.unlock, p, level, c.id)).length, CHARMS.filter((c) => !c.secret).length] },
+  { id: 'charmed', name: 'Charmed', blurb: 'Unlock every charm.', reward: 'luckycharm', progress: (p, level) => [CHARMS.filter((c) => earnable(c) && unlocked(c.unlock, p, level, c.id)).length, CHARMS.filter(earnable).length] },
   { id: 'modemaster', name: 'Mode Master', blurb: 'Win in 15 different modes.', reward: 'jackofall', progress: (p) => [Object.values(p.modes ?? {}).filter((m) => m.won > 0).length, 15] }
 ];
 

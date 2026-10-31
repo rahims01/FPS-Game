@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { tickSkins } from '../assets/skins';
-import { FLASHES, NAMETAGS, RARITY, STYLES, THEME_COLORS, TRACERS, rarityOf, unlockText, unlocked, type Rarity, type Unlock } from '../game/cosmetics';
+import { FLASHES, NAMETAGS, RARITY, STYLES, THEME_COLORS, TRACERS, rarityOf, unlockText, unlocked, type Rarity, type Unlock, listedFor } from '../game/cosmetics';
 import { COLORS, cssColor } from '../game/identity';
 import type { GameSettings } from '../game/settings';
 import { levelOf, type Profile } from '../game/progression';
@@ -132,6 +132,7 @@ export const ArmoryPanel = ({
 }) => {
   const [tab, setTab] = useState<Tab>('colour');
   const level = levelOf(profile.xp).level;
+  const listed = listedFor(profile, level);
   const cos = settings.cosmetics;
   const setCos = (patch: Partial<typeof cos>) => onChange({ ...settings, cosmetics: { ...cos, ...patch } });
 
@@ -192,7 +193,7 @@ export const ArmoryPanel = ({
             <p className="set-hint">Your colour in free-for-all modes and on your soldier. Team modes use team colours.</p>
             <div className="arm-grid">
               {COLORS.map((c) => tile({ id: String(c.hex), name: c.name, unlock: null }, settings.playerColor === c.hex, () => onChange({ ...settings, playerColor: c.hex }), <i className="arm-swatch" style={{ background: cssColor(c.hex) }} />))}
-              {THEME_COLORS.map((c) =>
+              {THEME_COLORS.filter(listed).map((c) =>
                 tile(c, settings.playerColor === c.hex, () => onChange({ ...settings, playerColor: c.hex }), <i className={`arm-swatch ${c.finish}`} style={{ background: cssColor(c.hex) }} />)
               )}
             </div>
@@ -202,7 +203,7 @@ export const ArmoryPanel = ({
           <>
             <p className="set-hint">How your soldier wears its colour. In team modes, styles that change colour pulse in your team's colour instead.</p>
             <div className="arm-grid">
-              {STYLES.map((s) =>
+              {STYLES.filter(listed).map((s) =>
                 tile(s, (cos.style ?? 'none') === s.id, () => setCos({ style: s.id }), <i className={`arm-style ${s.kind} st-${s.id}`} style={{ ['--c' as string]: cssColor(settings.playerColor) }} title={s.blurb} />)
               )}
             </div>
@@ -210,19 +211,19 @@ export const ArmoryPanel = ({
         )}
         {tab === 'nametag' && (
           <div className="arm-grid">
-            {NAMETAGS.map((n) => tile(n, cos.nametag === n.id, () => setCos({ nametag: n.id }), <span className={`nt-chip nt-${n.id}`}>Aa</span>))}
+            {NAMETAGS.filter(listed).map((n) => tile(n, cos.nametag === n.id, () => setCos({ nametag: n.id }), <span className={`nt-chip nt-${n.id}`}>Aa</span>))}
           </div>
         )}
         {tab === 'tracer' && (
           <div className="arm-grid">
-            {TRACERS.map((t) =>
+            {TRACERS.filter(listed).map((t) =>
               tile(t, cos.tracer === t.id, () => setCos({ tracer: t.id }), <i className="arm-tracer" style={{ background: t.color === 'rainbow' ? 'linear-gradient(90deg,#ff3b3b,#ffb03b,#3bff6b,#3bb9ff,#a03bff)' : cssColor(t.color) }} />)
             )}
           </div>
         )}
         {tab === 'flash' && (
           <div className="arm-grid">
-            {FLASHES.map((f) =>
+            {FLASHES.filter(listed).map((f) =>
               tile(f, cos.flash === f.id, () => setCos({ flash: f.id }), <i className="arm-flash" style={{ background: `radial-gradient(circle, #fff 0, ${cssColor(f.color)} 35%, transparent 70%)`, transform: `scale(${0.7 + f.scale * 0.3})` }} />)
             )}
           </div>

@@ -963,15 +963,7 @@ textarea.field {
 
 .feed-admin {
   color: #ffd23d;
-  background: linear-gradient(90deg, #fff6c8, #ffc400 45%, #fff6c8);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 4px rgba(255, 196, 0, 0.6));
   font-weight: 800;
-}
-.feed-admin .feed-crown {
-  -webkit-text-fill-color: #ffd23d;
 }
 .feed-crown {
   color: #ffd23d;
@@ -1075,6 +1067,18 @@ textarea.field {
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 16px;
+}
+.m-act {
+  margin: 14px 0 6px;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+li:first-child > .m-act {
+  margin-top: 0;
 }
 .m-list {
   display: flex;
