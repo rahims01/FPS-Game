@@ -282,9 +282,18 @@ const KILLCAM_BEFORE = 3.5;
 const KILLCAM_AFTER = 0.6;
 const KILLCAM_DELAY = 0.9;
 
-const causeName = (c: DeathCause): string =>
-  c === 'grenade' ? 'Frag Grenade' : c === 'airstrike' ? 'Airstrike' : c === 'zone' ? 'The Zone' : WEAPONS[c as WeaponId]?.name ?? c;
-const causeTag = (c: DeathCause): string => (c === 'grenade' ? 'FRAG' : c === 'airstrike' ? 'AIRSTRIKE' : c === 'zone' ? 'ZONE' : c === 'ball' ? 'BALL' : WEAPONS[c as WeaponId]?.tag ?? '');
+/** Thrown and placed things that kill, by name and kill-feed tag. */
+const THROWN_CAUSES: Partial<Record<string, [string, string]>> = {
+  grenade: ['Frag Grenade', 'FRAG'],
+  airstrike: ['Airstrike', 'AIRSTRIKE'],
+  zone: ['The Zone', 'ZONE'],
+  ball: ['Dodgeball', 'BALL'],
+  tknife: ['Throwing Knife', 'THROWING KNIFE'],
+  spear: ['Spear', 'SPEAR'],
+  molotov: ['Molotov', 'MOLOTOV']
+};
+const causeName = (c: DeathCause): string => THROWN_CAUSES[c]?.[0] ?? WEAPONS[c as WeaponId]?.name ?? c;
+const causeTag = (c: DeathCause): string => THROWN_CAUSES[c]?.[1] ?? WEAPONS[c as WeaponId]?.tag ?? '';
 
 const CORPSE_SECONDS = 25;
 
