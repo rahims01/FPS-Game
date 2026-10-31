@@ -399,7 +399,9 @@ export class HostSession {
       taken.add(a.id);
       a.control = 'remote';
       a.style = 'soldier';
+      a.attach = c.profile.attachments;
       if (!forced && a.weapons[0] !== 'knife') setLoadout(a, [c.profile.primary, c.profile.secondary ?? 'pistol']);
+      else setLoadout(a, a.weapons);
       match.streakChoices[a.id] = c.profile.streaks;
       a.perks = c.profile.perks ?? a.perks;
       a.lethal = c.profile.lethal ?? a.lethal;

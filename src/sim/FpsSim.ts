@@ -1,4 +1,4 @@
-import { A, ACTIONS, createAgent, eyeHeight, isHuman, setLoadout, weaponOf, type Agent, type Control, type DeathCause } from './Agent';
+import { A, ACTIONS, createAgent, eyeHeight, isHuman, magOf, setLoadout, weaponOf, type Agent, type Control, type DeathCause } from './Agent';
 import { Arena, type ArenaLayout, type Point } from './Arena';
 import { BOT_AIM, HITBOX, RIFLE, SIM, SOLDIER, type HitRegion } from './config';
 import { classicLayout } from './layouts';
@@ -1056,7 +1056,7 @@ export class FpsSim {
         attacker.streak++;
         attacker.bestStreak = Math.max(attacker.bestStreak, attacker.streak);
         if (hasPerk(attacker, 'scavenger') && attacker.alive) {
-          attacker.weapons.forEach((w, i) => (attacker.stash[i] = WEAPONS[w].magazine));
+          attacker.weapons.forEach((w, i) => (attacker.stash[i] = magOf(attacker, w)));
           attacker.grenades = Math.min(THROWABLES[attacker.lethal].count, attacker.grenades + 1);
         }
         // Some players can't resist crouching on the body (only bots, never online fillers).

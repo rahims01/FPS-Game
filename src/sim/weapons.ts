@@ -44,6 +44,10 @@ export interface WeaponDef {
   /** Rounds per trigger pull for burst weapons, fired `burstGap` seconds apart. */
   burst?: number;
   burstGap?: number;
+  /** Attachments (see attachments.ts): the sight drawn while aiming, a quiet muzzle, a laser beam. */
+  optic?: 'reddot' | 'holo';
+  suppressed?: boolean;
+  laser?: boolean;
 }
 
 const gun = (d: Omit<WeaponDef, 'pellets' | 'scope' | 'adsSpread' | 'spreadAir' | 'range' | 'pattern'> & Partial<WeaponDef>): WeaponDef => ({

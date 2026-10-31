@@ -4,6 +4,7 @@ import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstr
 import { DEFAULT_PERKS, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { DEFAULT_COSMETICS, type Cosmetics } from './cosmetics';
 import { localSaved } from './saveHook';
+import type { AttachChoice } from '../sim/attachments';
 
 /** Rebindable actions. Any of them can take a key or a mouse button ("Mouse0" = left, "Mouse2" = right). */
 export const KEY_ACTIONS = [
@@ -145,6 +146,8 @@ export interface GameSettings {
   blood: boolean;
   /** Classroom mode: no blood, sparks on hits, takedowns instead of kills. */
   classroom: boolean;
+  /** Weapon attachments by gun. */
+  attachments: AttachChoice;
   /** On-screen touch controls: automatic on touch screens, or forced on / off. */
   touchControls: 'auto' | 'on' | 'off';
   lethal: ThrowableId;
@@ -188,6 +191,7 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   hints: true,
   blood: true,
   classroom: false,
+  attachments: {},
   touchControls: 'auto',
   lethal: 'frag',
   tactical: 'flash',

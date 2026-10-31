@@ -58,6 +58,36 @@
   background: #fff;
   border-radius: 50%;
 }
+/* Optic sights while aiming: a red dot, or a holographic ring with a dot. */
+.optic-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  background: #ff3b30;
+  border-radius: 50%;
+  box-shadow: 0 0 6px 1px rgba(255, 59, 48, 0.8);
+  pointer-events: none;
+}
+.optic-reticle.holo {
+  width: 4px;
+  height: 4px;
+  margin: -2px;
+}
+.optic-reticle.holo::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px;
+  border: 2px solid rgba(255, 70, 60, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(255, 59, 48, 0.6);
+}
 .hitmarker {
   position: absolute;
   left: 50%;

@@ -49,7 +49,8 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           {ch.dot && <i className="d" />}
         </div>
       )}
-      {hud.alive && hud.aiming && !hud.scoped && <div className="dot" />}
+      {hud.alive && hud.aiming && !hud.scoped && !hud.optic && <div className="dot" />}
+      {hud.optic && <div className={`optic-reticle ${hud.optic}`} aria-hidden="true" />}
       {markerAge < 0.25 && <div key={hud.hitMarkerAt} className={`hitmarker ${hud.hitMarkerKind}`} />}
       {hud.damage.map((d, i) => (
         <div key={`${d.at}-${i}`} className="dmg" style={{ transform: `translate(-50%, -50%) rotate(${-d.angle}rad)`, opacity: 1 - (hud.time - d.at) / 1.2 }}>

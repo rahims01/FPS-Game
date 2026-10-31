@@ -1,4 +1,5 @@
 import type { Agent } from '../sim/Agent';
+import type { AttachChoice } from '../sim/attachments';
 import type { SimEvent } from '../sim/FpsSim';
 import type { Difficulty, LobbyRules, Match, MatchNotice, ModeId } from '../sim/Match';
 import type { SkinChoice } from '../assets/skins';
@@ -33,6 +34,8 @@ export interface PlayerProfile {
   account?: string | null;
   /** Join to watch (friends spectating, the admin checking a room). */
   spectate?: boolean;
+  /** Weapon attachments by gun. */
+  attachments?: AttachChoice;
 }
 
 export interface LobbyPlayer {

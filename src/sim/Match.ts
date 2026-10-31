@@ -1,4 +1,5 @@
-import { BOT_STYLES, STYLE_KIT, isHuman, setLoadout, type Agent, type Control, type DeathCause } from './Agent';
+import { BOT_STYLES, STYLE_KIT, isHuman, magOf, setLoadout, type Agent, type Control, type DeathCause } from './Agent';
+import type { AttachChoice } from './attachments';
 import type { ArenaLayout, Point } from './Arena';
 import { SIM } from './config';
 import { FpsSim, type DamageRule, type PlayerInput, type Rally } from './FpsSim';
@@ -180,6 +181,8 @@ export interface MatchOptions {
   seed?: number;
   /** Watch this player (a bot friend) instead of playing: your soldier is played by the computer. */
   watch?: string;
+  /** Your weapon attachments. */
+  attachments?: AttachChoice;
 }
 
 export type MatchPhase = 'live' | 'roundOver' | 'over';
@@ -609,6 +612,11 @@ export class Match {
       }
     }
     if (mode === 'gunfight') this.gunfightLoadout();
+    // Your attachments (online players get theirs from the host's session).
+    if (opts.attachments && !opts.watch) {
+      this.player.attach = opts.attachments;
+      setLoadout(this.player, this.player.weapons);
+    }
     // Throwables and perks: yours from the loadout, everyone else's picked at random.
     for (const a of sim.agents) {
       if (a === this.player) {
@@ -1149,8 +1157,8 @@ export class Match {
       case 'supply':
         a.hp = 100;
         a.grenades += 2;
-        a.ammo = WEAPONS[a.weapons[a.slot]].magazine;
-        a.weapons.forEach((w, i) => (a.stash[i] = WEAPONS[w].magazine));
+        a.ammo = magOf(a, a.weapons[a.slot]);
+        a.weapons.forEach((w, i) => (a.stash[i] = magOf(a, w)));
         a.reloadT = 0;
         break;
       case 'counter':

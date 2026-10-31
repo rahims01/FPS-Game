@@ -1,5 +1,6 @@
 import { SOLDIER, type HitRegion } from './config';
-import { WEAPONS, type WeaponId } from './weapons';
+import { WEAPONS, type WeaponDef, type WeaponId } from './weapons';
+import { moddedDefs, type AttachChoice } from './attachments';
 import type { Point } from './Arena';
 import type { PerkId, ThrowableId } from './gear';
 
@@ -33,13 +34,20 @@ export const STYLE_KIT: Record<BotStyle, { guns: WeaponId[]; aim: number }> = {
 export const isHuman = (a: { control: Control }): boolean => a.control === 'player' || a.control === 'remote';
 
 /** The weapon in hand. */
-export const weaponOf = (a: { weapons: WeaponId[]; slot: number }) => WEAPONS[a.weapons[a.slot] ?? 'rifle'];
+/** The gun in hand, with this agent's attachments applied. */
+export const weaponOf = (a: { weapons: WeaponId[]; slot: number; mods?: Partial<Record<WeaponId, WeaponDef>> }) => {
+  const id = a.weapons[a.slot] ?? 'rifle';
+  return a.mods?.[id] ?? WEAPONS[id];
+};
+/** A gun's magazine size for this agent (extended mags). */
+export const magOf = (a: { mods?: Partial<Record<WeaponId, WeaponDef>> }, w: WeaponId) => (a.mods?.[w] ?? WEAPONS[w]).magazine;
 
 /** Gives an agent a new loadout with full magazines (slot 0 in hand). */
 export const setLoadout = (a: Agent, weapons: WeaponId[]): void => {
   a.weapons = weapons.slice();
+  a.mods = moddedDefs(a.weapons, a.attach);
   a.slot = 0;
-  a.stash = weapons.map((w) => WEAPONS[w].magazine);
+  a.stash = weapons.map((w) => magOf(a, w));
   a.ammo = a.stash[0];
   a.reloadT = 0;
   a.switchT = 0;
@@ -134,6 +142,9 @@ export interface Agent {
   deathT: number;
   /** What killed it: a weapon, a grenade, an airstrike or the zone. */
   deathCause: DeathCause;
+  /** Attachments chosen for each gun, and the stats they give (rebuilt by setLoadout). */
+  attach?: AttachChoice;
+  mods?: Partial<Record<WeaponId, WeaponDef>>;
   /**
    * Shotgun bots and a far target: close in ('push') or fight it with the
    * sidearm ('secondary'). Kept for a few seconds so they don't flip-flop.

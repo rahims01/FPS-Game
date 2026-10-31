@@ -177,6 +177,8 @@ export interface HudState {
   loadout: { id: WeaponId; name: string; active: boolean }[];
   grenades: number;
   scoped: boolean;
+  /** Aiming through a red dot or holographic sight. */
+  optic: 'reddot' | 'holo' | null;
   crouching: boolean;
   protected: boolean;
   streak: number;
@@ -504,8 +506,10 @@ export class Game {
         me.control = 'player';
         this.match.player = me;
         this.match.streakChoices[me.id] = settings.streaks;
-        // Perks change how our own soldier moves and reloads, which we predict locally.
+        // Perks and attachments change how our own soldier moves and reloads, which we predict locally.
         me.perks = settings.perks.slice();
+        me.attach = settings.attachments;
+        setLoadout(me, me.weapons);
       }
       sim.puppet = true;
       sim.onKill = null;
@@ -1188,7 +1192,7 @@ export class Game {
       v = undefined;
     }
     if (!v) {
-      v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id);
+      v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id, a.attach ?? {});
       const cos = this.cosmetics[a.id];
       v.setStyle(this.styleFor(a), this.colorOf(a.id));
       if (cosAdmin(this.cosmetics[a.id]) && a.alive && !this.killcam) this.effects.adminArrive(new THREE.Vector3(a.x, a.y, a.z));
@@ -1237,7 +1241,7 @@ export class Game {
         if ((shooter === player && !this.spectator) || shooter.id === this.specShown) {
           from = this.camera.localToWorld(this.viewmodel.muzzleLocal(this.tmpA));
           if (e.first) {
-            this.audio.gunshot(0, 0, true, e.weapon);
+            this.audio.gunshot(0, 0, true, e.weapon, false, !!weaponOf(shooter).suppressed);
             if (shooter.id === this.specShown) this.viewmodel.fire();
           }
         } else {
@@ -1248,7 +1252,7 @@ export class Game {
             this.effects.muzzleFlash(from, true, fl.scale, fl.color);
             // Behind you (more than ~110 degrees off where you look): muffled.
             const off = Math.abs(wrapAngle(yawTo(this.camera.position.x, this.camera.position.z, shooter.x, shooter.z) - this.yaw));
-            this.audio.gunshot(this.distTo(shooter.x, shooter.z), this.panTo(shooter.x, shooter.z), false, e.weapon, off > 1.9);
+            this.audio.gunshot(this.distTo(shooter.x, shooter.z), this.panTo(shooter.x, shooter.z), false, e.weapon, off > 1.9, !!weaponOf(shooter).suppressed);
           }
           // A miss that passes close to your head: the whiz of the bullet going by.
           if (player.alive && !this.spectator && e.hit !== player.id && shooter.team !== player.team && this.nearMiss(e, player)) this.audio.whiz(this.panTo(e.ex, e.ez));
@@ -2628,7 +2632,7 @@ export class Game {
     if (key !== this.lastSpecWeapon) {
       this.lastSpecWeapon = key;
       this.lastWeapon = null;
-      this.viewmodel.setWeapon(w.id, this.ids.skins[t.id] ?? {}, this.cosmetics[t.id]?.charm ?? 'none', meleeDef(this.cosmetics[t.id]?.melee).id);
+      this.viewmodel.setWeapon(w.id, this.ids.skins[t.id] ?? {}, this.cosmetics[t.id]?.charm ?? 'none', meleeDef(this.cosmetics[t.id]?.melee).id, t.attach?.[w.id]);
     }
     this.viewmodel.update(dt, {
       speed: Math.hypot(t.vx, t.vz),
@@ -2721,7 +2725,7 @@ export class Game {
     this.lastSpecWeapon = '';
     if (pw.id !== this.lastWeapon) {
       this.lastWeapon = pw.id;
-      this.viewmodel.setWeapon(pw.id, this.settings.skins, this.settings.cosmetics.charm, meleeDef(this.settings.cosmetics.melee).id);
+      this.viewmodel.setWeapon(pw.id, this.settings.skins, this.settings.cosmetics.charm, meleeDef(this.settings.cosmetics.melee).id, this.settings.attachments?.[pw.id]);
     }
     this.viewmodel.kills = player.kills;
     const myFlash = flashDef(this.settings.cosmetics.flash);
@@ -2851,6 +2855,7 @@ export class Game {
       loadout: p.weapons.map((id, i) => ({ id, name: WEAPONS[id].tag, active: i === p.slot })),
       grenades: p.grenades,
       scoped: this.viewmodel.scoped && (p.alive || !!this.killcam),
+      optic: p.alive && !this.killcam && !this.spectator && this.viewmodel.adsAmount > 0.75 ? (weaponOf(p).optic ?? null) : null,
       crouching: p.crouching || p.slideT > 0,
       protected: sim.time < p.protectedUntil,
       streak: p.streak,
@@ -3038,7 +3043,7 @@ export class Game {
     for (const a of sim.agents) {
       if (!a.alive || a === p) continue;
       const ally = a.team === p.team;
-      const firing = sim.time - a.lastShotT < 1;
+      const firing = sim.time - a.lastShotT < 1 && !weaponOf(a).suppressed;
       const uav = sim.time < (this.match.uavUntil[this.match.player.id] ?? -1);
       const party = this.match.party;
       const marked = a.id === party.juggId || a.id === party.holder || (this.match.mode === 'vip' && party.vipIds.includes(a.id));

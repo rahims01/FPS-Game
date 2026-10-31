@@ -3,6 +3,8 @@ import type { WeaponModel } from '../assets/weaponModels';
 import { setReactive, skinned, type SkinChoice } from '../assets/skins';
 import { charmDef } from '../game/cosmetics';
 import { camoKey, meleeModel, type MeleeId } from '../assets/melees';
+import { addAttachments, attachKey } from './attachMeshes';
+import type { AttachSet } from '../sim/attachments';
 import type { WeaponId } from '../sim/weapons';
 
 interface Pose {
@@ -96,16 +98,21 @@ export class Viewmodel {
 
   private currentKey = '';
 
-  setWeapon(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm, melee: string = this.melee): void {
+  setWeapon(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm, melee: string = this.melee, attach?: AttachSet): void {
     // A real weapon change ends any quick-knife slash.
     this.swingFrom = null;
     this.melee = melee as MeleeId;
+    this.attach = attach;
     this.show(id, skins, charm);
   }
 
+  /** Attachments on the gun in hand. */
+  private attach: AttachSet | undefined;
+
   private show(id: WeaponId, skins: SkinChoice = this.skins, charm = this.charm): void {
     const skin = Viewmodel.goldGuns && id !== 'knife' ? 'gold' : (skins[camoKey(id, this.melee)] ?? 'none');
-    const key = `${id}:${skin}:${charm}:${id === 'knife' ? this.melee : ''}`;
+    const att = id === 'knife' ? undefined : this.attach;
+    const key = `${id}:${skin}:${charm}:${id === 'knife' ? this.melee : ''}:${attachKey(att)}`;
     if (key === this.currentKey) return;
     this.currentKey = key;
     this.current = id;
@@ -121,6 +128,7 @@ export class Viewmodel {
       });
       // Long melees (bat, katana) are shrunk in first person so they don't fill the screen.
       if (id === 'knife') copy.scale.setScalar(Math.min(1, 0.3 / m.length));
+      addAttachments(copy, id, m, att);
       this.holder.add(copy);
       this.copies.set(key, copy);
     }

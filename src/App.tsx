@@ -314,6 +314,7 @@ export const App = () => {
         lethal: settings.lethal,
         tactical: settings.tactical,
         perks: settings.perks,
+        attachments: settings.attachments,
         night,
         humans: host ? host.playingCount : 1,
         ...(watchRef.current && !host ? { watch: watchRef.current } : {}),
@@ -579,7 +580,8 @@ export const App = () => {
     lethal: settings.lethal,
     tactical: settings.tactical,
     cosmetics: { ...settings.cosmetics, prestige: profile.prestige, ...(account().user?.role === 'admin' || account().user?.role === 'mod' ? { staff: account().user!.role as 'admin' | 'mod' } : {}) },
-    account: account().user?.name ?? null
+    account: account().user?.name ?? null,
+    attachments: settings.attachments
   });
 
   const lobbyFrom = (s: HostSession): LobbyView => ({ mode: s.lobby.mode, difficulty: s.lobby.difficulty, players: s.players, max: s.maxPlayers, slots: s.slots, rules: s.lobby.rules, party: s.party });

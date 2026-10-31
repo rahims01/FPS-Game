@@ -15,6 +15,8 @@ import { charmDef } from '../game/cosmetics';
 import { thrownModel } from './thrown';
 import { decimate } from './decimate';
 import { camoKey, meleeModel, type MeleeId } from '../assets/melees';
+import { addAttachments } from './attachMeshes';
+import type { AttachChoice } from '../sim/attachments';
 import { realMetalMaterial } from './realMetal';
 
 const DEG = Math.PI / 180;
@@ -279,7 +281,8 @@ export class SoldierView {
     color: THREE.ColorRepresentation,
     private skins: SkinChoice = {},
     private charm = 'none',
-    private melee: MeleeId = 'knife'
+    private melee: MeleeId = 'knife',
+    private attach: AttachChoice = {}
   ) {
     this.life = agent.life;
     this.model = SkeletonUtils.clone(assets.stickman) as THREE.Group;
@@ -373,7 +376,10 @@ export class SoldierView {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.rifle.clear();
-    this.rifle.add(thirdPersonWeapon(this.assets, id, SoldierView.goldGuns && id !== 'knife' ? 'gold' : (this.skins[camoKey(id, this.melee)] ?? 'none'), this.charm, this.low, this.melee).clone(true));
+    const gun = thirdPersonWeapon(this.assets, id, SoldierView.goldGuns && id !== 'knife' ? 'gold' : (this.skins[camoKey(id, this.melee)] ?? 'none'), this.charm, this.low, this.melee).clone(true);
+    // Attachments go on this soldier's own copy (the cached gun is shared).
+    if (id !== 'knife' && this.attach[id]) addAttachments(gun, id, modelOf(this.assets, id, this.melee), this.attach[id]);
+    this.rifle.add(gun);
     // Reactive camos change with this soldier's own kills.
     ownReactive(this.rifle);
     this.muzzleLength = modelOf(this.assets, id, this.melee).length * THIRD_PERSON_SCALE;

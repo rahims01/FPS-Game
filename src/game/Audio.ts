@@ -110,11 +110,13 @@ export class GameAudio {
    * distance in metres, pan -1..1. own = the player's own weapon. behind: the
    * shooter is behind you (the sound comes through muffled).
    */
-  gunshot(distance: number, pan: number, own: boolean, weapon: WeaponId = 'rifle', behind = false): void {
+  gunshot(distance: number, pan: number, own: boolean, weapon: WeaponId = 'rifle', behind = false, suppressed = false): void {
     const tone = GUN_TONE[weapon] ?? GUN_TONE.rifle;
     const ctx = this.ctx;
     if (!ctx || !this.noise) return;
-    const att = own ? 1 : Math.min(0.8, 6 / (distance + 6));
+    // A suppressor: much quieter, and the crack becomes a dull thud.
+    const att = (own ? 1 : Math.min(0.8, 6 / (distance + 6))) * (suppressed ? 0.3 : 1);
+    if (suppressed) behind = true;
     if (att < 0.02) return;
     // Far shots are mostly room; your own is mostly dry.
     const out = this.out(att, own ? 0 : pan, own ? 0.12 : Math.min(0.7, 0.18 + distance * 0.012));

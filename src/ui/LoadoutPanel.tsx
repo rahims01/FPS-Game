@@ -8,6 +8,7 @@ import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../s
 import { LETHALS, PERK_SLOTS, PERKS, TACTICALS, THROWABLES, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
 import { PRIMARIES, SECONDARIES, WEAPONS, type WeaponDef, type WeaponId } from '../sim/weapons';
 import { GunPreview } from './GunPreview';
+import { ATTACHMENTS, SLOT_NAMES, attachmentDef, fits, type AttachSlot } from '../sim/attachments';
 import { camoKey, MELEES, meleeDef } from '../assets/melees';
 import { LockIcon } from './icons';
 
@@ -179,6 +180,41 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
               </div>
             </div>
           </div>
+          {!melee && (
+            <section className="attach-panel" aria-label="Attachments">
+              <h3>
+                Attachments · {fw.name} <small>(unlocked by kills with this gun)</small>
+              </h3>
+              <div className="attach-slots">
+                {(['optic', 'muzzle', 'mag', 'grip'] as AttachSlot[]).map((slot) => {
+                  const opts = ATTACHMENTS.filter((a) => a.slot === slot && fits(a, focus));
+                  if (!opts.length) return null;
+                  const cur = settings.attachments?.[focus]?.[slot];
+                  const pick = (id: string | undefined) => set({ attachments: { ...settings.attachments, [focus]: { ...settings.attachments?.[focus], [slot]: id } } });
+                  return (
+                    <div key={slot} className="attach-slot">
+                      <b>{SLOT_NAMES[slot]}</b>
+                      <div className="attach-opts">
+                        <button className={`chip ${!cur ? 'on' : ''}`} onClick={() => pick(undefined)}>
+                          None
+                        </button>
+                        {opts.map((a) => {
+                          const locked = focusKills < a.kills;
+                          return (
+                            <button key={a.id} className={`chip ${cur === a.id ? 'on' : ''}`} disabled={locked} title={locked ? `${a.kills} kills with the ${fw.name}` : a.blurb} onClick={() => pick(a.id)}>
+                              {locked && <LockIcon size={11} />} {a.name}
+                              {locked ? ` · ${a.kills}` : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <small>{cur ? attachmentDef(cur)?.blurb : 'Nothing fitted.'}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           <h3>Primary</h3>
           <div className="gun-grid">{PRIMARIES.map((w) => gun(w, 'primary'))}</div>
           <h3>Secondary</h3>

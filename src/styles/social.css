@@ -906,3 +906,40 @@ textarea.field {
 .pw-toggle:hover {
   background: var(--line-2);
 }
+
+/* Loadout: attachments for the gun in focus. */
+.attach-panel {
+  margin-top: 8px;
+}
+.attach-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2px;
+}
+.attach-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.attach-slot > b {
+  font-family: var(--f-cond);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.attach-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attach-opts .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.attach-slot small {
+  color: var(--dim);
+  font-size: 13px;
+}
