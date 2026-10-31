@@ -481,6 +481,7 @@ export const TITLES: TitleDef[] = [
   { id: 'luckycharm', text: 'Lucky Charm', unlock: { special: 'Collection: Charmed' } },
   { id: 'jackofall', text: 'Jack of All Trades', unlock: { special: 'Collection: Mode Master' } },
   { id: 'staff_admin', text: 'Admin', unlock: { special: 'Staff only' } },
+  { id: 'campaignhero', text: 'Campaign Hero', unlock: { special: 'Finish the campaign' } },
   { id: 'staff_mod', text: 'Moderator', unlock: { special: 'Staff only' } },
   { id: 'rookie', text: 'Rookie', unlock: null },
   { id: 'grinder', text: 'The Grinder', unlock: { level: 10 } },

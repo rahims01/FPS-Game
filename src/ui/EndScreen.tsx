@@ -3,6 +3,8 @@ import { isDark } from '../game/identity';
 import type { Division } from '../game/progression';
 import { BADGES, titleDef } from '../game/cosmetics';
 import { CallingCard } from './ProfilePanel';
+import { Stars } from './CampaignPanel';
+import type { Mission } from '../game/campaign';
 import { say } from '../game/words';
 import { inkOn } from './ink';
 
@@ -65,7 +67,9 @@ export const EndScreen = ({
   waitingForHost,
   onMenu,
   mine,
-  onPick
+  onPick,
+  mission,
+  onNextMission
 }: {
   hud: HudState;
   ranked: { delta: number; division: Division; sr: number } | null;
@@ -79,6 +83,9 @@ export const EndScreen = ({
   mine: { card: string; emblem: string; name: string; level: number; title: string; frame: string; prestige: number };
   /** Opens someone's player card. */
   onPick?: (id: number) => void;
+  /** A campaign mission's result. */
+  mission?: { mission: Mission; met: boolean[]; stars: number; newStars: number; xp: number; allDone: boolean } | null;
+  onNextMission?: (() => void) | null;
 }) => {
   const badges = hud.newBadges.map((id) => BADGES.find((b) => b.id === id)).filter((b): b is (typeof BADGES)[number] => !!b);
   const me = hud.players.find((p) => p.isPlayer);
@@ -100,6 +107,28 @@ export const EndScreen = ({
             {!hud.spectator && <b className="xp-earned">+{hud.xp.toLocaleString()} XP</b>}
           </div>
         </header>
+        {mission && (
+          <div className="end-mission">
+            <div className="end-mission-head">
+              <small>Mission · {mission.mission.title}</small>
+              <Stars n={mission.stars} size={22} />
+              {mission.xp > 0 && <b>+{mission.xp} XP</b>}
+            </div>
+            <ul className="m-goals">
+              {mission.mission.goals.map((g, i) => (
+                <li key={g.text} className={mission.met[i] && (i === 0 || mission.met[0]) ? 'done' : ''}>
+                  <Stars n={mission.met[i] && (i === 0 || mission.met[0]) ? 1 : 0} size={12} /> {g.text}
+                </li>
+              ))}
+            </ul>
+            {mission.allDone && <p className="set-hint">Campaign complete: the “Campaign Hero” title is yours.</p>}
+            {onNextMission && (
+              <button className="chip on" onClick={onNextMission}>
+                {mission.stars > 0 ? 'Next mission' : 'Try again'}
+              </button>
+            )}
+          </div>
+        )}
         {ranked && (
           <div className="end-ranked" style={{ borderColor: ranked.division.color }}>
             <b style={{ color: ranked.division.color }}>{ranked.division.name}</b>

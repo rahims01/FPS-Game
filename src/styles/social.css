@@ -943,3 +943,160 @@ textarea.field {
   color: var(--dim);
   font-size: 13px;
 }
+
+/* Campaign. */
+.campaign-card {
+  width: min(960px, 100%);
+}
+.m-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 12px;
+  font-family: var(--f-cond);
+  font-weight: 700;
+}
+.campaign {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+.m-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: var(--navy);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.m-row:hover {
+  background: var(--panel-2);
+}
+.m-row.on {
+  background: var(--paper);
+  color: var(--ink);
+}
+.m-row.on small {
+  color: var(--paper-ink);
+}
+.m-row.locked {
+  color: var(--mute);
+}
+.m-num {
+  width: 26px;
+  font-family: var(--f-cond);
+  font-size: 22px;
+  font-weight: 800;
+}
+.m-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.m-text b {
+  font-family: var(--f-cond);
+  font-size: 18px;
+}
+.m-text small {
+  color: var(--dim);
+  font-size: 13px;
+}
+.m-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+.m-stars i {
+  display: inline-flex;
+  color: var(--line-2);
+}
+.m-stars i.on {
+  color: var(--yellow);
+}
+.m-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  background: var(--navy);
+}
+.m-brief h3 {
+  margin: 0;
+  font-size: 30px;
+}
+.m-brief p {
+  margin: 0;
+  line-height: 1.5;
+}
+.m-kicker {
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.m-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-goals li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+}
+.m-goals li.done {
+  color: var(--fg);
+}
+.m-brief .play {
+  align-self: flex-start;
+}
+.end-mission {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  background: var(--navy);
+}
+.end-mission-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.end-mission-head small {
+  flex: 1;
+  color: var(--dim);
+  font-family: var(--f-cond);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.end-mission-head b {
+  font-family: var(--f-cond);
+  font-size: 20px;
+}
+.end-mission .chip {
+  align-self: flex-start;
+}
+@media (max-width: 760px) {
+  .campaign {
+    grid-template-columns: 1fr;
+  }
+}

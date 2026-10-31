@@ -40,6 +40,8 @@ export interface Profile {
   modes?: Record<string, { played: number; won: number }>;
   /** Up to 3 achievements shown on your player card. */
   showcase?: string[];
+  /** Campaign stars by mission id. */
+  campaign?: Record<string, number>;
 }
 
 export const loadProfile = (): Profile => {

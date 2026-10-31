@@ -28,6 +28,7 @@ import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Ma
 import { assignIdentities, basePingFor, COLORS, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
 import { botFriendByName, botFriends } from './botFriends';
 import { COURSE } from '../sim/layouts';
+import type { MissionRun } from './campaign';
 import { account, eventOn } from '../net/account';
 import { say, setClassroom } from './words';
 import { wrapAngle, yawTo } from '../sim/math';
@@ -1520,6 +1521,26 @@ export class Game {
     }
   }
 
+  /** How a campaign mission went (read straight from the match, practice modes included). */
+  missionRun(): MissionRun {
+    const m = this.match;
+    const p = m.player;
+    const won = this.myResult() === 'win';
+    return {
+      won,
+      kills: p.kills,
+      deaths: p.deaths,
+      shots: p.shots,
+      hits: p.hits,
+      headshots: p.headshots,
+      longestKill: Math.round(this.longestKill),
+      seconds: Math.round(m.sim.time - m.startTime),
+      wave: m.wave,
+      courseTime: m.party.course.finished[p.id] ?? 0,
+      medals: { ...this.medalCounts }
+    };
+  }
+
   /** Names of everyone in the match (for bot friends' after-match messages). */
   names(): string[] {
     return this.match.sim.agents.map((a) => this.nameOf(a.id));
@@ -2885,7 +2906,7 @@ export class Game {
       xp: this.xp,
       killedBy: p.alive ? null : this.killedBy,
       netMessage: this.netMessage,
-      modeStatus: m.statusFor(p, (id) => this.nameOf(id)),
+      modeStatus: ((st) => (m.opts.timeLimit ? `${st ? `${st} · ` : ''}Mission: ${Math.max(0, Math.ceil(m.opts.timeLimit - (sim.time - m.startTime)))} s left` : st))(m.statusFor(p, (id) => this.nameOf(id))),
       blind: p.alive && sim.time < p.frozenUntil ? Math.ceil(p.frozenUntil - sim.time) : null,
       killcamPending: !!this.pendingKillcam,
       fps: Math.round(this.fps),

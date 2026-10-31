@@ -183,6 +183,8 @@ export interface MatchOptions {
   watch?: string;
   /** Your weapon attachments. */
   attachments?: AttachChoice;
+  /** A campaign mission's time limit (seconds): the match ends, won, when it runs out. */
+  timeLimit?: number;
 }
 
 export type MatchPhase = 'live' | 'roundOver' | 'over';
@@ -869,6 +871,10 @@ export class Match {
     }
     this.sim.step(input);
     if (this.sim.tick % 6 !== 0) return;
+    if (this.opts.timeLimit && this.sim.time - this.startTime >= this.opts.timeLimit) {
+      this.finish(true, 0, this.player.team);
+      return;
+    }
     this.tickStreaks();
     if ((this.phase as MatchPhase) === 'over') return; // a nuke can end it
     switch (this.mode) {

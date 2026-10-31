@@ -36,6 +36,8 @@ import { FriendsPanel } from './ui/FriendsPanel';
 import { PlayerCard, type CardSubject } from './ui/PlayerCard';
 import { AdminPanel } from './ui/AdminPanel';
 import { NewsBar, NoticeBox } from './ui/NewsBar';
+import { CampaignPanel, Stars } from './ui/CampaignPanel';
+import { campaignStars, MISSIONS, scoreMission, type Mission } from './game/campaign';
 import { ArrowIcon, ExitFullscreenIcon, FullscreenIcon, GearIcon, TrophyIcon } from './ui/icons';
 import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
 import { resetHints } from './game/hints';
@@ -195,6 +197,10 @@ export const App = () => {
   const watchRef = useRef<string | null>(null);
   const endHandled = useRef(-1);
   const presence = useRef<PresenceStatus>({ state: 'menu' });
+  // Campaign: the mission being played, and how it went.
+  const [showCampaign, setShowCampaign] = useState(false);
+  const missionRef = useRef<Mission | null>(null);
+  const [missionResult, setMissionResult] = useState<{ mission: Mission; met: boolean[]; stars: number; newStars: number; xp: number; allDone: boolean } | null>(null);
   const mount = useRef<HTMLDivElement>(null);
   const minimap = useRef<HTMLCanvasElement>(null);
   const game = useRef<Game | null>(null);
@@ -318,6 +324,7 @@ export const App = () => {
         night,
         humans: host ? host.playingCount : 1,
         ...(watchRef.current && !host ? { watch: watchRef.current } : {}),
+        ...(missionRef.current?.timeLimit && !host ? { timeLimit: missionRef.current.timeLimit } : {}),
         ...(host && !host.party && !host.public ? { rules: host.lobby.rules } : {}),
         ...(ranked && !netRef.current ? { skill: rankedDifficulty(queueStats(loadProfile(), rankedQueue).sr) } : {}),
         // Tournament matches: first to 3 rounds, sharper every round.
@@ -377,6 +384,16 @@ export const App = () => {
     while (recent.current.size > 200) recent.current.delete(recent.current.keys().next().value!);
     if (friends.length && !hud.spectator) matchEndedWith(friends, hud.result === 'win', settings.playerName);
   }, [hud, round, settings.playerName]);
+
+  // A campaign mission is scored once, when its match ends.
+  useEffect(() => {
+    const g = game.current;
+    const m = missionRef.current;
+    if (!hud || hud.phase !== 'over' || !g || !m || missionResult?.mission === m) return;
+    const r = scoreMission(m, g.missionRun());
+    setMissionResult({ mission: m, ...r });
+    setProfile(loadProfile());
+  }, [hud, missionResult]);
 
   // Friends see where you are; hosted rooms show up for them (and the admin).
   presence.current =
@@ -457,6 +474,22 @@ export const App = () => {
     setRound((r) => r + 1);
     if (!PRACTICE_MODES.includes(mode)) seek(mode);
   };
+  /** Starts a campaign mission (its mode and difficulty, solo). */
+  const startMission = (m: Mission) => {
+    audio.unlock();
+    stopSeeking();
+    setShowCampaign(false);
+    missionRef.current = m;
+    setMissionResult(null);
+    setRanked(false);
+    tourneyMatch.current = false;
+    setDifficulty(m.difficulty);
+    setMode(m.mode);
+    setTab('play');
+    setScreen({ kind: PRACTICE_MODES.includes(m.mode) ? 'playing' : 'finding' });
+    setRound((n) => n + 1);
+  };
+
   /** A bot friend joins you (they take the first seat on your side). */
   const playWithFriend = (f: BotFriend, modeText: string) => {
     const m = resolveMode(modeText);
@@ -547,6 +580,7 @@ export const App = () => {
     setScreen({ kind: 'tourney' });
   };
   const toMenu = useCallback(() => {
+    missionRef.current = null;
     // Quitting a ranked match early counts as a loss.
     const g = game.current;
     if (ranked && g && !rankedDone.current && !g.net && g.match.phase !== 'over') {
@@ -891,6 +925,24 @@ export const App = () => {
                     </button>
                   </section>
 
+                  <button className="rail-card campaign-strip" onClick={() => setShowCampaign(true)}>
+                    {(() => {
+                      const st = campaignStars();
+                      const next = MISSIONS.findIndex((x) => !(st[x.id] > 0));
+                      const total = MISSIONS.reduce((n, x) => n + (st[x.id] ?? 0), 0);
+                      return (
+                        <>
+                          <span className="rail-head">
+                            <b>Campaign</b>
+                            <span>
+                              <Stars n={3} size={11} /> {total}/{MISSIONS.length * 3}
+                            </span>
+                          </span>
+                          <small>{next < 0 ? 'All missions done: go for 3 stars' : `Mission ${next + 1}: ${MISSIONS[next].title}`}</small>
+                        </>
+                      );
+                    })()}
+                  </button>
                   <button className="rail-card loadout-strip" onClick={() => setTab('loadout')}>
                     <span className="rail-head">
                       Loadout
@@ -975,6 +1027,7 @@ export const App = () => {
       )}
       {showTour && screen.kind === 'menu' && tab === 'play' && <Tour steps={TOUR} onClose={() => setShowTour(false)} />}
       {showAccount && <AccountPanel onClose={() => setShowAccount(false)} />}
+      {showCampaign && <CampaignPanel onStart={startMission} onClose={() => setShowCampaign(false)} />}
       {card && (
         <PlayerCard
           subject={card}
@@ -1209,6 +1262,16 @@ export const App = () => {
               onMenu={toMenu}
               mine={{ card: settings.cosmetics.card, emblem: settings.cosmetics.emblem, name: settings.playerName, level, title: settings.cosmetics.title, frame: settings.cosmetics.frame, prestige: profile.prestige }}
               onPick={openCardFor}
+              mission={missionResult && missionResult.mission === missionRef.current ? missionResult : null}
+              onNextMission={
+                missionResult && missionResult.mission === missionRef.current
+                  ? () => {
+                      const i = MISSIONS.indexOf(missionResult.mission);
+                      const next = missionResult.stars > 0 && i < MISSIONS.length - 1 ? MISSIONS[i + 1] : missionResult.mission;
+                      startMission(next);
+                    }
+                  : null
+              }
             />
           )}
         </>
