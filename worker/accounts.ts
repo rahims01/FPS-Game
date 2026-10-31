@@ -228,9 +228,18 @@ export class Accounts {
 
   private news(now: number) {
     const items = this.q('SELECT id, text, kind, at, until FROM news WHERE until > ? ORDER BY at DESC LIMIT 5', now);
-    const events = JSON.parse(this.kv('events') ?? '{}') as Record<string, number>;
-    for (const [k, until] of Object.entries(events)) if (until <= now) delete events[k];
-    return { news: items, events, maintenance: this.kv('maintenance') };
+    return { news: items, events: this.events(now), maintenance: this.kv('maintenance') };
+  }
+
+  /** Running and scheduled events (older saves kept just an end time). */
+  private events(now: number): Record<string, { from: number; until: number }> {
+    const raw = JSON.parse(this.kv('events') ?? '{}') as Record<string, number | { from: number; until: number }>;
+    const out: Record<string, { from: number; until: number }> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const e = typeof v === 'number' ? { from: 0, until: v } : v;
+      if (e.until > now) out[k] = e;
+    }
+    return out;
   }
 
   private banText(u: User, now: number): string | null {
@@ -750,12 +759,14 @@ export class Accounts {
         if (!isAdmin) return adminOnly();
         const key = String(body.key ?? '');
         if (!/^[a-zA-Z]{2,20}$/.test(key)) return fail('Unknown event');
-        const events = JSON.parse(this.kv('events') ?? '{}') as Record<string, number>;
+        const events = this.events(now);
         const hours = Number(body.hours) || 0;
-        if (hours > 0) events[key] = now + Math.min(24 * 14, hours) * 60 * MIN;
+        // An optional start time (up to 60 days ahead) schedules it; otherwise it starts now.
+        const from = Math.min(now + 60 * 24 * 60 * MIN, Math.max(now, Number(body.from) || now));
+        if (hours > 0) events[key] = { from, until: from + Math.min(24 * 14, hours) * 60 * MIN };
         else delete events[key];
         this.setKv('events', JSON.stringify(events));
-        this.log(me, 'event', key, { hours });
+        this.log(me, 'event', key, { hours, ...(from > now ? { from: new Date(from).toISOString() } : {}) });
         return json({ ok: true });
       }
       case 'POST maintenance': {
