@@ -145,6 +145,7 @@ export class Accounts {
       `CREATE TABLE IF NOT EXISTS redeemed (code TEXT NOT NULL, uid INTEGER NOT NULL, PRIMARY KEY (code, uid))`,
       `CREATE TABLE IF NOT EXISTS inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS admin_tickets (ticket TEXT PRIMARY KEY, uid INTEGER NOT NULL, exp INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, uid INTEGER, host TEXT NOT NULL, mode TEXT NOT NULL, players INTEGER NOT NULL, max INTEGER NOT NULL, open INTEGER NOT NULL, updated INTEGER NOT NULL)`
     ];
     for (const t of tables) this.sql.exec(t);
@@ -297,6 +298,15 @@ export class Accounts {
       }
       if (path === 'account/signup' && method === 'POST') return this.signup(body, ip, now);
       if (path === 'account/signin' && method === 'POST') return this.signin(body, ip, now);
+      // A host checking that a player who says they're the admin really is. Each ticket works once.
+      if (path === 'account/admin-check' && method === 'POST') {
+        const ticket = String(body.ticket ?? '');
+        const row = /^[0-9a-f]{48}$/.test(ticket) ? this.one('SELECT uid, exp FROM admin_tickets WHERE ticket = ?', ticket) : null;
+        if (row) this.sql.exec('DELETE FROM admin_tickets WHERE ticket = ?', ticket);
+        const u = row && Number(row.exp) > now ? this.one('SELECT name, role FROM users WHERE id = ?', Number(row.uid)) : null;
+        const admin = !!u && u.role === 'admin' && String(u.name).toLowerCase() === String(body.name ?? '').toLowerCase();
+        return json({ admin });
+      }
 
       const me = await this.session(request, now);
       if (!me) return fail('Not signed in', 401);
@@ -376,6 +386,14 @@ export class Accounts {
 
   private async player(path: string, method: string, body: Record<string, unknown>, url: URL, me: User, request: Request, now: number): Promise<Response> {
     switch (`${method} ${path}`) {
+      case 'POST account/admin-ticket': {
+        // The admin proving who they are to a room's host (see account/admin-check).
+        if (me.role !== 'admin') return fail('Not allowed', 403);
+        this.sql.exec('DELETE FROM admin_tickets WHERE exp < ?', now);
+        const ticket = randomHex(24);
+        this.sql.exec('INSERT INTO admin_tickets (ticket, uid, exp) VALUES (?, ?, ?)', ticket, me.id, now + 10 * 60 * 1000);
+        return json({ ticket });
+      }
       case 'GET account/me': {
         const save = this.one('SELECT save, save_at FROM users WHERE id = ?', me.id)!;
         return json({ user: this.publicUser(me, now), save: save.save ? JSON.parse(save.save as string) : null, saveAt: save.save_at });

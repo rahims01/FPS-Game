@@ -89,7 +89,9 @@ export type ClientMsg =
     }
   | { t: 'bye' }
   | { t: 'ping'; at: number }
-  | { t: 'chat'; text: string };
+  | { t: 'chat'; text: string }
+  /** Answer to 'prove': a one-time ticket from the server (null if there isn't one). */
+  | { t: 'proof'; ticket: string | null };
 
 export interface StartMsg {
   t: 'start';
@@ -124,6 +126,8 @@ export type HostMsg =
   | { t: 'chat'; name: string; color: number; text: string; system?: boolean }
   /** Someone left mid-match: a bot now plays their soldier under a new name. */
   | { t: 'rename'; id: number; name: string }
+  /** You said you're the admin: send a ticket so the host can check with the server. */
+  | { t: 'prove' }
   /** The match is over and the host has taken everyone back to the room. */
   | { t: 'toLobby' }
   | { t: 'reject'; reason: string }

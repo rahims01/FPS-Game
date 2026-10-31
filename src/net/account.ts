@@ -338,6 +338,19 @@ export const refreshNews = async (): Promise<void> => {
   if (r.ok) set({ news: r.data.news, events: r.data.events, maintenance: r.data.maintenance });
 };
 
+/** A one-time ticket proving to a room's host that you're the admin (null if you aren't). */
+export const adminTicket = async (): Promise<string | null> => {
+  if (state.user?.role !== 'admin') return null;
+  const r = await api<{ ticket: string }>('account/admin-ticket', { body: {} });
+  return r.ok ? r.data.ticket : null;
+};
+
+/** Host side: does this ticket really belong to the admin account `name`? */
+export const checkAdminTicket = async (ticket: string, name: string): Promise<boolean> => {
+  const r = await api<{ admin: boolean }>('account/admin-check', { body: { ticket, name } });
+  return r.ok && r.data.admin === true;
+};
+
 /** Is a global event (double XP...) running right now? */
 export const eventOn = (key: string): boolean => {
   const e = state.events[key];

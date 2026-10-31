@@ -8,6 +8,7 @@ import { normalizePerks, THROWABLES } from '../sim/gear';
 import type { Cosmetics } from '../game/cosmetics';
 import type { SkinChoice } from '../assets/skins';
 import { cleanChat } from './chat';
+import { adminTicket, checkAdminTicket } from './account';
 import {
   PEER_PREFIX,
   PROTOCOL_VERSION,
@@ -287,11 +288,28 @@ export class HostSession {
         return;
       }
       client.profile = { ...msg.profile, name: cleanChat(msg.profile.name.slice(0, 16)) || 'Player', streaks: normalizeStreaks(msg.profile.streaks), perks: normalizePerks(msg.profile.perks) };
+      // Anyone's game can say it's the admin's. Until the server confirms it, they're a normal
+      // player: no admin guns, perks, streaks or effects.
+      const cos = client.profile.cosmetics;
+      if (cos?.staff === 'admin') {
+        client.profile.cosmetics = { ...cos, staff: undefined };
+        if (client.profile.account) client.conn.send({ t: 'prove' } satisfies HostMsg);
+      }
       // Late joiners spectate once the mode is full; the host can swap people around.
       client.playing = !msg.profile.spectate && this.playingCount < this.slots;
       this.system(`${client.profile.name} joined`);
       this.broadcastLobby();
       this.onChange?.();
+    } else if (msg.t === 'proof') {
+      const p = client.profile;
+      if (!p?.account || !msg.ticket || typeof msg.ticket !== 'string') return;
+      void checkAdminTicket(msg.ticket, p.account).then((ok) => {
+        // Only if they're still here (and it's still their profile).
+        if (!ok || client.profile !== p || !this.clients.includes(client)) return;
+        p.cosmetics = { ...p.cosmetics, staff: 'admin' };
+        this.broadcastLobby();
+        this.onChange?.();
+      });
     } else if (msg.t === 'in') {
       const b = msg.b;
       const inp = client.input;
@@ -623,6 +641,12 @@ export class ClientSession {
     else if (msg.t === 'snap') this.onSnap?.(msg.snap);
     else if (msg.t === 'chat') this.onChat?.(msg);
     else if (msg.t === 'rename') this.onRename?.(msg.id, msg.name);
+    else if (msg.t === 'prove') {
+      // Prove to the host that we're the admin, with a fresh one-time ticket.
+      void adminTicket().then((ticket) => {
+        if (this.conn.open) this.conn.send({ t: 'proof', ticket } satisfies ClientMsg);
+      });
+    }
     else if (msg.t === 'toLobby') this.onToLobby?.();
     else if (msg.t === 'pong') {
       const rtt = performance.now() - msg.at;
