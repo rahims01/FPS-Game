@@ -14,6 +14,7 @@ Several parts are reused from the sibling **Battle Simulator** (TribeSim) projec
 ```
 npm install
 npm run dev        # http://localhost:5190
+npm run dev:api    # the /api endpoints (accounts, friends, admin) on Node, for npm run dev
 npm run build      # type-check + production build
 ```
 
@@ -23,6 +24,7 @@ npm run build      # type-check + production build
 | --- | --- | --- |
 | Practice | Training Range | A 70 m range with target dummies at 10, 25 and 45 m (the middle lanes strafe), a bench to shoot from and crates to practise peeks. Nobody shoots back; B swaps to the next gun, or the next pistol while you hold your sidearm. |
 | Practice | Aim Trainer | 60 seconds: three targets around the range, and each one you drop reappears somewhere else. Your best score is saved. |
+| Practice | Movement Course | A timed parkour run over red "lava" ground: steps, gap jumps, a beam, stepping stones, a tower and a long drop-jump, with four checkpoints. Touch the ground and you go back to the last one. Your best time is saved. |
 | Practice | Free Roam | A big random map with nobody hunting you. Explore, practise movement, try guns and pistols (B cycles whichever you hold). Friends can join online. |
 | Team | Team Deathmatch | 5v5 with respawns on a random map. First team to 40 kills. |
 | Team | Kill Confirmed | 5v5. A kill only counts when someone grabs the dropped dog tag. Grabbing your own team's tag denies it. First to 30. |
@@ -40,6 +42,9 @@ npm run build      # type-check + production build
 | Party | Knife Fight / Low Gravity / Big Heads | Knives only / moon jumps / giant heads with giant headshot hitboxes. |
 | Online only | Friends Free-for-all / Friends Team Deathmatch | Humans only, no computer players. |
 | Online only | Hide & Seek | Seekers are blindfolded for 20 s while the hiders (knife only) hide. Found hiders become seekers. Hiders win if anyone lasts 3 minutes. Needs 3 players. |
+| Online only | Race | The movement course with friends; live places; first across the finish wins. |
+| Online only | Tag | One player is IT; a melee hit passes it on (no tag-backs for 2 s). IT runs a little faster. After 2½ minutes, whoever was IT for the least time wins. |
+| Online only | Dodgeball | Two teams, unlimited balls on the lethal key, one hit and you're out for the round. First team to 3 rounds. |
 | Online only | Hot Potato | One player holds a ticking bomb and passes it with a knife hit. Whoever holds it when it blows is out. Needs 3 players. |
 | Objective | Search & Destroy | 4v4, one life per round. Attackers carry a bomb to site A or B and plant it (3.5 s); defenders stop them or defuse it (6 s) before the 35 s fuse runs out. Sides swap each round. First to 4. |
 | Objective | Freeze Tag | 5v5. A killing blow freezes instead; stand next to a frozen teammate to thaw them. Freeze the whole enemy team to win the round. First to 3. |
@@ -68,6 +73,7 @@ npm run build      # type-check + production build
   - **reactive** camos that change with your kills this match (Bloodline turns red, Ember heats up, Frostbite ices over);
   - **mastery rewards:** Damascus at Gold mastery (200 kills) and an animated Dark Matter at Diamond (500).
 - **Melees:** carry the Combat Knife, Karambit, Machete, Baseball Bat, Fire Axe, Entrenching Tool, Katana or Sledgehammer (unlocked by level), or the Kunai (Knife Master badge). They're looks only: every one fights exactly like the knife. Each has its own 40 camos, unlocked by kills with that melee (your Combat Knife keeps its kills and camos). The kill feed names the one you used.
+- **Attachments:** four slots per gun (optic, muzzle, magazine, grip), unlocked by kills with that gun, each a trade-off: Red Dot and Holographic sights, Compensator, Suppressor (quiet and off enemy minimaps, but shorter range), Extended and Fast mags, Vertical Grip and Laser.
 - **Weapon charms** hang off your gun. Everyone sees your camos and charms.
 - **Throwables:** pick a lethal (frag, molotov, throwing knife, spear) and a tactical (flashbang, smoke). Knives and spears stick in whoever they hit, even through the ragdoll. Molotovs leave fire on the ground; smoke blocks sight; flashbangs white out anyone looking at them.
 - **Perks:** pick 3 of 11: Ghost, Quick Hands, Marathon, Ninja, Lightweight, Scavenger, Hardline, Cold-Blooded, Flak Jacket, Steady Aim, Tactical Mask.
@@ -102,9 +108,23 @@ npm run build      # type-check + production build
 ## Profile
 
 - **Calling card and emblem:** shown on the killcam's "killed by" card, the end screen MVP and your profile. 21 cards and 24 emblems, unlocked by levels and badges.
-- **Badges:** 28 to earn (First Blood, Headhunter, Knife Master, Bullseye, Firestarter, Tactical Nuke, Flawless, Champion, Giant Slayer, Clutch, Diamond Hands...), with progress bars.
+- **Achievements:** 85 in six groups (Combat, Weapons, Modes, Career, Social and 11 Secret ones that stay hidden until earned), with progress bars. Pin up to 3 to show on your player card.
+- **Collections:** sets to complete (15 kills with every gun, gold mastery on 8 guns, every melee, every charm, 50 achievements, wins in 15 modes...), each rewarding a title you can't get any other way.
+- **Career:** time played, distance run, damage, accuracy, longest kill, best match, best waves, your record in every mode and a tally of every medal.
 - **Weapon mastery:** Bronze, Silver, Gold and Diamond per gun (25, 75, 200, 500 kills); your best shows by your name on the scoreboard.
 - **Stats:** lifetime kills, headshots, best streak, throwing kills and more.
+
+## Campaign
+
+Ten solo missions on the Play tab, each a match with a short briefing and three star goals: Basic Training, First Contact, Run and Gun, Hold the Line, Overwatch, Point Taken, Cold Steel, Bomb Squad, Last One Standing and The Titan. Missions unlock in order, every new star gives 500 XP, and finishing all ten gives the "Campaign Hero" title.
+
+## Accounts, friends and admin
+
+- **Accounts:** sign up with a username and password (email optional) and your progress, cosmetics and friends are saved online, so you can play on any computer. Change your username once a week. Without an account everything still works, saved in the browser.
+- **Friends:** add people by username or straight from a player card; see who's online and what they're playing; chat; Join or Watch a friend's room. Computer players you meet can be friended too: they keep their own hours, chat back, invite you to play and can be watched.
+- **Player cards:** click anyone on the pause or end-screen scoreboard for their card (username, level, stats, cosmetics, pinned achievements) with Add friend and Report.
+- **Admin:** set two Secrets on the Worker, `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then sign in with that email. The admin (and any moderators they appoint) get an Admin tab: reports, warnings, mutes, bans, renames, password resets, gifts, gift codes, announcements, events (Double XP, Big Heads, Low Gravity, Golden Guns, Confetti Kills), a maintenance notice, live rooms to watch, giveaways, XP rain, shout-outs and a log of every action. The admin also has their own cosmetics and effects (looks only, nothing that changes a fight).
+- **Local testing:** `npm run dev:api` runs the same Worker code on your computer (Node's built-in SQLite), and `npm run dev` sends `/api` to it.
 
 ## Ranked and tournaments
 
