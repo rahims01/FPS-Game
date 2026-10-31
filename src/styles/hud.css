@@ -203,6 +203,40 @@
   width: 2px;
   margin-left: -1px;
 }
+/* The Permaban's scope: violet glass, a glowing reticle and a ring at the centre. */
+.scope-permaban {
+  background: radial-gradient(circle at center, rgb(120 60 255 / 0.1) 0, rgb(120 60 255 / 0.1) 34vmin, #07020f 34.4vmin);
+}
+.scope-permaban .scope-ring {
+  border: 2px solid rgb(180 107 255 / 0.55);
+  box-shadow: inset 0 0 50px rgb(90 30 200 / 0.55);
+}
+.scope-permaban i {
+  background: rgb(200 150 255 / 0.85);
+  box-shadow: 0 0 6px rgb(180 107 255 / 0.9);
+}
+.scope-permaban::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #ffd23d;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgb(255 210 61 / 0.7);
+}
+.scope-tag {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 24vmin);
+  transform: translateX(-50%);
+  color: #c9a6ff;
+  font-family: var(--f-cond);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+}
 .sound-cue {
   position: absolute;
   left: 50%;

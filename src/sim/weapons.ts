@@ -189,7 +189,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     range: 300,
     recoil: 0.06,
     move: 0.93,
-    adsFov: 30,
+    adsFov: 62,
+    scope: true,
     preferredRange: 35,
     pattern: [[1, 0]]
   }),

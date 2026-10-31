@@ -34,10 +34,11 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
   return (
     <div className={`hud ${hud.killcam ? 'in-killcam' : ''} ${watching ? 'watching' : ''} ${hud.spectator ? 'benched' : ''} ${hud.touch ? 'touch' : ''}`}>
       {hud.scoped && (
-        <div className="scope">
+        <div className={`scope ${hud.weaponId === 'permaban' ? 'scope-permaban' : ''}`}>
           <div className="scope-ring" />
           <i className="h" />
           <i className="v" />
+          {hud.weaponId === 'permaban' && <b className="scope-tag">PERMABAN · THROUGH WALLS</b>}
         </div>
       )}
       {hud.alive && !watching && !hud.aiming && !hud.scoped && !hud.hardcore && (
