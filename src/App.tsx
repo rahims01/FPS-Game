@@ -34,10 +34,20 @@ import { Scoreboard } from './ui/Hud';
 import { AccountPanel } from './ui/AccountPanel';
 import { FriendsPanel } from './ui/FriendsPanel';
 import { PlayerCard, type CardSubject } from './ui/PlayerCard';
-import { AdminPanel } from './ui/AdminPanel';
+import { AdminPanel, type DressUp } from './ui/AdminPanel';
+import type { Cosmetics } from './game/cosmetics';
+import { MELEES } from './assets/melees';
 import { NewsBar, NoticeBox } from './ui/NewsBar';
 import { CampaignPanel, Stars } from './ui/CampaignPanel';
-import { SKINS } from './assets/skins';
+import { SKINS, type SkinId } from './assets/skins';
+
+/** The admin's whole looks (Admin, Fun tab). */
+const DRESS_UP: Record<DressUp, { color: number; camo: SkinId; cos: Partial<Cosmetics> }> = {
+  gold: { color: 0xffc400, camo: 'sovereign', cos: { card: 'command', emblem: 'crown', frame: 'admin', nametag: 'admin', tracer: 'admin', flash: 'admin', style: 'sovereign', charm: 'crown', title: 'staff_admin', melee: 'banhammer' } },
+  royal: { color: 0x6a1fd0, camo: 'adm_camo_royal', cos: { card: 'adm_throne', emblem: 'adm_king', frame: 'admin', nametag: 'adm_royal', tracer: 'adm_royal', flash: 'adm_royal', style: 'adm_royal', charm: 'adm_gem', title: 'adm_owner', melee: 'banhammer' } },
+  cosmic: { color: 0x3a1a8a, camo: 'adm_camo_cosmic', cos: { card: 'adm_cosmic', emblem: 'adm_comet', frame: 'admin', nametag: 'adm_cosmic', tracer: 'adm_cosmic', flash: 'adm_cosmic', style: 'adm_cosmic', charm: 'adm_shooting', title: 'adm_boss', melee: 'banhammer' } },
+  dev: { color: 0x0d0a14, camo: 'adm_camo_code', cos: { card: 'adm_dev', emblem: 'adm_starburst', frame: 'admin', nametag: 'adm_dev', tracer: 'adm_void', flash: 'adm_void', style: 'adm_glitch', charm: 'adm_ring', title: 'adm_developer', melee: 'banhammer' } }
+};
 
 /** Camos you can wear: unlocked by kills, given, or anything during Free Camo Weekend. */
 const wearableSkins = (skins: GameSettings['skins'], p: Profile): GameSettings['skins'] => {
@@ -1024,14 +1034,17 @@ export const App = () => {
                 {tab === 'admin' && isStaff() && (
                   <AdminPanel
                     onWatchRoom={(code) => void joinRoom(code, true)}
-                    onDressUp={() =>
+                    cosmetics={settings.cosmetics}
+                    onCosmetics={(patch) => setSettings((s) => ({ ...s, cosmetics: { ...s.cosmetics, ...patch } }))}
+                    onDressUp={(look) => {
+                      const L = DRESS_UP[look];
                       setSettings((s) => ({
                         ...s,
-                        playerColor: 0xffc400,
-                        cosmetics: { ...s.cosmetics, card: 'command', emblem: 'crown', frame: 'admin', nametag: 'admin', tracer: 'admin', flash: 'admin', style: 'sovereign', charm: 'crown', title: 'staff_admin' },
-                        skins: Object.fromEntries(['rifle', 'ak', 'scar', 'burst', 'smg', 'uzi', 'shotgun', 'autoshotgun', 'dmr', 'sniper', 'barrett', 'lmg', 'pistol', 'revolver', 'deagle', 'mpistol', 'knife', 'karambit', 'machete', 'bat', 'axe', 'shovel', 'katana', 'hammer', 'kunai'].map((w) => [w, 'sovereign']))
-                      }))
-                    }
+                        playerColor: L.color,
+                        cosmetics: { ...s.cosmetics, ...L.cos },
+                        skins: Object.fromEntries([...Object.keys(WEAPONS), ...MELEES.map((d) => d.id)].map((w) => [w, L.camo]))
+                      }));
+                    }}
                   />
                 )}
                 {tab === 'settings' && (

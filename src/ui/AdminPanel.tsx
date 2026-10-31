@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { AURA_FX, SPAWN_FX, TAKEDOWN_FX, type AuraFx, type Cosmetics, type SpawnFx, type TakedownFx } from '../game/cosmetics';
 import { EVENTS, eventDef, type EventGroup } from '../game/events';
 import { api, heartbeat, isAdmin } from '../net/account';
 import { modeName } from '../game/botFriends';
@@ -26,7 +27,9 @@ const GROUP_NOTE: Record<EventGroup, string> = {
 };
 type EventTimes = Record<string, { from: number; until: number }>;
 
-export const AdminPanel = ({ onWatchRoom, onDressUp }: { onWatchRoom: (code: string) => void; onDressUp?: () => void }) => {
+export type DressUp = 'gold' | 'royal' | 'cosmic' | 'dev';
+
+export const AdminPanel = ({ onWatchRoom, onDressUp, cosmetics, onCosmetics }: { onWatchRoom: (code: string) => void; onDressUp?: (look: DressUp) => void; cosmetics?: Cosmetics; onCosmetics?: (patch: Partial<Cosmetics>) => void }) => {
   const admin = isAdmin();
   const [section, setSection] = useState<Section>('overview');
   const [flash, setFlash] = useState<string | null>(null);
@@ -74,7 +77,7 @@ export const AdminPanel = ({ onWatchRoom, onDressUp }: { onWatchRoom: (code: str
       ) : (
         <>
           {section === 'overview' && <Overview onGo={setSection} />}
-          {section === 'fun' && admin && <Fun say={say} onDressUp={onDressUp} />}
+          {section === 'fun' && admin && <Fun say={say} onDressUp={onDressUp} cosmetics={cosmetics} onCosmetics={onCosmetics} />}
           {section === 'reports' && <Reports say={say} onOpen={setOpenUser} />}
           {section === 'players' && <Players onOpen={setOpenUser} />}
           {section === 'news' && <News admin={admin} say={say} />}
@@ -109,7 +112,14 @@ const CommandHeader = ({ admin }: { admin: boolean }) => {
 };
 
 /** The fun side of being the admin: dress up, give things away, make it rain. */
-const Fun = ({ say, onDressUp }: { say: (s: string) => void; onDressUp?: () => void }) => {
+const LOOKS: [DressUp, string, string][] = [
+  ['gold', 'Sovereign Gold', 'linear-gradient(110deg,#7a5800,#ffc400 45%,#fff6c8 55%,#7a5800)'],
+  ['royal', 'Royalty', 'linear-gradient(110deg,#2a0d4a,#6a1fd0 45%,#ffd23d 55%,#2a0d4a)'],
+  ['cosmic', 'Cosmic', 'radial-gradient(circle at 30% 30%,#fff 0 1px,transparent 2px),radial-gradient(circle at 70% 60%,#7a2bff 0,transparent 55%),#06021a'],
+  ['dev', 'Developer', 'repeating-linear-gradient(0deg,#03140a 0 6px,#0d3a1f 6px 7px)']
+];
+
+const Fun = ({ say, onDressUp, cosmetics, onCosmetics }: { say: (s: string) => void; onDressUp?: (look: DressUp) => void; cosmetics?: Cosmetics; onCosmetics?: (patch: Partial<Cosmetics>) => void }) => {
   const [shout, setShout] = useState('');
   const [who, setWho] = useState('');
   const [rain, setRain] = useState(1000);
@@ -120,17 +130,61 @@ const Fun = ({ say, onDressUp }: { say: (s: string) => void; onDressUp?: () => v
     <div className="adm-fun">
       <section className="adm-fun-card gold">
         <h3>Wear the crown</h3>
-        <p>Put on every admin-only item at once: the Sovereign camo on every gun, Command Center card, crown emblem and charm, gold frame, name tag, tracers, muzzle flash, style and colour. Everyone sees it; none of it changes how you play.</p>
-        <button
-          className="play"
-          onClick={() => {
-            onDressUp?.();
-            say('Crowned. Look in the Armory and Loadout');
-          }}
-        >
-          DRESS UP
-        </button>
+        <p>Put on a whole admin look at once: camo on every gun, card, emblem, charm, name tag, tracers, muzzle flash, style, colour and title. Everyone sees it; none of it changes how you play. Mix and match single items in the Armory and Loadout.</p>
+        <div className="adm-looks">
+          {LOOKS.map(([id, name, bg]) => (
+            <button
+              key={id}
+              className="adm-look"
+              onClick={() => {
+                onDressUp?.(id);
+                say(`Dressed as ${name}`);
+              }}
+            >
+              <i style={{ background: bg }} />
+              {name}
+            </button>
+          ))}
+        </div>
       </section>
+
+      {cosmetics && onCosmetics && (
+        <section className="adm-fun-card">
+          <h3>Your entrance and takedowns</h3>
+          <p>What everyone sees when you spawn, when you take someone down, and around you all match. Looks only.</p>
+          <label className="adm-pick">
+            Spawn
+            <select className="field" value={cosmetics.spawnFx ?? 'pillar'} onChange={(e) => onCosmetics({ spawnFx: e.target.value as SpawnFx })}>
+              {SPAWN_FX.map(([v, n]) => (
+                <option key={v} value={v}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="adm-pick">
+            Takedown
+            <select className="field" value={cosmetics.takedownFx ?? 'confetti'} onChange={(e) => onCosmetics({ takedownFx: e.target.value as TakedownFx })}>
+              {TAKEDOWN_FX.map(([v, n]) => (
+                <option key={v} value={v}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="adm-pick">
+            Aura
+            <select className="field" value={cosmetics.aura ?? 'none'} onChange={(e) => onCosmetics({ aura: e.target.value as AuraFx })}>
+              {AURA_FX.map(([v, n]) => (
+                <option key={v} value={v}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>Always on: an announcement when you join, your name in gold in the kill feed, and a crown over your head when you win.</p>
+        </section>
+      )}
 
       <section className="adm-fun-card">
         <h3>Giveaway</h3>

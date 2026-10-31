@@ -274,6 +274,25 @@ export class SoldierView {
   static lowDetail = false;
   /** Golden Guns event: every gun is gold. */
   static goldGuns = false;
+  /** The admin's victory pose: an arm raised and a crown over the head. */
+  private crown: THREE.Object3D | null = null;
+  victory(): void {
+    if (this.crown) return;
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffc400, metalness: 0.9, roughness: 0.2, emissive: 0x4a3000 });
+    const c = new THREE.Group();
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.12, 0.07, 16, 1, true), gold);
+    band.material.side = THREE.DoubleSide;
+    c.add(band);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 6), gold);
+      spike.position.set(Math.cos(a) * 0.12, 0.075, Math.sin(a) * 0.12);
+      c.add(spike);
+    }
+    this.crown = c;
+    this.root.add(c);
+  }
+
   /** Flying Ragdolls (an admin event): takedowns throw bodies much further, and up. */
   static flying = false;
   private low = SoldierView.lowDetail;
@@ -604,6 +623,16 @@ export class SoldierView {
     if (agent.reloadT > 0 && this.bones.Spine1) rotateBoneWorld(this.bones.Spine1, pitchAxis, -0.12);
     this.aimArms(agent, u, kick, time);
     if (this.bones.Head) this.bones.Head.scale.setScalar(SoldierView.headScale);
+    if (this.crown && this.bones.Head) {
+      // Victory: left arm up, the crown floating over the head.
+      const ls = this.bones.LeftShoulder?.getWorldPosition(new THREE.Vector3());
+      if (ls && this.leftArm) solveArm(this.leftArm, ls.add(new THREE.Vector3(0, 0.62, 0)), new THREE.Vector3(Math.cos(agent.yaw), 0, -Math.sin(agent.yaw)), 1);
+      const head = this.bones.Head.getWorldPosition(new THREE.Vector3());
+      head.y += 0.3 * SoldierView.headScale + 0.04 * Math.sin(time * 3);
+      this.root.updateWorldMatrix(true, false);
+      this.crown.position.copy(this.root.worldToLocal(head));
+      this.crown.rotation.y = time * 1.5;
+    }
     this.placeRifle(agent, u > 0.5);
   }
 

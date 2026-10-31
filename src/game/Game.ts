@@ -425,6 +425,9 @@ export class Game {
   private readonly retro = eventOn('retro');
   private readonly eventsAtStart = liveEvents();
   private weather: Weather | null = null;
+  private adminAnnounced = new Set<number>();
+  private auraT = 0;
+  private victoryShown = false;
   private killTimes: number[] = [];
   private firstBlood = false;
   private lastKillerOfPlayer = -1;
@@ -1232,7 +1235,20 @@ export class Game {
       v = new SoldierView(this.assets, a, this.colorOf(a.id), this.ids.skins[a.id] ?? {}, this.cosmetics[a.id]?.charm ?? 'none', meleeDef(this.cosmetics[a.id]?.melee).id, a.attach ?? {});
       const cos = this.cosmetics[a.id];
       v.setStyle(this.styleFor(a), this.colorOf(a.id));
-      if (cosAdmin(this.cosmetics[a.id]) && a.alive && !this.killcam) this.effects.adminArrive(new THREE.Vector3(a.x, a.y, a.z));
+      if (cosAdmin(this.cosmetics[a.id]) && a.alive && !this.killcam) {
+        const at = new THREE.Vector3(a.x, a.y, a.z);
+        const fx = this.cosmetics[a.id]?.spawnFx ?? 'pillar';
+        if (fx === 'portal') this.effects.portal(at);
+        else if (fx === 'meteor') this.effects.meteor(at);
+        else if (fx === 'lightning') this.effects.bolt(at);
+        else this.effects.adminArrive(at);
+        // The first time: everyone hears that the admin is here.
+        if (!this.adminAnnounced.has(a.id)) {
+          this.adminAnnounced.add(a.id);
+          this.callout(a === this.match.player && !this.spectator ? '♛ You entered as the Admin' : `♛ The Admin ${this.nameOf(a.id)} has entered the match`);
+          this.audio.fanfare();
+        }
+      }
       if (a !== this.match.player || this.spectator) {
         const title = cos && cos.title !== 'none' ? titleDef(cos.title).text : null;
         v.setNameTag(this.nameOf(a.id), cssColor(this.colorOf(a.id)), a.team === this.match.player.team, cos?.nametag ?? 'plain', title);
@@ -1360,8 +1376,16 @@ export class Game {
         const v = this.viewFor(victim);
         v.setVisible(true);
         if (live && killer && (this.cosmetics[killer.id]?.staff === 'admin' || this.confettiKills)) {
-          this.effects.confetti(new THREE.Vector3(victim.x, victim.y, victim.z), this.cosmetics[killer.id]?.staff === 'admin');
-          if (victim === player && this.cosmetics[killer.id]?.staff === 'admin') this.callout('Taken down by the Admin ♛');
+          const at = new THREE.Vector3(victim.x, victim.y, victim.z);
+          const admin = this.cosmetics[killer.id]?.staff === 'admin';
+          // The admin's pick (Fun tab); everyone else's is the Confetti Kills event.
+          const fx = admin ? (this.cosmetics[killer.id]?.takedownFx ?? 'confetti') : 'confetti';
+          if (fx === 'lightning') this.effects.bolt(at);
+          else if (fx === 'fireworks') this.effects.fireworks(at);
+          else if (fx === 'shockwave') this.effects.shockwave(at);
+          else if (fx === 'banned') this.effects.stamp(at, 'BANNED');
+          else this.effects.confetti(at, admin);
+          if (victim === player && admin) this.callout('Taken down by the Admin ♛');
         }
         v.die(victim, this.physics, sim.time, { distance: e.distance, melee: killer ? this.cosmetics[killer.id]?.melee : undefined });
         // The pool goes where the body ends up, once it has mostly landed.
@@ -2609,6 +2633,26 @@ export class Game {
     }
     if (this.night) this.updateNight();
     this.weather?.update(dt, this.camera.position);
+    // Admin auras, a few puffs a second.
+    if ((this.auraT += dt) > 0.08) {
+      this.auraT = 0;
+      for (const a of sim.agents) {
+        const aura = this.cosmetics[a.id]?.aura;
+        if (!aura || aura === 'none' || !a.alive || !cosAdmin(this.cosmetics[a.id]) || (a === this.match.player && !this.spectator)) continue;
+        this.effects.aura(aura, a.x, a.y, a.z, time);
+      }
+    }
+    // Victory: a winning admin raises the crown.
+    if (this.match.phase === 'over' && !this.victoryShown) {
+      this.victoryShown = true;
+      const m = this.match;
+      for (const a of sim.agents) {
+        if (!cosAdmin(this.cosmetics[a.id]) || m.winTeam < 0 || a.team !== m.winTeam) continue;
+        this.views.get(a.id)?.victory();
+        this.effects.confetti(new THREE.Vector3(a.x, a.y + 1, a.z), true);
+        this.callout(a === m.player && !this.spectator ? '♛ Victory, your majesty' : `♛ The Admin ${this.nameOf(a.id)} wins`);
+      }
+    }
     if (this.discoOn) this.arenaView.disco(time);
 
     tickSkins(time);

@@ -522,6 +522,39 @@ textarea.field {
 .adm-fun-card.gold p {
   color: #f5e3a8;
 }
+.adm-looks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+.adm-look {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  background: rgb(0 0 0 / 0.25);
+  color: #fff;
+  font-family: var(--f-cond);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.adm-look:hover {
+  border-color: #ffd23d;
+}
+.adm-look i {
+  display: block;
+  height: 34px;
+}
+.adm-pick {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
 .adm-fun-card .play {
   align-self: flex-start;
 }
@@ -928,6 +961,18 @@ textarea.field {
   letter-spacing: 0.04em;
 }
 
+.feed-admin {
+  color: #ffd23d;
+  background: linear-gradient(90deg, #fff6c8, #ffc400 45%, #fff6c8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(255, 196, 0, 0.6));
+  font-weight: 800;
+}
+.feed-admin .feed-crown {
+  -webkit-text-fill-color: #ffd23d;
+}
 .feed-crown {
   color: #ffd23d;
   text-shadow: 0 0 6px rgba(255, 196, 0, 0.8);

@@ -193,6 +193,15 @@ export const applyStyle = (mats: THREE.Material[], styleId: string, base: number
       m.color.multiplyScalar(0.8);
     }
     if ((styleId === 'glow' || finish === 'glow') && m.emissive) m.emissive.copy(col).multiplyScalar(0.55);
+    if (styleId === 'adm_statue') {
+      // Golden Statue: solid polished gold whatever your colour.
+      m.color.setRGB(0.86, 0.64, 0.14);
+      m.emissive?.setRGB(0.16, 0.1, 0.01);
+      if ('shininess' in m) {
+        m.shininess = 200;
+        m.specular?.setHex(0xfff0b0);
+      }
+    }
     if (def.kind === 'pattern' || styleId === 'lava') {
       m.map = patternTexture(styleId === 'lava' ? 'lava' : styleId, base);
       m.color.setHex(0xffffff);
@@ -227,6 +236,35 @@ export const animateStyle = (mats: THREE.Material[], styleId: string, base: numb
       set((m) => {
         m.color.setRGB(0.95, 0.72, 0.16);
         m.emissive?.setRGB(0.35 + 0.65 * sweep ** 6, 0.24 + 0.5 * sweep ** 6, 0.04 + 0.3 * sweep ** 6);
+      });
+      break;
+    }
+    case 'adm_royal': {
+      // Royal purple with a slow gold shimmer.
+      const sh = Math.max(0, Math.sin(t * 1.1)) ** 4;
+      set((m) => {
+        m.color.setRGB(0.36 + 0.5 * sh, 0.12 + 0.55 * sh, 0.72 - 0.55 * sh);
+        m.emissive?.setRGB(0.12 + 0.3 * sh, 0.03 + 0.2 * sh, 0.25);
+      });
+      break;
+    }
+    case 'adm_cosmic': {
+      const twinkle = Math.random() < 0.06 ? 0.7 : 0;
+      set((m) => {
+        m.color.setHSL(0.66 + 0.12 * Math.sin(t * 0.5), 0.75, 0.32);
+        m.emissive?.setRGB(0.12 + twinkle, 0.08 + twinkle, 0.3 + twinkle);
+      });
+      break;
+    }
+    case 'adm_glitch': {
+      // Gold, glitching into cyan or magenta now and then.
+      const slot = Math.floor(t * 10);
+      const r = Math.abs(Math.sin(slot * 12.9898 + seed) * 43758.5453) % 1;
+      set((m) => {
+        if (r < 0.1) m.color.setRGB(0.1, 0.95, 1);
+        else if (r < 0.2) m.color.setRGB(1, 0.15, 0.85);
+        else m.color.setRGB(0.95, 0.72, 0.16);
+        m.emissive?.setScalar(r > 0.92 ? 0.7 : 0.08);
       });
       break;
     }
@@ -388,6 +426,47 @@ export const drawNametag = (g: CanvasRenderingContext2D, w: number, name: string
       g.fillText(name, cx, y + 2);
       g.fillStyle = '#ffd23d';
       g.fillText('♛', cx, y - 62);
+      break;
+    }
+    case 'adm_royal': {
+      // Purple velvet plate, gold border, crown above.
+      const grad = g.createLinearGradient(0, y - 34, 0, y + 34);
+      grad.addColorStop(0, '#8a4dff');
+      grad.addColorStop(1, '#2a0d4a');
+      plate(grad, '#ffd23d');
+      g.fillStyle = '#fff3c2';
+      g.fillText(name, cx, y + 2);
+      g.fillStyle = '#ffd23d';
+      g.fillText('♚', cx, y - 62);
+      break;
+    }
+    case 'adm_dev': {
+      // A terminal: green monospace on black.
+      plate('#03140a', '#2aff7a');
+      g.font = 'bold 48px Consolas, "Courier New", monospace';
+      g.fillStyle = '#5aff9a';
+      g.fillText(`</${name}>`, cx, y + 2);
+      break;
+    }
+    case 'adm_cosmic': {
+      const grad = g.createLinearGradient(cx - tw / 2, 0, cx + tw / 2, 0);
+      grad.addColorStop(0, '#1a0640');
+      grad.addColorStop(0.5, '#3a1a8a');
+      grad.addColorStop(1, '#0a2050');
+      plate(grad, '#c9b6ff');
+      g.fillStyle = '#ffffff';
+      for (let i = 0; i < 14; i++) g.fillRect(cx - tw / 2 + 10 + ((i * 53) % (tw - 20)), y - 26 + ((i * 29) % 52), 3, 3);
+      g.fillStyle = '#efe6ff';
+      g.fillText(name, cx, y + 2);
+      g.fillStyle = '#9fe8ff';
+      g.fillText('☄', cx, y - 62);
+      break;
+    }
+    case 'adm_ban': {
+      plate('#8a0010', '#ffd23d');
+      g.fillStyle = '#fff';
+      g.fillText(name, cx, y + 2);
+      g.fillText('🔨', cx, y - 62);
       break;
     }
     case 'gold': {

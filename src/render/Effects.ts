@@ -462,6 +462,128 @@ export class Effects {
     l.life = 0.3;
   }
 
+  /** Fireworks: three bursts of colour going off above the spot. */
+  fireworks(p: THREE.Vector3): void {
+    const palette = [[1, 0.82, 0.24], [0.7, 0.42, 1], [0.35, 0.85, 1], [1, 0.36, 0.6]];
+    for (let b = 0; b < 3; b++) {
+      const c = palette[(b + Math.floor(Math.random() * 4)) % palette.length];
+      const cx = p.x + (Math.random() - 0.5) * 2;
+      const cy = p.y + 3 + b * 0.8 + Math.random();
+      const cz = p.z + (Math.random() - 0.5) * 2;
+      for (let i = 0; i < 26; i++) {
+        const u = Math.random() * 2 - 1;
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(1 - u * u);
+        const s = 3 + Math.random();
+        this.emit(cx, cy, cz, Math.cos(a) * r * s, u * s, Math.sin(a) * r * s, c[0], c[1], c[2], 0.7 + Math.random() * 0.4, 2);
+      }
+    }
+    this.flashLight(new THREE.Vector3(p.x, p.y + 4, p.z), 0xffd23d, 30, 14, 0.4);
+  }
+
+  /** Shockwave: a flat ring of light racing outward along the ground. */
+  shockwave(p: THREE.Vector3): void {
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      this.emit(p.x, p.y + 0.15, p.z, Math.cos(a) * 9, 0.3, Math.sin(a) * 9, 1, 0.85, 0.4, 0.45, 0);
+      this.emit(p.x, p.y + 0.6, p.z, Math.cos(a) * 6, 0.2, Math.sin(a) * 6, 0.75, 0.55, 1, 0.4, 0);
+    }
+    this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), 0xffe08a, 40, 12, 0.25);
+  }
+
+  /** A stamp (BANNED) that pops up over a spot and fades. */
+  stamp(p: THREE.Vector3, text: string): void {
+    let tex = this.stampTex.get(text);
+    if (!tex) {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 192;
+      const g = c.getContext('2d')!;
+      g.translate(256, 96);
+      g.rotate(-0.12);
+      g.strokeStyle = '#ff2a3a';
+      g.lineWidth = 14;
+      g.strokeRect(-220, -66, 440, 132);
+      g.fillStyle = '#ff2a3a';
+      g.font = 'bold 104px Impact, "Arial Black", sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(text, 0, 6);
+      tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.stampTex.set(text, tex);
+    }
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sprite.position.set(p.x, p.y + 2.2, p.z);
+    sprite.renderOrder = 10;
+    this.group.add(sprite);
+    this.stamps.push({ sprite, life: 1.8 });
+  }
+
+  /** Arriving through a portal: a violet ring standing upright, swirling. */
+  portal(p: THREE.Vector3): void {
+    for (let i = 0; i < 70; i++) {
+      const a = (i / 70) * Math.PI * 2;
+      const r = 1.1;
+      this.emit(p.x + Math.cos(a) * r * 0.3, p.y + 1 + Math.sin(a) * r, p.z + Math.cos(a) * r, -Math.sin(a) * 1.5, Math.cos(a) * 1.5, 0, 0.72, 0.42, 1, 0.9 + Math.random() * 0.4, 0);
+    }
+    for (let i = 0; i < 24; i++) this.emit(p.x, p.y + 1, p.z, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 1, 0.9, 1, 0.5, 0);
+    this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), 0xb46bff, 30, 10, 0.8);
+  }
+
+  /** Arriving as a meteor: a fiery streak from the sky and a burst on landing. */
+  meteor(p: THREE.Vector3): void {
+    for (let i = 0; i < 50; i++) {
+      const k = i / 50;
+      this.emit(p.x + 6 * (1 - k), p.y + 14 * (1 - k), p.z + 3 * (1 - k), -3, -10, -1.5, 1, 0.55 + 0.3 * k, 0.15, 0.3 + k * 0.3, 0);
+    }
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.emit(p.x, p.y + 0.2, p.z, Math.cos(a) * 5, 2 + Math.random() * 4, Math.sin(a) * 5, 1, 0.6, 0.15, 0.6 + Math.random() * 0.4, 9);
+    }
+    this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), 0xff8a2a, 50, 14, 0.5);
+  }
+
+  /** An admin aura: a few particles around a standing body (called a few times a second). */
+  aura(kind: string, x: number, y: number, z: number, t: number): void {
+    switch (kind) {
+      case 'sparkles':
+        for (let i = 0; i < 2; i++) this.emit(x + (Math.random() - 0.5) * 0.9, y + Math.random() * 1.8, z + (Math.random() - 0.5) * 0.9, 0, 0.4, 0, 1, 0.85, 0.3, 0.5, 0);
+        break;
+      case 'flames':
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * Math.PI * 2;
+          this.emit(x + Math.cos(a) * 0.35, y + 0.05, z + Math.sin(a) * 0.35, 0, 1.6 + Math.random(), 0, 0.6, 0.3, 1, 0.45, 0);
+        }
+        break;
+      case 'halo':
+        for (let i = 0; i < 3; i++) {
+          const a = t * 3 + (i / 3) * Math.PI * 2;
+          this.emit(x + Math.cos(a) * 0.28, y + 2.05, z + Math.sin(a) * 0.28, 0, 0, 0, 1, 0.9, 0.45, 0.35, 0);
+        }
+        break;
+      case 'glitch':
+        if (Math.random() < 0.5) {
+          const c = Math.random() < 0.5 ? [0.1, 0.95, 1] : [1, 0.15, 0.85];
+          this.emit(x + (Math.random() - 0.5) * 0.8, y + Math.random() * 1.8, z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 2, 0, 0, c[0], c[1], c[2], 0.15, 0);
+        }
+        break;
+    }
+  }
+
+  private flashLight(at: THREE.Vector3, color: number, intensity: number, distance: number, life: number): void {
+    const l = this.lights[this.lightNext];
+    this.lightNext = (this.lightNext + 1) % this.lights.length;
+    l.light.position.copy(at);
+    l.light.color.setHex(color);
+    l.light.intensity = intensity;
+    l.light.distance = distance;
+    l.life = life;
+  }
+
+  private stampTex = new Map<string, THREE.CanvasTexture>();
+  private stamps: { sprite: THREE.Sprite; life: number }[] = [];
+
   /** The admin arriving: a column of golden light and a ring of sparks. */
   adminArrive(p: THREE.Vector3): void {
     for (let i = 0; i < 40; i++) {
@@ -530,6 +652,20 @@ export class Effects {
   }
 
   update(dt: number): void {
+    for (let i = this.stamps.length - 1; i >= 0; i--) {
+      const s = this.stamps[i];
+      s.life -= dt;
+      const age = 1.8 - s.life;
+      // Slam in big, settle, rise and fade.
+      s.sprite.scale.set(2.6, 0.975, 1).multiplyScalar(age < 0.12 ? 1.6 - age * 5 : 1);
+      s.sprite.position.y += dt * 0.25;
+      s.sprite.material.opacity = Math.min(1, s.life / 0.5);
+      if (s.life <= 0) {
+        this.group.remove(s.sprite);
+        s.sprite.material.dispose();
+        this.stamps.splice(i, 1);
+      }
+    }
     for (const pool of this.pools) {
       if (!pool.mesh.visible || pool.t >= POOL_SPREAD_S) continue;
       pool.t = Math.min(POOL_SPREAD_S, pool.t + dt);

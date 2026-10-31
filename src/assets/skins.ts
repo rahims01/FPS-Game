@@ -11,6 +11,7 @@ export type SkinId =
   | 'urban' | 'jungle' | 'leopard' | 'marble' | 'woodgrain' | 'cyber' | 'emerald' | 'obsidian'
   | 'damascus' | 'darkmatter'
   | 'plasma' | 'matrix' | 'shift' | 'magma' | 'neonpulse' | 'sovereign'
+  | 'adm_camo_royal' | 'adm_camo_cosmic' | 'adm_camo_ban' | 'adm_camo_prism' | 'adm_camo_code'
   | 'bloodline' | 'ember' | 'frost';
 
 export interface SkinDef {
@@ -67,7 +68,12 @@ export const SKINS: SkinDef[] = [
   { id: 'ember', name: 'Ember', kills: 110, kind: 'reactive', swatch: 'linear-gradient(90deg,#2a2a2a,#ff7a1a)' },
   { id: 'frost', name: 'Frostbite', kills: 190, kind: 'reactive', swatch: 'linear-gradient(90deg,#3a3d40,#bff3ff)' },
   // The admin's own camo: only ever given.
-  { id: 'sovereign', name: 'Sovereign', kills: 1_000_000_000, kind: 'animated', swatch: 'linear-gradient(110deg,#7a5800,#ffc400 40%,#fff6c8 50%,#ffc400 60%,#7a5800)' }
+  { id: 'sovereign', name: 'Sovereign', kills: 1_000_000_000, kind: 'animated', swatch: 'linear-gradient(110deg,#7a5800,#ffc400 40%,#fff6c8 50%,#ffc400 60%,#7a5800)' },
+  { id: 'adm_camo_royal', name: 'Royalty', kills: 1_000_000_000, kind: 'animated', swatch: 'linear-gradient(110deg,#2a0d4a,#6a1fd0 40%,#ffd23d 50%,#6a1fd0 60%,#2a0d4a)' },
+  { id: 'adm_camo_cosmic', name: 'Cosmic', kills: 1_000_000_000, kind: 'animated', swatch: 'radial-gradient(circle at 30% 30%,#fff 0 1px,transparent 2px),radial-gradient(circle at 70% 60%,#7a2bff 0,transparent 45%),#06021a' },
+  { id: 'adm_camo_ban', name: 'Ban Hammer', kills: 1_000_000_000, swatch: 'repeating-linear-gradient(135deg,#1a0004 0 6px,#b0001a 6px 12px,#ffd23d 12px 13px)' },
+  { id: 'adm_camo_prism', name: 'Prismatic', kills: 1_000_000_000, kind: 'animated', swatch: 'linear-gradient(90deg,#ff3d6a,#ffd23d,#3dff9a,#3dc8ff,#b46bff)' },
+  { id: 'adm_camo_code', name: 'Code Rain', kills: 1_000_000_000, kind: 'animated', swatch: 'repeating-linear-gradient(90deg,#0b0418 0 5px,#ffd23d 5px 6px,#0b0418 6px 9px,#b46bff 9px 10px)' }
 ].sort((a, b) => a.kills - b.kills) as SkinDef[];
 
 export const skinDef = (id: SkinId): SkinDef => SKINS.find((s) => s.id === id) ?? SKINS[0];
@@ -125,6 +131,69 @@ const animatedMaterial = (id: SkinId): THREE.MeshStandardMaterial => {
       m = new THREE.MeshStandardMaterial({ color: 0xf2bf2a, metalness: 0.75, roughness: 0.22, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.9 });
       animated.push((t) => {
         tex.offset.x = (t * 0.45) % 1;
+      });
+      break;
+    }
+    case 'adm_camo_royal': {
+      // Royal purple with a gold band sweeping along it.
+      const tex = paint((g) => {
+        const grad = g.createLinearGradient(0, 0, 64, 0);
+        grad.addColorStop(0, '#000');
+        grad.addColorStop(0.44, '#000');
+        grad.addColorStop(0.5, '#ffd23d');
+        grad.addColorStop(0.56, '#000');
+        grad.addColorStop(1, '#000');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+      });
+      m = new THREE.MeshStandardMaterial({ color: 0x5a18b8, metalness: 0.6, roughness: 0.3, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.8 });
+      animated.push((t) => {
+        tex.offset.x = (t * 0.3) % 1;
+      });
+      break;
+    }
+    case 'adm_camo_cosmic': {
+      // A star field drifting across deep violet.
+      const tex = paint((g, rand) => {
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, 64, 64);
+        for (let i = 0; i < 40; i++) {
+          g.fillStyle = i % 5 === 0 ? '#c9b6ff' : '#ffffff';
+          g.fillRect(rand() * 64, rand() * 64, i % 7 === 0 ? 2 : 1, i % 7 === 0 ? 2 : 1);
+        }
+      });
+      m = new THREE.MeshStandardMaterial({ color: 0x120634, metalness: 0.3, roughness: 0.35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.1 });
+      animated.push((t) => {
+        tex.offset.set((t * 0.05) % 1, (t * 0.02) % 1);
+      });
+      break;
+    }
+    case 'adm_camo_prism': {
+      m = new THREE.MeshStandardMaterial({ color: 0xff3d6a, metalness: 0.85, roughness: 0.12 });
+      const pm = m;
+      animated.push((t) => {
+        pm.color.setHSL((t * 0.12) % 1, 0.9, 0.55);
+      });
+      break;
+    }
+    case 'adm_camo_code': {
+      // Gold and violet code falling.
+      const tex = paint((g, rand) => {
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, 64, 64);
+        for (let x = 0; x < 64; x += 4) {
+          const len = 6 + rand() * 20;
+          const y0 = rand() * 64;
+          const gold = rand() < 0.6;
+          for (let k = 0; k < len; k++) {
+            g.fillStyle = gold ? `rgba(255,210,61,${1 - k / len})` : `rgba(180,107,255,${1 - k / len})`;
+            g.fillRect(x, (y0 - k * 2 + 64) % 64, 3, 2);
+          }
+        }
+      });
+      m = new THREE.MeshStandardMaterial({ color: 0x0b0418, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.2, roughness: 0.4 });
+      animated.push((t) => {
+        tex.offset.y = -t * 0.5;
       });
       break;
     }
@@ -703,6 +772,26 @@ const skinMaterial = (id: SkinId): THREE.MeshStandardMaterial => {
     case 'obsidian':
       m = new THREE.MeshStandardMaterial({ color: 0x0b0814, metalness: 0.9, roughness: 0.12, emissive: 0x120a24 });
       break;
+    case 'adm_camo_ban':
+      m = new THREE.MeshStandardMaterial({
+        map: paint((g) => {
+          g.fillStyle = '#1a0004';
+          g.fillRect(0, 0, 64, 64);
+          g.save();
+          g.translate(32, 32);
+          g.rotate(-Math.PI / 4);
+          for (let i = -64; i < 64; i += 16) {
+            g.fillStyle = '#b0001a';
+            g.fillRect(i, -64, 8, 128);
+            g.fillStyle = '#ffd23d';
+            g.fillRect(i + 8, -64, 1.5, 128);
+          }
+          g.restore();
+        }),
+        metalness: 0.4,
+        roughness: 0.35
+      });
+      break;
     case 'damascus':
       m = new THREE.MeshStandardMaterial({
         map: paint((g) => {
@@ -727,6 +816,10 @@ const skinMaterial = (id: SkinId): THREE.MeshStandardMaterial => {
     case 'shift':
     case 'magma':
     case 'neonpulse':
+    case 'adm_camo_royal':
+    case 'adm_camo_cosmic':
+    case 'adm_camo_prism':
+    case 'adm_camo_code':
       m = animatedMaterial(id);
       break;
     default:
@@ -788,6 +881,17 @@ const charmMesh = (shape: string, color: number): THREE.Object3D => {
         body.add(beak);
       }
       break;
+    case 'gavel': {
+      // A little wooden gavel: a head across the top of a handle.
+      body = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.55, s * 0.55, s * 2, 10), mat);
+      body.rotation.z = Math.PI / 2;
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.18, s * 0.18, s * 2, 6), new THREE.MeshStandardMaterial({ color: 0xd4a933, metalness: 0.6, roughness: 0.3 }));
+      handle.material.userData.keep = true;
+      handle.rotation.z = Math.PI / 2;
+      handle.position.set(0, -s, 0);
+      body.add(handle);
+      break;
+    }
     default:
       body = new THREE.Mesh(new THREE.SphereGeometry(s, 10, 8), mat);
   }
@@ -846,6 +950,6 @@ export const randomSkin = (rand: () => number = Math.random): SkinId => {
   // Mostly the early camos; the late ones (gold, galaxy, spectral...) are rare.
   if (r < 0.95) return SKINS[1 + Math.floor(rand() * 11)].id;
   // (Never the admin's camo.)
-  const late = SKINS.slice(12).filter((s) => s.id !== 'sovereign');
+  const late = SKINS.slice(12).filter((s) => s.kills < 1_000_000_000);
   return late[Math.floor(rand() * late.length)].id;
 };

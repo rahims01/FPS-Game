@@ -24,7 +24,18 @@ export interface Cosmetics {
   prestige?: number;
   /** Melee weapon in the knife slot (looks only; see assets/melees). */
   melee?: string;
+  /** The admin's effects (Fun tab): on a takedown, on spawning, and around them. */
+  takedownFx?: TakedownFx;
+  spawnFx?: SpawnFx;
+  aura?: AuraFx;
 }
+
+export type TakedownFx = 'confetti' | 'lightning' | 'fireworks' | 'shockwave' | 'banned';
+export type SpawnFx = 'pillar' | 'portal' | 'meteor' | 'lightning';
+export type AuraFx = 'none' | 'sparkles' | 'flames' | 'halo' | 'glitch';
+export const TAKEDOWN_FX: [TakedownFx, string][] = [['confetti', 'Gold confetti'], ['lightning', 'Lightning strike'], ['fireworks', 'Fireworks'], ['shockwave', 'Shockwave'], ['banned', 'BANNED stamp']];
+export const SPAWN_FX: [SpawnFx, string][] = [['pillar', 'Pillar of light'], ['portal', 'Portal'], ['meteor', 'Meteor'], ['lightning', 'Lightning']];
+export const AURA_FX: [AuraFx, string][] = [['none', 'None'], ['sparkles', 'Gold sparkles'], ['flames', 'Royal flames'], ['halo', 'Halo'], ['glitch', 'Glitch']];
 
 export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none', melee: 'knife' };
 
@@ -70,6 +81,11 @@ export interface CardDef {
 export const CARDS: CardDef[] = [
   { id: 'recruit', name: 'Recruit', bg: 'linear-gradient(120deg,#2b3a2b,#13190f)', ink: '#e8efe6', unlock: null },
   { id: 'command', name: 'Command Center', bg: 'linear-gradient(115deg,#120d02,#4a3500 45%,#ffc400 85%,#fff3c2)', ink: '#fff8de', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_throne', name: 'Throne Room', bg: 'radial-gradient(ellipse at 50% 120%,#ffc400 0,#7a3cff00 45%),repeating-linear-gradient(90deg,#2a0d4a 0 18px,#3a1466 18px 22px),#2a0d4a', ink: '#ffe6a0', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_ban', name: 'Ban Hammer', bg: 'repeating-linear-gradient(135deg,#1a0004 0 16px,#8a0010 16px 32px),#1a0004', ink: '#ffd23d', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_cosmic', name: 'Cosmic Admin', bg: 'radial-gradient(circle at 20% 30%,#fff 0 1px,transparent 2px),radial-gradient(circle at 70% 60%,#fff 0 1px,transparent 2px),radial-gradient(circle at 45% 80%,#c9b6ff 0 1px,transparent 2px),radial-gradient(ellipse at 80% 20%,#7a2bff 0,transparent 50%),radial-gradient(ellipse at 10% 90%,#ff2bd6 0,transparent 45%),#06021a', ink: '#efe6ff', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_dev', name: 'Developer', bg: 'repeating-linear-gradient(0deg,#03140a 0 13px,#0a2a16 13px 14px),linear-gradient(90deg,#03140a,#0d3a1f)', ink: '#5aff9a', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_server', name: 'Server Room', bg: 'repeating-linear-gradient(90deg,#08111f 0 40px,#0f1e36 40px 44px),repeating-linear-gradient(0deg,transparent 0 9px,#2a8aff55 9px 10px),#08111f', ink: '#9fd0ff', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'dusk', name: 'Dusk', bg: 'linear-gradient(120deg,#ff7e5f,#6a3093)', ink: '#fff', unlock: null },
   { id: 'ocean', name: 'Deep Blue', bg: 'linear-gradient(120deg,#0f2027,#2c5364)', ink: '#bfe9ff', unlock: { level: 5 } },
   { id: 'forest', name: 'Forest', bg: 'repeating-linear-gradient(60deg,#203a1e 0 14px,#2e5129 14px 28px)', ink: '#d6f5c9', unlock: { level: 8 } },
@@ -111,6 +127,11 @@ export interface EmblemDef {
 export const EMBLEMS: EmblemDef[] = [
   { id: 'star', glyph: '★', color: '#ffcc33', unlock: null },
   { id: 'crown', glyph: '♛', color: '#ffd23d', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_king', glyph: '♚', color: '#c9a6ff', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_scales', glyph: '⚖', color: '#ffd23d', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_comet', glyph: '☄', color: '#9fe8ff', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_starburst', glyph: '✪', color: '#ffc400', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_gavel', glyph: '🔨', color: '#ffd23d', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'chevron', glyph: '︽', color: '#9ad93d', unlock: null },
   { id: 'target', glyph: '◎', color: '#ff5a4a', unlock: null },
   { id: 'bolt', glyph: '⚡', color: '#ffe14d', unlock: { level: 4 } },
@@ -144,7 +165,7 @@ export const EMBLEMS: EmblemDef[] = [
 export interface CharmDef {
   id: string;
   name: string;
-  shape: 'none' | 'ball' | 'dice' | 'gem' | 'ring' | 'cone' | 'star' | 'heart' | 'skull' | 'duck';
+  shape: 'none' | 'ball' | 'dice' | 'gem' | 'ring' | 'cone' | 'star' | 'heart' | 'skull' | 'duck' | 'gavel';
   color: number;
   unlock: Unlock;
   rarity?: Rarity;
@@ -154,6 +175,10 @@ export interface CharmDef {
 export const CHARMS: CharmDef[] = [
   { id: 'none', name: 'None', shape: 'none', color: 0, unlock: null },
   { id: 'crown', name: 'Golden Crown', shape: 'star', color: 0xffc400, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_gem', name: 'Royal Gem', shape: 'gem', color: 0x9b4dff, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_ring', name: 'Admin Ring', shape: 'ring', color: 0xffc400, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_shooting', name: 'Shooting Star', shape: 'star', color: 0x9fe8ff, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_gavel', name: 'Mini Gavel', shape: 'gavel', color: 0x8a5a2a, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'ball', name: 'Lucky Ball', shape: 'ball', color: 0xff5a4a, unlock: null },
   { id: 'dice', name: 'Fuzzy Die', shape: 'dice', color: 0xf2f2f2, unlock: { level: 6 } },
   { id: 'ring', name: 'Gold Ring', shape: 'ring', color: 0xd4a933, unlock: { level: 11 } },
@@ -384,7 +409,15 @@ export const BADGES: BadgeDef[] = [
  * any other way (added to your granted items the moment it's done).
  */
 /** Everything the admin account gets (given on sign-in; see account.ts). */
-export const ADMIN_ITEMS = ['command', 'crown', 'admin', 'admin_gold', 'admin_glow', 'sovereign', 'staff_admin', 'banhammer'];
+export const ADMIN_ITEMS = [
+  'command', 'crown', 'admin', 'admin_gold', 'admin_glow', 'sovereign', 'staff_admin', 'banhammer',
+  'adm_throne', 'adm_ban', 'adm_cosmic', 'adm_dev', 'adm_server',
+  'adm_king', 'adm_scales', 'adm_comet', 'adm_starburst', 'adm_gavel',
+  'adm_gem', 'adm_ring', 'adm_shooting',
+  'adm_law', 'adm_owner', 'adm_banhammer', 'adm_developer', 'adm_boss',
+  'adm_royal', 'adm_prism', 'adm_void', 'adm_purple', 'adm_diamond', 'adm_obsidian', 'adm_glitch', 'adm_statue',
+  'adm_camo_royal', 'adm_camo_cosmic', 'adm_camo_ban', 'adm_camo_prism', 'adm_camo_code'
+];
 
 export interface CollectionDef {
   id: string;
@@ -488,6 +521,11 @@ export const TITLES: TitleDef[] = [
   { id: 'luckycharm', text: 'Lucky Charm', unlock: { special: 'Collection: Charmed' } },
   { id: 'jackofall', text: 'Jack of All Trades', unlock: { special: 'Collection: Mode Master' } },
   { id: 'staff_admin', text: 'Admin', unlock: { special: 'Staff only' } },
+  { id: 'adm_law', text: 'The Law', unlock: { special: 'Admin only' } },
+  { id: 'adm_owner', text: 'Server Owner', unlock: { special: 'Admin only' } },
+  { id: 'adm_banhammer', text: 'Ban Hammer', unlock: { special: 'Admin only' } },
+  { id: 'adm_developer', text: 'The Developer', unlock: { special: 'Admin only' } },
+  { id: 'adm_boss', text: 'Big Boss', unlock: { special: 'Admin only' } },
   { id: 'campaignhero', text: 'Campaign Hero', unlock: { special: 'Finish the campaign' } },
   { id: 'staff_mod', text: 'Moderator', unlock: { special: 'Staff only' } },
   { id: 'rookie', text: 'Rookie', unlock: null },
@@ -548,6 +586,10 @@ export interface NametagDef {
 export const NAMETAGS: NametagDef[] = [
   { id: 'plain', name: 'Plain', unlock: null },
   { id: 'admin', name: 'Sovereign', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_royal', name: 'Royal', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_dev', name: 'Developer', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_cosmic', name: 'Cosmic', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_ban', name: 'Ban Hammer', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'outline', name: 'Outlined', unlock: { level: 5 } },
   { id: 'gold', name: 'Gold Plate', unlock: { level: 20 } },
   { id: 'neon', name: 'Neon', unlock: { level: 30 } },
@@ -571,6 +613,10 @@ export interface TracerDef {
 export const TRACERS: TracerDef[] = [
   { id: 'default', name: 'Standard', color: 0xffe9a8, unlock: null },
   { id: 'admin', name: 'Sovereign', color: 0xffd23d, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_royal', name: 'Royal Purple', color: 0x9b4dff, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_prism', name: 'Prismatic', color: 'rainbow', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_cosmic', name: 'Cosmic', color: 0x7fd8ff, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_void', name: 'Void', color: 0x5b1aa8, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'red', name: 'Red', color: 0xff3b3b, unlock: { level: 8 } },
   { id: 'green', name: 'Green', color: 0x3bff6b, unlock: { level: 14 } },
   { id: 'blue', name: 'Blue', color: 0x3bb9ff, unlock: { level: 22 } },
@@ -594,6 +640,10 @@ export interface FlashDef {
 export const FLASHES: FlashDef[] = [
   { id: 'default', name: 'Standard', color: 0xffffff, scale: 1, unlock: null },
   { id: 'admin', name: 'Crown Flash', color: 0xffd23d, scale: 1.45, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_royal', name: 'Royal Purple', color: 0xb46bff, scale: 1.4, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_prism', name: 'Prismatic', color: 0xff9af0, scale: 1.4, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_cosmic', name: 'Cosmic', color: 0x8fe3ff, scale: 1.4, unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_void', name: 'Void', color: 0x6a1fd0, scale: 1.55, unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'blue', name: 'Plasma Blue', color: 0x6ab8ff, scale: 1, unlock: { level: 12 } },
   { id: 'green', name: 'Toxic Green', color: 0x8aff5a, unlock: { level: 26 }, scale: 1 },
   { id: 'purple', name: 'Void Purple', color: 0xc08aff, scale: 1.1, unlock: { level: 38 } },
@@ -617,6 +667,10 @@ export const THEME_COLORS: ThemeColorDef[] = [
   { id: 'crimson', name: 'Crimson', hex: 0x9e0f2b, finish: 'flat', unlock: { level: 6 } },
   { id: 'admin_gold', name: 'Sovereign Gold', hex: 0xffc400, finish: 'metal', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'admin_glow', name: 'Command Glow', hex: 0xffd23d, finish: 'glow', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_purple', name: 'Royal Purple', hex: 0x6a1fd0, finish: 'metal', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_diamond', name: 'Diamond White', hex: 0xf2fbff, finish: 'glow', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_obsidian', name: 'Obsidian Black', hex: 0x0d0a14, finish: 'metal', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_prism', name: 'Prismatic', hex: 0xff6ad5, finish: 'rainbow', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'mint', name: 'Mint', hex: 0x6ff0c0, finish: 'flat', unlock: { level: 9 } },
   { id: 'sky', name: 'Sky', hex: 0x8fd3ff, finish: 'flat', unlock: { level: 12 } },
   { id: 'coral', name: 'Coral', hex: 0xff7b6b, finish: 'flat', unlock: { level: 15 } },
@@ -664,6 +718,10 @@ export interface StyleDef {
 export const STYLES: StyleDef[] = [
   { id: 'none', name: 'Plain', kind: 'finish', blurb: 'Your colour, nothing else.', unlock: null },
   { id: 'sovereign', name: 'Sovereign', kind: 'animated', blurb: 'Shimmering gold with a light that sweeps across you.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_royal', name: 'Royalty', kind: 'animated', blurb: 'Royal purple with a slow gold shimmer.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_cosmic', name: 'Cosmic', kind: 'animated', hueShift: true, blurb: 'Deep space blues and violets that drift and twinkle.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_glitch', name: 'Glitch King', kind: 'animated', hueShift: true, blurb: 'Gold that glitches into cyan and magenta.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
+  { id: 'adm_statue', name: 'Golden Statue', kind: 'finish', blurb: 'Solid polished gold, head to toe.', unlock: { special: 'Admin only' }, rarity: 'mythic' },
   { id: 'matte', name: 'Matte', kind: 'finish', blurb: 'Flat, no shine.', unlock: null },
   { id: 'metal', name: 'Metallic', kind: 'finish', blurb: 'Polished and shiny.', unlock: { level: 7 } },
   { id: 'glow', name: 'Glow', kind: 'finish', blurb: 'Lit from within.', unlock: { level: 13 } },
