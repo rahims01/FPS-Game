@@ -72,7 +72,8 @@ export const FriendsPanel = ({
   onJoinRoom: (code: string, spectate: boolean) => void;
   onPlayWith: (friend: BotFriend, mode: string) => void;
   onWatch: (friend: BotFriend, mode: string) => void;
-  onSignIn: () => void;
+  /** Missing on game portals, where outside sign-in isn't allowed. */
+  onSignIn?: () => void;
 }) => {
   const [user, setUser] = useState(account().user);
   const [real, setReal] = useState<{ friends: RealFriend[]; incoming: RealFriend[]; outgoing: RealFriend[] }>({ friends: [], incoming: [], outgoing: [] });
@@ -201,7 +202,7 @@ export const FriendsPanel = ({
             {note}
           </p>
         )}
-        {!user && (
+        {!user && onSignIn && (
           <p className="set-hint fr-signin">
             <button className="chip" onClick={onSignIn}>
               Sign in

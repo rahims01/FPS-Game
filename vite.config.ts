@@ -29,6 +29,8 @@ const devApi = (): Plugin => ({
 });
 
 export default defineConfig({
+  // Relative paths, so the build also runs from a game portal's own address.
+  base: './',
   plugins: [react(), devApi()],
   server: { port: 5190 }
 });

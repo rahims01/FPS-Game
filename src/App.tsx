@@ -65,6 +65,7 @@ import { setTourDone, Tour, tourDone, type TourStep } from './ui/Tour';
 import { resetHints } from './game/hints';
 import { isTouchDevice, loadSettings, QUALITY_PRESETS, saveSettings, suggestQuality } from './game/settings';
 import { RotateIcon } from './ui/icons';
+import { embedded } from './game/platform';
 import { PadMenus } from './game/gamepad';
 
 type Screen = { kind: 'menu' } | { kind: 'finding' } | { kind: 'playing' } | { kind: 'host-lobby' } | { kind: 'join-lobby' } | { kind: 'tourney' };
@@ -155,7 +156,8 @@ export const App = () => {
   const [showTour, setShowTour] = useState(false);
   // Full screen (mostly for phones, where the browser's bars eat the menu). iPhones have no page full screen, so no button there.
   const doc = document as Document & { webkitFullscreenElement?: Element; webkitFullscreenEnabled?: boolean; webkitExitFullscreen?: () => void };
-  const canFullscreen = !!(document.fullscreenEnabled || doc.webkitFullscreenEnabled);
+  // Portals provide their own full screen (and don't allow a custom button).
+  const canFullscreen = !embedded && !!(document.fullscreenEnabled || doc.webkitFullscreenEnabled);
   const [fullscreen, setFullscreen] = useState(() => !!(document.fullscreenElement || doc.webkitFullscreenElement));
   useEffect(() => {
     const onChange = () => setFullscreen(!!(document.fullscreenElement || doc.webkitFullscreenElement));
@@ -332,7 +334,7 @@ export const App = () => {
   // Into a match on a phone: full screen and locked to landscape where the browser allows it
   // (Android); everywhere else the rotate screen below asks for it.
   useEffect(() => {
-    if (!touchDevice) return;
+    if (!touchDevice || embedded) return;
     const o = window.screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
     if (screen.kind === 'playing') {
       const el = document.documentElement;
@@ -860,9 +862,12 @@ export const App = () => {
                   );
                 })}
               </nav>
-              <button className="bug-account" onClick={() => setShowAccount(true)} title={acct.user ? 'Your account' : 'Sign in or create an account'}>
-                {acct.user ? acct.user.name : 'Sign in'}
-              </button>
+              {/* Portals don't allow outside sign-in: there everyone plays as a guest, saved in the browser. */}
+              {!embedded && (
+                <button className="bug-account" onClick={() => setShowAccount(true)} title={acct.user ? 'Your account' : 'Sign in or create an account'}>
+                  {acct.user ? acct.user.name : 'Sign in'}
+                </button>
+              )}
               {canFullscreen && (
                 <button className="bug-full" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title={fullscreen ? 'Exit full screen' : 'Full screen'}>
                   {fullscreen ? <ExitFullscreenIcon size={20} /> : <FullscreenIcon size={20} />}
@@ -1064,7 +1069,7 @@ export const App = () => {
                     onJoinRoom={(code, spectate) => void joinRoom(code, spectate)}
                     onPlayWith={playWithFriend}
                     onWatch={watchFriend}
-                    onSignIn={() => setShowAccount(true)}
+                    onSignIn={embedded ? undefined : () => setShowAccount(true)}
                   />
                 )}
                 {tab === 'admin' && isStaff() && (

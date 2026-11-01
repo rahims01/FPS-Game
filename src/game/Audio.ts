@@ -47,6 +47,12 @@ export class GameAudio {
     }
     const ctx = new AudioContext();
     this.ctx = ctx;
+    // iOS suspends audio after a call or a trip to the home screen, and only a tap brings it back.
+    const wake = () => {
+      if (ctx.state !== 'running') void ctx.resume();
+    };
+    document.addEventListener('touchend', wake, { passive: true });
+    document.addEventListener('click', wake);
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
     const comp = ctx.createDynamicsCompressor();
