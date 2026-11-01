@@ -76,3 +76,10 @@ export const RotateIcon = (p: { size?: number }) => (
     <path d="M17 1l3 3-3 3" />
   </Svg>
 );
+
+/** A crown (the admin's mark in the kill feed). */
+export const CrownIcon = (p: { size?: number; title?: string }) => (
+  <Svg {...p}>
+    <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" />
+  </Svg>
+);

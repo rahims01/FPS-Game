@@ -371,3 +371,13 @@ input[type='range']::-moz-range-thumb {
   --blue: #3fc7bf;
   --blue-slab: #1f8a84;
 }
+
+/* Phones and tablets: every control at least 44 px tall. */
+@media (pointer: coarse) {
+  .chip,
+  .bug-account,
+  .color-chip,
+  .code-input {
+    min-height: 44px;
+  }
+}

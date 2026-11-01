@@ -596,8 +596,21 @@
   top: 30%;
   bottom: auto;
   left: 170px;
-  right: 170px;
+  right: 264px;
   font-size: 13px;
+}
+/* The left column on touch is minimap, health, ammo: the ping goes top right and the streak list goes. */
+.hud.touch .perf {
+  top: 14px;
+  right: 14px;
+  left: auto;
+}
+.hud.touch .streak-picks,
+.hud.touch .streak .stance {
+  display: none;
+}
+.hud.touch .streak {
+  margin-bottom: 4px;
 }
 .hud.touch .hint kbd {
   font-size: 14px;

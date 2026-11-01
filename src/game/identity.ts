@@ -199,16 +199,6 @@ export const COLORS: PlayerColor[] = [
   { name: 'Brown', hex: 0x8a5a33 }
 ];
 
-/** Contrasting team pairs; one is picked per match and the sides are shuffled. */
-const TEAM_PAIRS: [number, number][] = [
-  [0, 1], // blue / red
-  [4, 6], // green / purple
-  [2, 5], // orange / teal
-  [3, 7], // yellow / pink
-  [8, 9], // white / black
-  [1, 5] // red / teal
-];
-
 export const cssColor = (hex: number): string => `#${hex.toString(16).padStart(6, '0')}`;
 
 /** True for colours too dark to read on the dark HUD panels; such names get a light outline. */
@@ -249,12 +239,13 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
     return { names, colors: agents.map((a) => teamColors[a.team === 0 ? 0 : 1]), teamColors, skins };
   }
   if (match.def.teams) {
-    const pair = TEAM_PAIRS[Math.floor(Math.random() * TEAM_PAIRS.length)];
-    const flip = Math.random() < 0.5;
-    const teamColors: [number, number] = [COLORS[pair[flip ? 1 : 0]].hex, COLORS[pair[flip ? 0 : 1]].hex];
+    // Your side is always blue, the other side red (colourblind modes swap these later).
+    const teamColors: [number, number] = [COLORS[0].hex, COLORS[1].hex];
     return { names, colors: agents.map((a) => teamColors[a.team === match.player.team ? 0 : 1]), teamColors, skins };
   }
-  const others = COLORS.map((c) => c.hex)
+  // Opponents never wear yellow: yellow means you.
+  const others = COLORS.filter((c) => c.name !== 'Yellow')
+    .map((c) => c.hex)
     .filter((h) => h !== playerColor)
     .sort(() => Math.random() - 0.5);
   let k = 0;

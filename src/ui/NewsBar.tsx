@@ -25,7 +25,8 @@ export const NewsBar = () => {
   const events = Object.entries(st.events)
     .filter(([, e]) => e.until > now)
     .sort((a, b) => a[1].from - b[1].from);
-  const news = st.news.filter((n) => !hidden.includes(n.id));
+  // The same announcement posted twice shows once.
+  const news = st.news.filter((n, i, all) => !hidden.includes(n.id) && all.findIndex((o) => o.text === n.text) === i);
   if (!st.maintenance && !events.length && !news.length) return null;
   const hide = (id: number) => {
     const next = [...hidden, id].slice(-50);

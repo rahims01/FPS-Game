@@ -1218,3 +1218,9 @@ li:first-child > .m-act {
     grid-template-columns: 1fr;
   }
 }
+
+/* The mission list scrolls inside the panel instead of stretching the page. */
+.campaign .m-list {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}

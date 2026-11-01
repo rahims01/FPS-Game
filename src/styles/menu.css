@@ -941,3 +941,70 @@
     position: static;
   }
 }
+
+/* Short screens (a game portal's window, phones on their side): a compact header, and the
+   one action that matters, FIND MATCH, pinned bottom-right so it's always in view. */
+@media (max-height: 620px), (max-width: 880px) {
+  .desk-rail .play.go {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 6;
+    width: min(380px, calc(100vw - 24px));
+    margin: 0;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  }
+  .desk {
+    padding-bottom: 110px;
+  }
+}
+@media (max-height: 620px) {
+  .bug-net {
+    height: 46px;
+    font-size: 26px;
+  }
+  .news-bar > :nth-child(n + 2) {
+    display: none;
+  }
+  .play-hero {
+    display: none;
+  }
+}
+
+/* Play tab banner: the stickmen, so the first screen shows the game. */
+.play-hero {
+  position: relative;
+  height: 168px;
+  margin: 0 0 18px;
+  overflow: hidden;
+  background: var(--navy) url('../assets/hero.jpg') center / cover no-repeat;
+}
+.play-hero span {
+  position: absolute;
+  left: 0;
+  bottom: 16px;
+  padding: 8px 40px 7px 18px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-cond);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  --shape: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  clip-path: var(--shape);
+}
+.play-hero small {
+  display: block;
+  color: var(--paper-ink);
+  font-family: var(--f-body);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* Long mode groups fold after four, with a chip to show the rest. */
+.mode-more {
+  justify-self: start;
+  margin-top: 2px;
+}

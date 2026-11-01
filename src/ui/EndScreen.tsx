@@ -104,7 +104,7 @@ export const EndScreen = ({
                 <span style={hud.teamColors ? { background: hud.teamColors[1], color: inkOn(hud.teamColors[1]) } : undefined}>{Math.floor(hud.scores[1])}</span>
               </b>
             )}
-            {!hud.spectator && <b className="xp-earned">+{hud.xp.toLocaleString()} XP</b>}
+            {!hud.spectator && <b className="xp-earned">{hud.xp > 0 ? `+${hud.xp.toLocaleString()} XP` : 'No XP this match'}</b>}
           </div>
         </header>
         {mission && (

@@ -91,7 +91,8 @@ const initialSettings = (): GameSettings => {
   } catch {
     /* no storage */
   }
-  const s = loadSettings(defaultName(), COLORS[Math.floor(Math.random() * COLORS.length)].hex);
+  // New players are yellow: in this game yellow always means you.
+  const s = loadSettings(defaultName(), COLORS.find((c) => c.name === 'Yellow')!.hex);
   if (fresh) {
     const q = suggestQuality();
     s.quality = q;
@@ -113,7 +114,10 @@ const LOBBY: { id: Difficulty; label: string }[] = [
 
 const audio = new GameAudio();
 
-const MODE_GROUPS = ['Practice', 'Team', 'Objective', 'Free-for-all', 'Party', 'Special', 'Online only'] as const;
+// Team play first: it's what most people come for. Practice sits further down.
+const MODE_GROUPS = ['Team', 'Objective', 'Free-for-all', 'Special', 'Party', 'Practice', 'Online only'] as const;
+/** Bars shown per group before "+N more". */
+const GROUP_PEEK = 4;
 
 /** Modes played on generated maps, which can come up at night. */
 const NIGHT_CHANCE = 0.18;
@@ -149,7 +153,8 @@ export const App = () => {
   const [brain, setBrain] = useState<Brain | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: 'menu' });
   const [tab, setTab] = useState<MenuTab>('play');
-  const [mode, setMode] = useState<ModeId>('1v1');
+  const [mode, setMode] = useState<ModeId>('tdm');
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [settings, setSettings] = useState<GameSettings>(initialSettings);
   const [showSettings, setShowSettings] = useState(false);
@@ -815,6 +820,25 @@ export const App = () => {
   };
   const def = modeDef(mode);
   const lobbyFull = joined >= def.players;
+  // Match found: deploy on our own after a short count (DEPLOY skips it, Cancel stops it).
+  const [deployIn, setDeployIn] = useState<number | null>(null);
+  const canDeploy = screen.kind === 'finding' && lobbyFull && !(mmState === 'client' && !mmWaitTimedOut);
+  useEffect(() => {
+    if (!canDeploy) {
+      setDeployIn(null);
+      return;
+    }
+    setDeployIn(3);
+    const t = window.setInterval(() => setDeployIn((n) => (n === null ? null : n - 1)), 1000);
+    return () => window.clearInterval(t);
+  }, [canDeploy]);
+  useEffect(() => {
+    if (deployIn !== 0 || !canDeploy) return;
+    setDeployIn(null);
+    if (mmState === 'client') stopSeeking();
+    deploy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deployIn]);
   const division = divisionOf(profile, rankedQueue);
   const teamDiv = divisionOf(profile, 'team');
   const duelDiv = divisionOf(profile, 'duel');
@@ -873,6 +897,7 @@ export const App = () => {
                   {fullscreen ? <ExitFullscreenIcon size={20} /> : <FullscreenIcon size={20} />}
                 </button>
               )}
+              {!embedded && (
               <div className="bug-live">
                 <b>LIVE</b>
                 <span className="live-full">
@@ -880,17 +905,29 @@ export const App = () => {
                 </span>
                 <span className="live-short">{(online / 1000).toFixed(1)}K online</span>
               </div>
+              )}
             </header>
             <NewsBar />
 
             {tab === 'play' ? (
               <div className="desk" key="play">
                 <div className="desk-main">
-                  {MODE_GROUPS.map((group) => (
+                  <div className="play-hero" role="img" aria-label="Stickman soldiers in a firefight">
+                    <span>
+                      Stickman FPS Game
+                      <small>Jump into a match in seconds, or play the campaign</small>
+                    </span>
+                  </div>
+                  {MODE_GROUPS.map((group) => {
+                    const all = MODES.filter((m) => m.group === group && !m.hidden);
+                    const open = openGroups.includes(group) || all.length <= GROUP_PEEK + 1;
+                    // Folded: the first few, plus your pick if it's further down.
+                    const shown = open ? all : all.filter((m, i) => i < GROUP_PEEK || m.id === mode);
+                    return (
                     <section key={group} className="mode-block">
                       <h2 className="mode-group">{group}</h2>
                       <div className="modes">
-                        {MODES.filter((m) => m.group === group && !m.hidden).map((m, i) => (
+                        {shown.map((m, i) => (
                           <button
                             key={m.id}
                             className={`mode g-${group.toLowerCase().replace(/[^a-z]/g, '')} ${mode === m.id ? 'on' : ''}`}
@@ -906,9 +943,15 @@ export const App = () => {
                             </span>
                           </button>
                         ))}
+                        {all.length > shown.length && (
+                          <button className="chip mode-more" onClick={() => setOpenGroups((g) => [...g, group])}>
+                            +{all.length - shown.length} more {group.toLowerCase()} modes
+                          </button>
+                        )}
                       </div>
                     </section>
-                  ))}
+                    );
+                  })}
                   <section className="controls" aria-label="Controls">
                     <h2 className="mode-group">Controls</h2>
                     <ControlsList settings={settings} />
@@ -1255,7 +1298,7 @@ export const App = () => {
                     deploy();
                   }}
                 >
-                  {lobbyFull ? 'DEPLOY' : 'WAITING…'}
+                  {lobbyFull ? (deployIn !== null && deployIn > 0 ? `DEPLOYING IN ${deployIn}` : 'DEPLOY') : 'WAITING…'}
                 </button>
               )}
               <button className="chip" onClick={toMenu}>

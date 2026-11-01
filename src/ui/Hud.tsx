@@ -6,7 +6,7 @@ import { THROWABLES } from '../sim/gear';
 import { CallingCard, LevelBadge } from './ProfilePanel';
 import { isClassroom, say } from '../game/words';
 import { inkOn } from './ink';
-import { HeadshotIcon } from './icons';
+import { HeadshotIcon, CrownIcon } from './icons';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -122,7 +122,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
             </span>
           </div>
         )}
-        {hud.ctf?.carrying && <div className="carrying">You have the flag — return to base!</div>}
+        {hud.ctf?.carrying && <div className="carrying">You have the flag. Get it back to base!</div>}
         {hud.gunTier && (
           <div className="gun-tier">
             {Array.from({ length: hud.gunTier.total }, (_, i) => (
@@ -199,7 +199,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
         </div>
       )}
       {hud.protected && hud.alive && <div className="protected">Spawn protection</div>}
-      {hud.outsideZone && <div className="warning">Outside the zone — get back in!</div>}
+      {hud.outsideZone && <div className="warning">Outside the zone. Get back in!</div>}
       {hud.blind !== null && (
         <div className="blindfold">
           <b>You are seeking</b>
@@ -256,7 +256,7 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
           ) : hud.canRespawn ? (
             <p>Click or press Space to respawn</p>
           ) : hud.mode.startsWith('br') || hud.mode === 'survival' ? null : hud.mode.startsWith('1') || hud.mode.startsWith('2') || hud.mode.startsWith('3') ? (
-            <p>Spectating — waiting for the round to end</p>
+            <p>Spectating until the round ends</p>
           ) : (
             <p>Respawning…</p>
           )}
@@ -273,7 +273,11 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
             ) : (
             <div key={f.id} className="feed-row">
               <span className={`${f.killerIsPlayer ? 'me' : ''} ${f.killerAdmin ? 'feed-admin' : isDark(f.killerColor) ? 'dark' : ''}`} style={f.killerAdmin ? undefined : { color: f.killerColor }}>
-                {f.killerAdmin && <b className="feed-crown" title="Admin">♛ </b>}
+                {f.killerAdmin && (
+                  <b className="feed-crown">
+                    <CrownIcon size={13} title="Admin" />{' '}
+                  </b>
+                )}
                 {f.killer}
               </span>
               <span className="gun">

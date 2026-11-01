@@ -1,4 +1,5 @@
 import type { WeaponId } from '../sim/weapons';
+import { embedded } from './platform';
 import type { SkinChoice } from '../assets/skins';
 import { DEFAULT_STREAKS, normalizeStreaks, type StreakId } from '../sim/killstreaks';
 import { DEFAULT_PERKS, normalizePerks, type PerkId, type ThrowableId } from '../sim/gear';
@@ -189,7 +190,8 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   damageNumbers: true,
   hitSounds: true,
   hints: true,
-  blood: true,
+  // Off by default inside game portals (their audience is 13+, PEGI 12); on everywhere else.
+  blood: !embedded,
   classroom: false,
   attachments: {},
   touchControls: 'auto',
