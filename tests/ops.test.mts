@@ -35,9 +35,15 @@ for (const mi of MISSIONS.filter((x) => x.op)) {
   const m = make({ kind: 'intel', items: 2, guards: 2, patrols: 0, stealth: true, size: 38 });
   const g = enemies(m)[0];
   const p = m.player;
-  tp(p, g.x + Math.sin(g.yaw) * 6, g.z + Math.cos(g.yaw) * 6);
+  // Stand 6 m away in whichever direction the guard has a clear view.
+  for (let k = 0; k < 16; k++) {
+    const yaw = (k / 16) * Math.PI * 2;
+    tp(p, g.x + Math.sin(yaw) * 6, g.z + Math.cos(yaw) * 6);
+    g.yaw = yaw;
+    if (m.sim.canSee(g, p)) break;
+  }
   let i = 0;
-  while (!m.op!.alarm && i++ < 60) { g.yaw = Math.atan2(p.x - g.x, p.z - g.z); m.step(NO); }
+  while (!m.op!.alarm && i++ < 240) { g.yaw = Math.atan2(p.x - g.x, p.z - g.z); m.step(NO); }
   ok('stealth: standing in front of a guard gets you spotted', m.op!.alarm, { s: m.op!.suspicion, i });
 }
 // Intel: grab both, then extract.
@@ -139,5 +145,31 @@ for (const mi of MISSIONS.filter((x) => x.op)) {
   const s = make({ kind: 'assassinate', targetName: 'B', loadout: ['sniper', 'pistol'], guards: 1, patrols: 0, stealth: true, size: 40 });
   ok('loadout: mission gives the sniper', s.player.weapons[0] === 'sniper');
 }
+// Enemies follow the mission's difficulty (higher skill is worse aim), Easy worst.
+{
+  const skills = (d: string) => new Match({ mode: 'op', difficulty: d, botControl: 'heuristic', seed: 3, op: { kind: 'defend', hold: 60, guards: 3, patrols: 0, stealth: false, size: 36 } } as any)
+    .sim.agents.filter((a) => a.team === 1).map((a) => a.skill);
+  const easy = Math.min(...skills('easy'));
+  const hard = Math.max(...skills('hard'));
+  ok('difficulty: easy enemies aim worse than hard ones', easy > hard && easy > 1.5, { easy, hard });
+}
+// Reinforcements wait for room: never more than maxAlive fighting at once.
+{
+  const m = make({ kind: 'defend', hold: 999, guards: 1, patrols: 0, stealth: false, reinforce: 10, maxAlive: 2, size: 36 });
+  m.player.hp = 1e9;
+  let most = 0;
+  for (let i = 0; i < 60 * 40; i++) { m.step(NO); m.player.hp = 100; most = Math.max(most, enemies(m).filter((a) => a.alive).length); }
+  ok('reinforce: capped at maxAlive', most <= 2, most);
+}
+// A guard on watch doesn't see you behind them.
+{
+  const m = make({ kind: 'intel', items: 2, guards: 1, patrols: 0, stealth: true, size: 38 });
+  const g = enemies(m)[0];
+  const p = m.player;
+  for (let i = 0; i < 120; i++) { g.yaw = 0; tp(p, g.x, g.z - 5); m.step(NO); }
+  ok('stealth: unseen from behind', !m.op!.alarm && m.op!.suspicion < 0.05, m.op!.suspicion);
+}
+// Every campaign mission caps how many fight at once.
+ok('campaign: every op has maxAlive', MISSIONS.filter((x) => x.op).every((x) => (x.op!.maxAlive ?? 0) >= 2));
 console.log(fails ? `${fails} FAILED` : "all passed");
 process.exitCode = fails ? 1 : 0;

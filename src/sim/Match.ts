@@ -640,6 +640,7 @@ export class Match {
         {
           sim,
           player: this.player,
+          skill: diff.skill,
           announce: (t, s) => this.announce(t, s),
           end: (win, text) => {
             this.finish(win, 0, win ? 0 : 1);

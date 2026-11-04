@@ -1211,6 +1211,9 @@ export class Game {
     const agents = this.match.sim.agents;
     if (this.match.mode === 'zombies' && agents[id]?.team === 1) return 'Zombie';
     if (agents[id]?.dummy) return agents[id].dummy === 'strafe' ? 'Moving Target' : 'Target';
+    // Campaign operations: everyone goes by their role, including reinforcements that arrive later.
+    const role = this.match.op?.names[id];
+    if (role) return role;
     // Survival waves are faceless: Enemy 1, Enemy 2, ...
     if (this.match.mode === 'survival' && agents[id]?.team === 1) return `Enemy ${agents.filter((a) => a.team === 1 && a.id <= id).length}`;
     return this.ids.names[id];

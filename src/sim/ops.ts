@@ -49,6 +49,8 @@ export interface OpSpec {
   lives?: number;
   /** A fixed loadout for the mission (otherwise your own). */
   loadout?: [WeaponId, WeaponId];
+  /** Most enemies fighting at once; reinforcements wait for room (default 4). */
+  maxAlive?: number;
 }
 
 export interface OpReport {
@@ -63,11 +65,16 @@ export interface OpReport {
 interface Host {
   sim: FpsSim;
   player: Agent;
+  /** Enemy aim from the mission's difficulty (higher is worse). */
+  skill: number;
   announce: (text: string, seconds?: number) => void;
   end: (win: boolean, text: string) => void;
 }
 
 const DT = 0.1;
+/** How far a guard on watch notices you (metres), and how wide they look (60° either side). */
+const SIGHT = 22;
+const GUARD_FOV_COS = Math.cos((60 * Math.PI) / 180);
 const NO: PlayerInput = { forward: 0, right: 0, yaw: 0, pitch: 0, fire: false, aim: false, reload: false, jump: false, sprint: false, crouch: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
 
 interface Site {
@@ -133,6 +140,7 @@ export class Operation {
     const enemy = (p: Point, name: string) => {
       const a = sim.spawn(1, 'heuristic', p.x, p.z, rand() * Math.PI * 2);
       a.style = 'soldier';
+      a.skill = this.aim();
       this.names[a.id] = name;
       this.enemies.push(a);
       return a;
@@ -181,7 +189,15 @@ export class Operation {
     // Escape: posted along the way out instead.
     const posts: Point[] = this.sites.length ? this.sites : spec.kind === 'escape' ? spawns.slice(Math.floor(spawns.length * 0.2), Math.max(1, Math.floor(spawns.length * 0.8))) : [goal];
     let n = 0;
-    for (let i = 0; i < spec.guards; i++) enemy(near(posts[i % posts.length], 7), `Guard ${++n}`);
+    // Never right on top of the objective, so there is room to sneak in.
+    const post = (c: Point): Point => {
+      for (let k = 0; k < 12; k++) {
+        const q = near(c, 10);
+        if (Math.hypot(q.x - c.x, q.z - c.z) >= 5) return q;
+      }
+      return near(c, 10);
+    };
+    for (let i = 0; i < spec.guards; i++) enemy(spec.stealth ? post(posts[i % posts.length]) : near(posts[i % posts.length], 7), `Guard ${++n}`);
     const others = spawns.filter((p) => far(p) > 18);
     for (let i = 0; i < spec.patrols; i++) enemy(near(others[(i * 3 + 1) % Math.max(1, others.length)] ?? goal, 4), `Sentry ${i + 1}`);
 
@@ -193,6 +209,11 @@ export class Operation {
     this.toReinforce = spec.reinforce ?? 0;
     if (!spec.stealth) this.raise(false);
     this.markers();
+  }
+
+  /** Campaign enemies aim a little worse than the same difficulty in a match: it's you against all of them. */
+  private aim(): number {
+    return this.host.skill * 1.25 * (0.85 + this.host.sim.rng.next() * 0.3);
   }
 
   get report(): OpReport {
@@ -343,13 +364,19 @@ export class Operation {
     let seen = 0;
     for (const g of this.enemies) {
       if (!g.alive) continue;
-      const d = Math.hypot(g.x - p.x, g.z - p.z);
+      const dx = p.x - g.x;
+      const dz = p.z - g.z;
+      const d = Math.hypot(dx, dz);
       if (g.hp < 100 || sim.time - g.lastHitT < 0.5) return this.raise(true, 'You were spotted!');
       if (shot && d < (w.suppressed ? 9 : 40)) return this.raise(true, 'They heard that!');
-      if (d < 28 && sim.canSee(g, p)) seen = Math.max(seen, (1 - d / 28) * 2.4 + 0.25);
+      if (d > SIGHT) continue;
+      // A guard on watch only sees what's in front of them, so you can walk up behind one.
+      if (d > 1.5 && (dx * Math.sin(g.yaw) + dz * Math.cos(g.yaw)) / d < GUARD_FOV_COS) continue;
+      // At a distance a glimpse barely registers; up close it adds up fast.
+      if (sim.canSee(g, p)) seen = Math.max(seen, (1 - d / SIGHT) * 1.3 + 0.12);
     }
-    if (seen > 0) this.suspicion += seen * DT * (p.crouching ? 0.5 : 1) * (p.sprinting ? 1.4 : 1);
-    else this.suspicion = Math.max(0, this.suspicion - 0.2 * DT);
+    if (seen > 0) this.suspicion += seen * DT * (p.crouching ? 0.4 : 1) * (p.sprinting ? 1.4 : 1);
+    else this.suspicion = Math.max(0, this.suspicion - 0.35 * DT);
     if (this.suspicion >= 1) this.raise(true, 'You were spotted!');
   }
 
@@ -371,17 +398,20 @@ export class Operation {
   private reinforce(): void {
     const sim = this.host.sim;
     if (!this.alarm || this.toReinforce <= 0 || sim.time < this.nextReinforce) return;
+    // Never more than a handful at once: reinforcements wait until some are down.
+    if (this.enemies.filter((e) => e.alive && e !== this.target).length >= (this.spec.maxAlive ?? 4)) return;
     const p = this.host.player;
     const spots = sim.arena.spawns.filter((s) => Math.hypot(s.x - p.x, s.z - p.z) > 22);
     const at = spots[sim.rng.int(Math.max(1, spots.length))] ?? sim.arena.spawns[0];
     const a = sim.spawn(1, 'heuristic', at.x, at.z, 0);
     a.style = 'soldier';
     setLoadout(a, [(['rifle', 'ak', 'smg', 'burst'] as WeaponId[])[sim.rng.int(4)], 'pistol']);
-    a.grenades = 1;
+    a.grenades = 0;
+    a.skill = this.aim();
     this.names[a.id] = 'Reinforcement';
     this.enemies.push(a);
     this.toReinforce--;
-    this.nextReinforce = sim.time + 4;
+    this.nextReinforce = sim.time + 6;
   }
 
   // ---------------------------------------------------------------- the hostage

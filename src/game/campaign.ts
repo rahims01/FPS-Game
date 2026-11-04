@@ -74,7 +74,7 @@ export const MISSIONS: Mission[] = [
   },
   {
     id: 'op1', act: ACT1, title: 'Quiet Entry', place: 'Stealth · Intel', mode: 'op', difficulty: 'easy',
-    op: { kind: 'intel', items: 2, guards: 3, patrols: 2, stealth: true, reinforce: 4, size: 38 },
+    op: { kind: 'intel', items: 2, guards: 2, patrols: 1, stealth: true, reinforce: 3, size: 38 },
     briefing: 'The Syndicate keeps its shipping logs in a warehouse on the edge of town. Slip in, take both intel cases and walk out. Guards stand watch: stay out of their sight, crouch to stay hidden, and remember a loud shot brings everyone running.',
     goals: [
       { text: 'Take the intel and get out', met: (r) => r.won },
@@ -84,8 +84,8 @@ export const MISSIONS: Mission[] = [
   },
   {
     id: 'op2', act: ACT1, title: 'The Courier', place: 'Assassination', mode: 'op', difficulty: 'easy',
-    op: { kind: 'assassinate', targetName: 'The Courier', guards: 3, patrols: 2, stealth: true, escapeAfter: 45, reinforce: 4, size: 38 },
-    briefing: 'A Syndicate courier is waiting on a pickup with three bodyguards. Take the courier out before the deal goes through. If the guards raise the alarm, the courier runs and you have 45 seconds.',
+    op: { kind: 'assassinate', targetName: 'The Courier', guards: 2, patrols: 1, stealth: true, escapeAfter: 60, reinforce: 3, size: 38 },
+    briefing: 'A Syndicate courier is waiting on a pickup with two bodyguards. Take the courier out before the deal goes through. If the guards raise the alarm, the courier runs and you have 60 seconds.',
     goals: [
       { text: 'Eliminate the Courier and get out', met: (r) => r.won },
       { text: 'Never get spotted', met: (r) => r.won && r.undetected },
@@ -93,12 +93,12 @@ export const MISSIONS: Mission[] = [
     ]
   },
   {
-    id: 'op3', act: ACT1, title: 'Hold the Bridge', place: 'Defend · 90 s', mode: 'op', difficulty: 'easy',
-    op: { kind: 'defend', hold: 90, guards: 3, patrols: 0, stealth: false, reinforce: 12, size: 36 },
-    briefing: 'Our convoy needs this crossing. Hold the marked position for 90 seconds while they throw everything at you. Time only counts while you’re inside the ring.',
+    id: 'op3', act: ACT1, title: 'Hold the Bridge', place: 'Defend · 60 s', mode: 'op', difficulty: 'easy',
+    op: { kind: 'defend', hold: 60, guards: 2, patrols: 0, stealth: false, reinforce: 8, size: 36 },
+    briefing: 'Our convoy needs this crossing. Hold the marked position for 60 seconds while they come at you a couple at a time. Time only counts while you’re inside the ring.',
     goals: [
-      { text: 'Hold for 90 seconds', met: (r) => r.won },
-      { text: 'Get 12 takedowns', met: (r) => r.won && r.kills >= 12 },
+      { text: 'Hold for 60 seconds', met: (r) => r.won },
+      { text: 'Get 6 takedowns', met: (r) => r.won && r.kills >= 6 },
       { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 }
     ]
   },
@@ -135,7 +135,7 @@ export const MISSIONS: Mission[] = [
   },
   {
     id: 'op7', act: ACT2, title: 'Behind Enemy Lines', place: 'Escape', mode: 'op', difficulty: 'normal',
-    op: { kind: 'escape', guards: 7, patrols: 0, stealth: false, reinforce: 8, size: 50 },
+    op: { kind: 'escape', guards: 5, patrols: 0, stealth: false, reinforce: 8, size: 50 },
     briefing: 'Your ride went down on the wrong side of the river, and every patrol knows you’re here. Fight your way across the map to the extraction point.',
     goals: [
       { text: 'Reach extraction', met: (r) => r.won },
@@ -175,12 +175,12 @@ export const MISSIONS: Mission[] = [
     ]
   },
   {
-    id: 'op11', act: ACT3, title: 'Firestorm', place: 'Defend · 150 s', mode: 'op', difficulty: 'hard',
-    op: { kind: 'defend', hold: 150, guards: 5, patrols: 0, stealth: false, reinforce: 26, size: 40 },
-    briefing: 'We’re pulling the last team out of the city and they need this landing zone. Hold it for two and a half minutes. Nobody is coming to help you until then.',
+    id: 'op11', act: ACT3, title: 'Firestorm', place: 'Defend · 120 s', mode: 'op', difficulty: 'hard',
+    op: { kind: 'defend', hold: 120, guards: 3, patrols: 0, stealth: false, reinforce: 18, size: 40 },
+    briefing: 'We’re pulling the last team out of the city and they need this landing zone. Hold it for two minutes. Nobody is coming to help you until then.',
     goals: [
-      { text: 'Hold for 150 seconds', met: (r) => r.won },
-      { text: 'Get 25 takedowns', met: (r) => r.won && r.kills >= 25 },
+      { text: 'Hold for 120 seconds', met: (r) => r.won },
+      { text: 'Get 15 takedowns', met: (r) => r.won && r.kills >= 15 },
       { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 }
     ]
   },
@@ -207,7 +207,7 @@ export const MISSIONS: Mission[] = [
   },
   {
     id: 'op14', act: ACT4, title: 'Last Ride', place: 'Escape', mode: 'op', difficulty: 'hard',
-    op: { kind: 'escape', guards: 12, patrols: 0, stealth: false, reinforce: 14, size: 56 },
+    op: { kind: 'escape', guards: 9, patrols: 0, stealth: false, reinforce: 14, size: 56 },
     briefing: 'They know who you are now, and every Syndicate fighter in the city is between you and the border. Get to extraction.',
     goals: [
       { text: 'Reach extraction', met: (r) => r.won },
@@ -226,6 +226,11 @@ export const MISSIONS: Mission[] = [
     ]
   }
 ];
+
+/** Most enemies fighting you at once, by act: one soldier shouldn't face a crowd. */
+const MAX_ALIVE: Record<string, number> = { [ACT1]: 2, [ACT2]: 3, [ACT3]: 3, [ACT4]: 4 };
+for (const m of MISSIONS) if (m.op) m.op.maxAlive ??= MAX_ALIVE[m.act];
+
 
 export const XP_PER_STAR = 500;
 /** The title for finishing every mission (see TITLES). */
