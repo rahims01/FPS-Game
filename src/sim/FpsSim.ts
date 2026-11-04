@@ -487,8 +487,17 @@ export class FpsSim {
     const p = { x: a.x + a.vx * dt, z: a.z + a.vz * dt };
     this.arena.resolveCircle(p, SOLDIER.radius, a.y);
     // Velocity the obstacles allowed, so sliding along a wall keeps its tangent speed.
+    // Being pushed out of a wall moves you but never speeds you up: otherwise someone
+    // shoved a metre into a crate is launched across the map.
+    const before = Math.hypot(a.vx, a.vz);
     a.vx = (p.x - a.x) / dt;
     a.vz = (p.z - a.z) / dt;
+    const after = Math.hypot(a.vx, a.vz);
+    if (after > before) {
+      const k = before / after;
+      a.vx *= k;
+      a.vz *= k;
+    }
     a.x = p.x;
     a.z = p.z;
     const ground = this.arena.groundHeight(a.x, a.z, SOLDIER.radius, a.y);

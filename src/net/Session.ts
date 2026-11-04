@@ -72,6 +72,8 @@ interface RemoteClient {
   input: PlayerInput;
   /** Latest reported body state, applied once per host tick. */
   state: { life: number; s: number[]; f: number; slide: number } | null;
+  /** When the host last took this client's position (performance.now). */
+  acceptedAt: number;
   /** When we last heard anything from them (clients ping every 2 s). */
   lastSeen: number;
 }
@@ -240,7 +242,7 @@ export class HostSession {
   }
 
   private accept(conn: DataConnection): void {
-    const client: RemoteClient = { conn, profile: null, playing: false, agentId: -1, started: false, input: blankInput(), state: null, lastSeen: performance.now() };
+    const client: RemoteClient = { conn, profile: null, playing: false, agentId: -1, started: false, input: blankInput(), state: null, lastSeen: performance.now(), acceptedAt: 0 };
     conn.on('data', (raw) => this.receive(client, raw as ClientMsg));
     conn.on('close', () => this.drop(client));
     conn.on('error', () => this.drop(client));
@@ -317,6 +319,8 @@ export class HostSession {
       inp.aim = b.aim;
       inp.sprint = b.sprint;
       inp.crouch = b.crouch;
+      inp.forward = msg.mv?.[0] ?? 0;
+      inp.right = msg.mv?.[1] ?? 0;
       inp.yaw = msg.s[6];
       inp.pitch = msg.s[7];
       // One-shot actions stay latched until the host has stepped once.
@@ -324,6 +328,7 @@ export class HostSession {
       inp.melee ||= b.melee;
       inp.grenade ||= b.grenade;
       inp.tactical ||= b.tactical;
+      inp.jump ||= !!b.jump;
       if (b.switchSlot >= 0) inp.switchSlot = b.switchSlot;
       client.state = { life: msg.life, s: msg.s, f: msg.f, slide: msg.slide };
     } else if (msg.t === 'chat') {
@@ -510,7 +515,12 @@ export class HostSession {
       // Trust the client's own movement (it is simulated with the same rules), but only for its current life.
       if (st && a.alive && st.life === a.life) {
         const [x, y, z, vx, vy, vz] = st.s;
-        if (Math.hypot(x - a.x, z - a.z) < 6) {
+        // A lag spike can leave the host's copy behind; allow it to catch up at sprinting
+        // speed and more, rather than refusing the client's position for good.
+        const now = performance.now();
+        const gap = c.acceptedAt ? (now - c.acceptedAt) / 1000 : 99;
+        if (Math.hypot(x - a.x, z - a.z) < 6 + 15 * gap) {
+          c.acceptedAt = now;
           a.x = x;
           a.y = y;
           a.z = z;
@@ -533,6 +543,7 @@ export class HostSession {
       c.input.melee = false;
       c.input.grenade = false;
       c.input.tactical = false;
+      c.input.jump = false;
       c.input.switchSlot = -1;
     }
   }
@@ -583,7 +594,7 @@ export class ClientSession {
   /** Smoothed round-trip time to the host, in milliseconds. */
   ping = 0;
   private pinger: number;
-  private buttons: NetButtons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
+  private buttons: NetButtons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1, jump: false };
 
   private constructor(
     private peer: Peer,
@@ -674,6 +685,7 @@ export class ClientSession {
     b.melee ||= input.melee;
     b.grenade ||= input.grenade;
     b.tactical ||= input.tactical;
+    b.jump ||= input.jump;
     if (input.switchSlot >= 0) b.switchSlot = input.switchSlot;
     // A quick semi-auto click between packets still counts as a shot.
     b.fire ||= input.fire;
@@ -689,10 +701,11 @@ export class ClientSession {
       s: [a.x, a.y, a.z, a.vx, a.vy, a.vz, input.yaw, input.pitch],
       f: (a.onGround ? 1 : 0) | (a.crouching ? 2 : 0) | (a.sprinting ? 4 : 0),
       slide: a.slideT,
-      b: { ...b, fire: b.fire || input.fire, aim: input.aim, sprint: input.sprint, crouch: input.crouch }
+      b: { ...b, fire: b.fire || input.fire, aim: input.aim, sprint: input.sprint, crouch: input.crouch },
+      mv: [input.forward, input.right]
     };
     this.conn.send(msg);
-    this.buttons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
+    this.buttons = { fire: false, aim: false, sprint: false, crouch: false, reload: false, melee: false, grenade: false, tactical: false, switchSlot: -1, jump: false };
   }
 
   leave(): void {

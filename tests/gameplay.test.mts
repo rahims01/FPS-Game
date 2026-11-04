@@ -75,5 +75,22 @@ const steps = (m: Match, n: number) => { for (let i = 0; i < n; i++) m.step(NO);
   ok('events: badges do not count toward Completionist', !!BADGES.find((b) => b.id === 'everything'));
 }
 
+// A soldier pushed into a wall is moved out, not launched across the map.
+{
+  const NO2: any = { forward: 0, right: 0, yaw: 0, pitch: 0, fire: false, aim: false, reload: false, jump: false, sprint: false, crouch: false, melee: false, grenade: false, tactical: false, switchSlot: -1 };
+  const m = new Match({ mode: '1v1', difficulty: 'normal', botControl: 'heuristic', seed: 1, humans: 2 } as any);
+  const a = m.sim.agents[1];
+  a.control = 'remote';
+  let worst = 0;
+  // Drop them at points all over the map (some inside crates and walls) and watch their speed.
+  for (let x = -24; x <= 24; x += 4)
+    for (let z = -24; z <= 24; z += 4) {
+      a.x = x; a.z = z; a.vx = a.vz = 0;
+      for (let i = 0; i < 20; i++) { m.sim.remoteInputs.set(1, NO2); m.step(NO2); worst = Math.max(worst, Math.hypot(a.vx, a.vz)); }
+    }
+  ok('physics: walls never launch a soldier', worst < 1, worst);
+  ok('physics: soldier stays on the map', Math.abs(a.x) <= m.sim.arena.half && Math.abs(a.z) <= m.sim.arena.half, { x: a.x, z: a.z });
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exitCode = fails ? 1 : 0;

@@ -15,9 +15,13 @@ const modeName = process.argv[2] ?? '1v1 Duel';
 const out = process.argv[3] ?? 'screenshots';
 fs.mkdirSync(out, { recursive: true });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9334', defaultViewport: null });
+const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9334', defaultViewport: null, protocolTimeout: 300000 });
+// Each page gets its own context: separate storage (two different players) and no stale cache.
+const contexts = [];
 const open = async (label) => {
-  const page = await browser.newPage();
+  const ctx = await browser.createBrowserContext();
+  contexts.push(ctx);
+  const page = await ctx.newPage();
   await page.setViewport({ width: 1100, height: 680 });
   page.on('pageerror', (e) => console.log(`[${label} pageerror] ${e.message}`));
   page.on('console', (m) => {
@@ -76,6 +80,31 @@ await wait(400);
 console.log('after guest walks:');
 console.log('host ', JSON.stringify(await report(host)));
 console.log('guest', JSON.stringify(await report(guest)));
+// While the guest walks, the host's copy should keep up (not stop and jump between packets).
+await guest.evaluate(() => { window.__fps.yaw += Math.PI; window.__fps.keys.add('KeyW'); });
+const lags = [];
+for (let i = 0; i < 8; i++) {
+  await wait(120);
+  const g = await guest.evaluate(() => { const me = window.__fps.match.player; return [me.x, me.z]; });
+  const h = await host.evaluate(() => { const a = window.__fps.match.sim.agents[1]; return [a.x, a.z]; });
+  lags.push(Math.hypot(g[0] - h[0], g[1] - h[1]));
+}
+await guest.evaluate(() => window.__fps.keys.delete('KeyW'));
+console.log('host copy behind the walking guest (m):', lags.map((v) => v.toFixed(2)).join(' '), Math.max(...lags) < 1.5 ? 'OK' : 'LAGS');
+// A lag spike: the guest ends up 12 m from where the host last had them. The host should catch up.
+const spike = await guest.evaluate(() => { const me = window.__fps.match.player; me.x += 12 * Math.sign(-me.x || 1); return { x: me.x, z: me.z }; });
+console.log('  spike to', JSON.stringify(spike));
+await wait(1200);
+const hostCopy = await host.evaluate(() => { const a = window.__fps.match.sim.agents[1]; return { x: a.x, z: a.z }; });
+const gap = Math.hypot(hostCopy.x - spike.x, hostCopy.z - spike.z);
+console.log('after a 12 m lag spike, host copy is', gap.toFixed(1), 'm away', gap < 2 ? 'OK' : 'STUCK');
+// The host moves the guest's copy. Players own their movement, so the two must simply agree again.
+const moved = await host.evaluate(() => { const a = window.__fps.match.sim.agents[1]; a.x += 10 * Math.sign(-a.x || 1); return { x: a.x, z: a.z }; });
+await wait(2200);
+const guestNow = await guest.evaluate(() => { const me = window.__fps.match.player; return { x: me.x, z: me.z }; });
+const hostNow = await host.evaluate(() => { const a = window.__fps.match.sim.agents[1]; return { x: a.x, z: a.z }; });
+const off = Math.hypot(guestNow.x - hostNow.x, guestNow.z - hostNow.z);
+console.log('after the host moves the guest, the two screens are', off.toFixed(1), 'm apart', off < 2 ? 'OK' : 'DESYNC', JSON.stringify(moved));
 // The host walks into the open 6 m in front of the guest; the guest aims and fires.
 await host.evaluate(() => {
   const g = window.__fps;
@@ -91,11 +120,11 @@ await guest.evaluate(() => {
   const target = g.match.sim.agents[0];
   g.yaw = Math.atan2(target.x - me.x, target.z - me.z);
   g.pitch = -0.08;
-  g.mouse.left = true;
+  g.keys.add('Mouse0');
 });
 await wait(1200);
 await guest.evaluate(() => {
-  window.__fps.mouse.left = false;
+  window.__fps.keys.delete('Mouse0');
 });
 await wait(500);
 console.log('after guest fires:');
@@ -108,4 +137,5 @@ await wait(7500);
 const ended = await guest.evaluate(() => window.__fps?.netMessage ?? null);
 console.log('guest after host leaves:', ended);
 await guest.close();
+for (const c of contexts) await c.close();
 await browser.disconnect();

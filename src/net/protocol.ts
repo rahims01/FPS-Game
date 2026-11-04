@@ -15,7 +15,7 @@ import type { WeaponId } from '../sim/weapons';
  * instant), send their position and button state, and draw everything else
  * from the host's snapshots.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const PEER_PREFIX = 'fpsgame-v1-';
 export const SNAPSHOT_HZ = 20;
 
@@ -72,6 +72,7 @@ export interface NetButtons {
   grenade: boolean;
   tactical: boolean;
   switchSlot: number;
+  jump: boolean;
 }
 
 export type ClientMsg =
@@ -86,6 +87,8 @@ export type ClientMsg =
       f: number;
       slide: number;
       b: NetButtons;
+      /** Movement keys (forward, right), so the host keeps you moving between packets. */
+      mv: [number, number];
     }
   | { t: 'bye' }
   | { t: 'ping'; at: number }

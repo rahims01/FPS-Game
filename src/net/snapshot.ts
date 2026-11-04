@@ -171,6 +171,8 @@ const applyAgent = (a: Agent, r: AgentNet, me: boolean, targets: Map<number, Net
       a.vx = a.vy = a.vz = 0;
     }
     a.alive = alive;
+    // Kept so the game can notice when the host has us somewhere else.
+    targets.set(a.id, pos);
     return;
   }
   a.alive = alive;

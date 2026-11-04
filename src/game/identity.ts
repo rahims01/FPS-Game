@@ -1,51 +1,36 @@
-import { randomSkin, type SkinChoice } from '../assets/skins';
-import { MELEES } from '../assets/melees';
+import { SKINS, type SkinChoice } from '../assets/skins';
 import type { Match } from '../sim/Match';
 import { MORE_FIRST_NAMES, MORE_TAG_FIRST, MORE_TAG_SECOND, MORE_USERNAMES, TAG_ADJ, TAG_WORDS } from './usernames';
 
 /** Gamer tags for the other players in the lobby. */
 const USERNAMES = [
-  'xXSniperXx', 'NoScopeNinja', 'Ghost_42', 'TTV_Blaze', 'ShadowHunter', 'Kai2009', 'lil_tactics', 'FragMaster',
-  'HeadshotHank', 'PixelPusher', 'Raptor_77', 'DarkKnight', 'sweatyboi', 'ItzJake', 'Vortex', 'MrClutch',
-  'ZeroCool', 'BigChungus', 'Toxic_Tom', 'QuickScope', 'NightOwl', 'BlazeIt420', 'Sn1perW0lf', 'GG_EZ',
-  'CampLord', 'Bulletproof', 'yeet_master', 'RektYou', 'SilentStorm', 'Phantom_X', 'TryHard99', 'CaptainLag',
-  'Kr4ken', 'xD_Gamer', 'NoobSlayer', 'CoffeeAddict', 'ProbablyAFK', 'WiFiWarrior', 'Mav3rick', 'IceCold',
-  'Reaper_01', 'Toaster', 'SweatLord', 'potato_aim', 'BoomHeadshot', 'Dr_Frag', 'Lethal_Lily', 'NovaStar',
-  'ItsBrandon', 'Zyrex', 'Kappa_Pride', 'Wolfpack', 'FlickGod', 'eggplant', 'Juicy_J', 'LowPing',
-  'Rambo2012', 'TacoTuesday', 'SneakyPete', 'ApexPred', 'Dingus', 'Viper_YT', 'Nebula', 'MomSaysBedtime',
-  'Spray_n_Pray', 'Crimson', 'jxsh', 'Sergeant_Salt', 'OneTap', 'Hydra', 'BushCamper', 'LagSwitch',
-  'Glitch', 'KillJoy', 'Valk', 'Tilted', 'Bandit', 'xXGamerGirlXx', 'Frosty', 'Orbit',
-  'xX_Slayer_Xx', 'DeadEye', 'Specter', 'ToxicAvenger', 'KushKing', 'Mr_Bean_Bag', 'quickscopez', 'TTV_Ninja_Jr',
+  'xXSniperXx', 'NoScopeNinja', 'Ghost_42', 'ShadowHunter', 'Kai2009', 'lil_tactics', 'FragMaster', 'HeadshotHank',
+  'PixelPusher', 'Raptor_77', 'DarkKnight', 'sweatyboi', 'ItzJake', 'Vortex', 'MrClutch', 'ZeroCool',
+  'Toxic_Tom', 'QuickScope', 'NightOwl', 'Sn1perW0lf', 'GG_EZ', 'CampLord', 'Bulletproof', 'yeet_master',
+  'RektYou', 'SilentStorm', 'Phantom_X', 'TryHard99', 'CaptainLag', 'Kr4ken', 'xD_Gamer', 'NoobSlayer',
+  'CoffeeAddict', 'ProbablyAFK', 'WiFiWarrior', 'Mav3rick', 'IceCold', 'Reaper_01', 'Toaster', 'SweatLord',
+  'potato_aim', 'BoomHeadshot', 'Dr_Frag', 'Lethal_Lily', 'NovaStar', 'ItsBrandon', 'Zyrex', 'Wolfpack',
+  'FlickGod', 'eggplant', 'LowPing', 'Rambo2012', 'TacoTuesday', 'SneakyPete', 'ApexPred', 'Dingus',
+  'Nebula', 'MomSaysBedtime', 'Spray_n_Pray', 'Crimson', 'jxsh', 'Sergeant_Salt', 'OneTap', 'Hydra',
+  'BushCamper', 'LagSwitch', 'Glitch', 'KillJoy', 'Valk', 'Tilted', 'Bandit', 'xXGamerGirlXx',
+  'Frosty', 'Orbit', 'xX_Slayer_Xx', 'DeadEye', 'Specter', 'ToxicAvenger', 'Mr_Bean_Bag', 'quickscopez',
   'Zombie_Slayer', 'PewPewPew', 'Bacon_Strips', 'SaltyDog', 'clutch_or_kick', 'Nightmare', 'xXDarkLordXx', 'RageQuit',
-  'Sp00ky', 'TheRealDeal', 'BigBoss', 'Shrek_Is_Love', 'ImHim', 'no_u', 'Bruh_Moment', 'Chad_Energy',
-  'GoldenGun', 'AimBotAndy', 'Wh1sper', 'ColdBlooded', 'xxKillerxx', 'Ace_of_Spades', 'Gh0stRid3r', 'Panda_Express',
-  'ChickenNugget', 'Mr_Sniper_Pants', 'LagMonster', 'ilovecats', 'WatermelonMan', 'Toast_Master', 'Steve', 'Kevin2011',
-  'Aiden_YT', 'Liam_Plays', 'NoahTheGreat', 'ElijahGG', 'OliverTwist', 'JamesBond007', 'Lucas_Gamer', 'MasonMaster',
-  'EthanHunt', 'LoganPaulFan', 'JacobTheGreat', 'MichaelMyers', 'Daniel_Sam', 'Henry_VIII', 'JackSparrow', 'Sebastian',
-  'Mateo_10', 'Ryan_R', 'Carter_C', 'Jayden_J', 'Wyatt', 'Grayson', 'Leo_TheLion', 'Lincoln_Log',
-  'Emma_Plays', 'OliviaRod', 'Ava_Max', 'SophiaS', 'Isabella', 'MiaMia', 'Charlotte_C', 'Amelia_A',
-  'Harper', 'Evelyn', 'Abby_Gail', 'Em1ly', 'Ella_Ella', 'Lizzie', 'Scarlett_J', 'Zoey101',
-  'Sn1pez', 'Frag_Out', 'Tango_Down', 'Charlie_Mike', 'Oscar_Mike', 'Danger_Close', 'Foxtrot', 'Bravo_Six',
-  'Overwatch', 'Sierra117', 'MasterChief', 'Cortana', 'Arbiter', 'Spartan_Locke', 'Noble6', 'Kat_B320',
-  'Soap_MacTavish', 'Ghost_Riley', 'Captain_Price', 'Gaz', 'Roach', 'Makarov', 'Zakhaev', 'Shepherd',
-  'Leon_K', 'ClaireR', 'Jill_Valentine', 'ChrisRedfield', 'Ada_Wong', 'Wesker', 'Nemesis', 'Tyrant',
-  'Kratos', 'Atreus', 'Ellie_W', 'JoelMiller', 'Abby_A', 'Arthur_Morgan', 'Dutch_V', 'JohnMarston',
-  'Geralt', 'Ciri', 'Yennefer', 'Dandelion', 'Link_Hero', 'Zelda_Fan', 'Ganon', 'Navi_Hey_Listen',
-  'Mario_Bros', 'LuigiTime', 'Wario64', 'Yoshi', 'KirbySucks', 'MetaKnight', 'Samus', 'FoxMcCloud',
-  'Pikachu', 'Charizard', 'Mewtwo', 'Snorlax_Nap', 'Gengar', 'Lucario', 'Eevee', 'Bulbasaur',
-  'creeper_aww_man', 'Herobrine', 'Notch_Fan', 'diamond_pickaxe', 'enderman', 'xXSteveXx', 'Alex_MC', 'Villager_Hmm',
-  'Sus_Imposter', 'RedSus', 'Emergency_Meeting', 'vent_jumper', 'Crewmate', 'Ejected', 'Sabotage', 'TaskMaster',
-  'FortniteKid', 'Default_Dance', 'BushWookie', 'TiltedTowers', 'VictoryRoyale', 'ChugJug', 'Llama_Drama', 'NoBuildPro',
-  'Apex_Wraith', 'BloodhoundBro', 'LifelineHeal', 'Pathy', 'Octane_Stim', 'GibbyBubble', 'Caustic', 'Mirage_Bamboozle',
-  'Valorant_Jett', 'Sage_Res', 'Reyna_Feed', 'PhoenixRise', 'Omen_Tp', 'CypherCam', 'KillJoy_Turret', 'Sova_Dart',
-  'Tracer_Blink', 'Genji_Main', 'MercyMain', 'Reinhardt', 'D_Va', 'Widowmaker', 'Hanzo_Main', 'Lucio_Ball',
-  'sigma_grindset', 'GigaChad', 'based_god', 'rizzlord', 'skibidi', 'ohio_final_boss', 'npc_behavior', 'touchgrass',
-  'MainCharacter', 'goblin_mode', 'big_yikes', 'no_cap', 'bussin', 'lowkey_cracked', 'highkey_bad', 'sheeeesh',
-  'DadBod42', 'SoccerMom', 'GrandpaGamer', 'WorkFromHome', 'OfficeSpace', 'MondayBlues', 'CasualFriday', 'Overtime',
-  'PizzaRat', 'TrashPanda', 'Goose_Honk', 'DuckDuckGoose', 'Possum_Play', 'Sloth_Speed', 'TurboTurtle', 'Hamster_Wheel',
-  'Captain_Crunch', 'FrootLoop', 'Cheerio', 'PopTart', 'Hot_Pocket', 'Mac_n_Cheese', 'Taco_Bell', 'Ramen_Noodle',
-  'Thunder', 'Lightning', 'Blizzard', 'Typhoon', 'Tornado', 'Avalanche', 'Earthquake', 'Volcano',
-  'Wraith', 'Banshee', 'Revenant', 'Poltergeist', 'Shade', 'Spirit', 'Wight', 'Lich_King',
+  'Sp00ky', 'TheRealDeal', 'BigBoss', 'ImHim', 'no_u', 'Bruh_Moment', 'Chad_Energy', 'GoldenGun',
+  'AimBotAndy', 'Wh1sper', 'ColdBlooded', 'xxKillerxx', 'Ace_of_Spades', 'Gh0stRid3r', 'ChickenNugget', 'Mr_Sniper_Pants',
+  'LagMonster', 'ilovecats', 'WatermelonMan', 'Toast_Master', 'Steve', 'Kevin2011', 'Liam_Plays', 'NoahTheGreat',
+  'ElijahGG', 'OliverTwist', 'Lucas_Gamer', 'MasonMaster', 'JacobTheGreat', 'Daniel_Sam', 'Sebastian', 'Mateo_10',
+  'Ryan_R', 'Carter_C', 'Jayden_J', 'Wyatt', 'Grayson', 'Leo_TheLion', 'Lincoln_Log', 'Emma_Plays',
+  'SophiaS', 'Isabella', 'MiaMia', 'Charlotte_C', 'Amelia_A', 'Harper', 'Evelyn', 'Abby_Gail',
+  'Em1ly', 'Ella_Ella', 'Lizzie', 'Sn1pez', 'Frag_Out', 'Tango_Down', 'Charlie_Mike', 'Oscar_Mike',
+  'Danger_Close', 'Foxtrot', 'Bravo_Six', 'Arbiter', 'Gaz', 'Roach', 'Shepherd', 'Nemesis',
+  'Tyrant', 'diamond_pickaxe', 'xXSteveXx', 'Sus_Imposter', 'RedSus', 'Emergency_Meeting', 'vent_jumper', 'Crewmate',
+  'Ejected', 'Sabotage', 'TaskMaster', 'Default_Dance', 'BushWookie', 'Llama_Drama', 'NoBuildPro', 'Caustic',
+  'sigma_grindset', 'GigaChad', 'based_god', 'rizzlord', 'ohio_final_boss', 'npc_behavior', 'touchgrass', 'MainCharacter',
+  'goblin_mode', 'big_yikes', 'no_cap', 'bussin', 'lowkey_cracked', 'highkey_bad', 'sheeeesh', 'DadBod42',
+  'SoccerMom', 'GrandpaGamer', 'WorkFromHome', 'OfficeSpace', 'MondayBlues', 'CasualFriday', 'Overtime', 'PizzaRat',
+  'TrashPanda', 'Goose_Honk', 'DuckDuckGoose', 'Possum_Play', 'Sloth_Speed', 'TurboTurtle', 'Hamster_Wheel', 'Mac_n_Cheese',
+  'Ramen_Noodle', 'Thunder', 'Lightning', 'Blizzard', 'Typhoon', 'Tornado', 'Avalanche', 'Earthquake',
+  'Volcano', 'Wraith', 'Banshee', 'Revenant', 'Poltergeist', 'Shade', 'Spirit', 'Wight',
   'Cobra', 'Mamba', 'Python', 'Rattler', 'Anaconda', 'Komodo', 'Gator', 'Croc',
   'Falcon', 'Hawk', 'Eagle_Eye', 'Raven', 'Crow', 'Owl', 'Condor', 'Vulture',
   'Titan', 'Atlas_Prime', 'Kronos', 'Hyperion', 'Prometheus', 'Zeus', 'Ares', 'Athena'
@@ -103,11 +88,13 @@ const casualTag = (rand: () => number): string => {
  */
 const FOREIGN_USERNAMES = [
   // Spanish / Latin American
-  'ElTerrible', 'Chamaco_MX', 'ElPibe10', 'Calaca', 'LosPollosHermanos', 'xXElMatadorXx', 'Pancho_Villa', 'Guerrero', 'ElDiablito', 'ChupaCabra', 'Tío_Rico', 'NoMeMates',
+  'ElTerrible', 'Chamaco_MX', 'ElPibe10', 'Calaca', 'LosPollosHermanos', 'xXElMatadorXx', 'Pancho_Villa', 'Guerrero',
+  'ElDiablito', 'ChupaCabra', 'Tío_Rico', 'NoMeMates',
   // Portuguese / Brazilian
   'BRZ_Matador', 'Capivara', 'Moleque_BR', 'kkkkkkk', 'Saci_Perere', 'Tranquilo', 'Brabo', 'Joãozinho',
   // French / German / Dutch / Nordic
-  'LeFromage', 'Baguette_Sniper', 'Croissant', 'KartoffelKopf', 'Schnitzel99', 'DerJäger', 'Blitzkrieger', 'Ijsbeer', 'Stroopwafel', 'Viking_Øl', 'Hjärtat', 'Sisu',
+  'LeFromage', 'Baguette_Sniper', 'Croissant', 'KartoffelKopf', 'Schnitzel99', 'DerJäger', 'Blitzkrieger', 'Ijsbeer',
+  'Stroopwafel', 'Viking_Øl', 'Hjärtat', 'Sisu',
   // Italian / Polish / Russian / Ukrainian (Latin)
   'Pizzaiolo', 'Mamma_Mia', 'Bigos', 'Pierogi', 'Medved', 'Tovarisch', 'Babushka', 'Slav_Squat', 'Borscht', 'Kozak',
   // Turkish / Arabic / Persian (Latin)
@@ -231,15 +218,15 @@ export const assignIdentities = (match: Match, playerName: string, playerColor: 
   friendsNext = [];
   let next = 0;
   const names = agents.map((a) => (a === match.player ? playerName : tags[next++ % tags.length]));
-  // Other players show off a camo on the gun they carry now and then.
-  const skins = agents.map((a): SkinChoice | null => (a === match.player ? playerSkins : Object.fromEntries([...a.weapons, ...MELEES.map((m) => m.id)].map((w) => [w, randomSkin()]))));
+  // Other players: the camo they always run, if they have one (the game drops it for obvious bots).
+  const skins = agents.map((a, i): SkinChoice | null => (a === match.player ? playerSkins : lookingLikeAPlayer(names[i], a.weapons)));
   if (match.mode === 'zombies') {
-    // Survivors in blue, the horde in rotten green.
+  // Survivors in blue, the horde in rotten green.
     const teamColors: [number, number] = [0x3d7bd9, 0x5f8a2f];
     return { names, colors: agents.map((a) => teamColors[a.team === 0 ? 0 : 1]), teamColors, skins };
   }
   if (match.def.teams) {
-    // Your side is always blue, the other side red (colourblind modes swap these later).
+  // Your side is always blue, the other side red (colourblind modes swap these later).
     const teamColors: [number, number] = [COLORS[0].hex, COLORS[1].hex];
     return { names, colors: agents.map((a) => teamColors[a.team === match.player.team ? 0 : 1]), teamColors, skins };
   }
@@ -282,6 +269,36 @@ const hash = (s: string): number => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
+};
+
+/** Random numbers fixed by a player's name, so the same person looks the same every match. */
+export const nameRand = (name: string, salt: string): (() => number) => {
+  let s = hash(`${name}#${salt}`);
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/**
+ * The camo a player-like bot runs: the same every match for the same name, and only
+ * what someone at their level could have earned. Most people run Factory; a few put
+ * one camo on their main gun (sometimes their pistol too); only veterans have the
+ * animated or mastery ones.
+ */
+export const lookingLikeAPlayer = (name: string, weapons: readonly string[]): SkinChoice | null => {
+  const rand = nameRand(name, 'camo');
+  const level = levelFor(name);
+  if (level < 5 || rand() < 0.55) return null;
+  const fancy = level >= 45 && rand() < 0.3;
+  // Roughly the kills a player at this level has on their favourite gun.
+  const budget = level * 6;
+  const pool = SKINS.filter((k) => k.id !== 'none' && k.kills < 1_000_000 && (fancy ? !!k.kind : !k.kind && k.kills <= budget));
+  if (!pool.length || !weapons[0]) return null;
+  const camo = pool[Math.floor(rand() * pool.length)].id;
+  return rand() < 0.35 && weapons[1] ? { [weapons[0]]: camo, [weapons[1]]: camo } : { [weapons[0]]: camo };
 };
 
 /**

@@ -28,7 +28,7 @@ import { SIM } from '../sim/config';
 import type { Brain, PlayerInput, SimEvent } from '../sim/FpsSim';
 import { heuristicBrain } from '../sim/heuristicBrain';
 import { Match, PRACTICE_MODES, type MatchOptions, type ModeId } from '../sim/Match';
-import { assignIdentities, basePingFor, COLORS, cssColor, freshNames, lateJoinerColor, levelFor, randomUsername, type Identities } from './identity';
+import { assignIdentities, basePingFor, COLORS, cssColor, freshNames, lateJoinerColor, levelFor, nameRand, randomUsername, type Identities } from './identity';
 import { botFriendByName, botFriends } from './botFriends';
 import { COURSE } from '../sim/layouts';
 import type { MissionRun } from './campaign';
@@ -440,6 +440,8 @@ export class Game {
   netMessage: string | null = null;
   private ticker: Worker | null = null;
   private lastSnapAt = performance.now();
+  private lastSnapTime = -Infinity;
+  private driftSince = 0;
   // Killcam (1v1 only): a short history of every agent plus the shots fired.
   private history: { t: number; s: Snap[]; world: WorldSnap }[] = [];
   /** Every shot (pellets included) for the killcam: tracers, impacts, blood and hit reactions. */
@@ -608,20 +610,26 @@ export class Game {
       this.ids = assignIdentities(this.match, opts.watch ? freshNames(1)[0] : settings.playerName || 'Player', settings.playerColor, settings.skins);
       // The admin's team wears the admin's colour (the other side gets one that stands apart).
       if (!opts.watch && account().user?.role === 'admin' && this.ids.teamColors) recolorTeam(this.ids, this.match, this.match.player.team, settings.playerColor);
+      // Obvious bots (campaign, practice, zombies, waves, labelled room bots) carry factory guns;
+      // only the ones playing as real people show a camo.
+      for (const a of this.match.sim.agents) if (a !== this.match.player && !this.passesAsPlayer(a)) this.ids.skins[a.id] = null;
       // Everyone else's calling card and emblem (yours from the menu).
       this.cosmetics = this.match.sim.agents.map((a) => {
         if (a === this.match.player && !opts.watch) {
           const role = account().user?.role;
           return { ...settings.cosmetics, prestige: loadProfile().prestige, ...(role === 'admin' || role === 'mod' ? { staff: role } : {}) };
         }
-        if (a.dummy) return null;
+        if (a.dummy || !this.passesAsPlayer(a)) return null;
         // Bot friends wear what they always wear.
         const friend = botFriendByName(this.ids.names[a.id]);
         if (friend?.state === 'friends') return { ...friend.cosmetics, prestige: friend.prestige };
         // Other players wear what they've unlocked; long-time players have often prestiged.
-        const lvl = levelFor(this.ids.names[a.id]);
-        const prestige = a.smurf ? 0 : lvl > 30 && Math.random() < 0.3 ? 1 + Math.floor(Math.random() * Math.random() * 6) : 0;
-        return randomCosmetics(lvl, Math.random, prestige);
+        // Fixed by name: the same player wears the same card, emblem and prestige every match.
+        const name = this.ids.names[a.id];
+        const lvl = levelFor(name);
+        const rand = nameRand(name, 'look');
+        const prestige = a.smurf ? 0 : lvl > 30 && rand() < 0.3 ? 1 + Math.floor(rand() * rand() * 6) : 0;
+        return randomCosmetics(lvl, rand, prestige);
       });
       this.clanTags();
       // Campaign operations: the target, hostage and guards go by their roles, with no gamer cosmetics.
@@ -1196,6 +1204,15 @@ export class Game {
     return this.match.sim.arena.lineOfSight(c.x, c.y, c.z, tx, ty, tz);
   }
 
+  /** Bots that stand in for real people (matchmaking lobbies), rather than obvious ones. */
+  private passesAsPlayer(a: Agent): boolean {
+    const m = this.match;
+    if (a.dummy || a.robotic || m.op || PRACTICE_MODES.includes(m.mode)) return false;
+    if ((m.mode === 'zombies' || m.mode === 'survival') && a.team === 1) return false;
+    // Hosted rooms label their bots "Bot 1", "Bot 2"...
+    return !(this.net && !this.party && !this.isPublic);
+  }
+
   /** Players who joined after the start (survival waves) get a name and colour on first sight. */
   private ensureIdentity(id: number): void {
     const a = this.match.sim.agents[id];
@@ -1498,7 +1515,7 @@ export class Game {
 
   /** Bot squads that queued together wear a shared clan tag. */
   private clanTags(): void {
-    const TAGS = ['[GG]', '[OG]', '[TTV]', '[SWAT]', '[KOS]', '[NoX]', '[EZ]', '[RIP]', '[FaZz]', '[W33D]', '[MLG]', '[ACE]', '[VOID]', '[DUSK]'];
+    const TAGS = ['[GG]', '[OG]', '[TTV]', '[SWAT]', '[KOS]', '[NoX]', '[EZ]', '[RIP]', '[MLG]', '[ACE]', '[VOID]', '[DUSK]'];
     const groups = new Map<number, Agent[]>();
     for (const a of this.match.sim.agents) {
       if (a === this.match.player || a.squad < 0) continue;
@@ -1829,8 +1846,26 @@ export class Game {
   /** Client: a snapshot from the host. */
   private onSnapshot(snap: Snapshot): void {
     const me = this.match.player.id;
-    this.lastSnapAt = performance.now();
+    // A late snapshot would put everyone back where they were a moment ago.
+    if (snap.time < this.lastSnapTime) return;
+    this.lastSnapTime = snap.time;
+    const now = performance.now();
+    this.lastSnapAt = now;
     applySnapshot(this.match, snap, me, this.netTargets);
+    // If the host has had us somewhere else for over a second (pushed, moved by the
+    // match, or our position was lost), go where everyone else sees us.
+    const p = this.match.player;
+    const hostPos = this.netTargets.get(me);
+    if (hostPos && p.alive && !this.spectator && Math.hypot(hostPos.x - p.x, hostPos.z - p.z) > 4) {
+      this.driftSince ||= now;
+      if (now - this.driftSince > 1000) {
+        p.x = hostPos.x;
+        p.y = hostPos.y;
+        p.z = hostPos.z;
+        p.vx = p.vy = p.vz = 0;
+        this.driftSince = 0;
+      }
+    } else this.driftSince = 0;
     // Our own shots, swings and reloads were already shown locally.
     const events = snap.ev.filter((e) => {
       if (e.type === 'shot') return e.shooter !== me;
