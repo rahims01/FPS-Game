@@ -1317,7 +1317,7 @@ export const App = () => {
       )}
       {screen.kind === 'playing' && hud && (
         <>
-          <Hud hud={hud} minimap={minimap} settings={settings} />
+          <Hud hud={hud} minimap={minimap} settings={settings} onLoadout={(i) => game.current?.pickLoadout(i)} />
           {hud.online && !hud.publicMatch && (
             <ChatBox lines={chat} onSend={sendChat} inGame open={hud.chatOpen} onClose={() => game.current?.closeChat()} now={Date.now()} />
           )}

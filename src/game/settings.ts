@@ -154,6 +154,9 @@ export interface GameSettings {
   lethal: ThrowableId;
   tactical: ThrowableId;
   perks: PerkId[];
+  /** Saved loadouts; the guns, gear, perks and streaks above are the active one's. */
+  loadouts: Loadout[];
+  activeLoadout: number;
   cosmetics: Cosmetics;
   access: Accessibility;
   pad: PadSettings;
@@ -172,6 +175,56 @@ export interface GameSettings {
 }
 
 const KEY = 'fps-settings-v3';
+
+/** One saved class: what you spawn with. */
+export interface Loadout {
+  name: string;
+  primary: WeaponId;
+  secondary: WeaponId;
+  lethal: ThrowableId;
+  tactical: ThrowableId;
+  perks: PerkId[];
+  streaks: StreakId[];
+}
+
+export const LOADOUT_SLOTS = 5;
+
+/** Starting classes, so every slot is useful before you've touched it. */
+const STARTER_LOADOUTS = (): Loadout[] => [
+  { name: 'Assault', primary: 'rifle', secondary: 'pistol', lethal: 'frag', tactical: 'flash', perks: DEFAULT_PERKS.slice(), streaks: DEFAULT_STREAKS.slice() },
+  { name: 'Rusher', primary: 'smg', secondary: 'pistol', lethal: 'frag', tactical: 'smoke', perks: DEFAULT_PERKS.slice(), streaks: DEFAULT_STREAKS.slice() },
+  { name: 'Marksman', primary: 'sniper', secondary: 'deagle', lethal: 'frag', tactical: 'smoke', perks: DEFAULT_PERKS.slice(), streaks: DEFAULT_STREAKS.slice() },
+  { name: 'Breacher', primary: 'shotgun', secondary: 'mpistol', lethal: 'molotov', tactical: 'flash', perks: DEFAULT_PERKS.slice(), streaks: DEFAULT_STREAKS.slice() },
+  { name: 'Heavy', primary: 'lmg', secondary: 'revolver', lethal: 'frag', tactical: 'flash', perks: DEFAULT_PERKS.slice(), streaks: DEFAULT_STREAKS.slice() }
+];
+
+/** The active class as it stands now. */
+const currentLoadout = (s: GameSettings): Loadout => ({
+  name: s.loadouts[s.activeLoadout]?.name ?? `Loadout ${s.activeLoadout + 1}`,
+  primary: s.primary,
+  secondary: s.secondary,
+  lethal: s.lethal,
+  tactical: s.tactical,
+  perks: s.perks.slice(),
+  streaks: s.streaks.slice()
+});
+
+/** Keeps the active slot in step with edits to the guns, gear, perks and streaks. */
+export const syncLoadout = (s: GameSettings): GameSettings => ({ ...s, loadouts: s.loadouts.map((l, i) => (i === s.activeLoadout ? currentLoadout(s) : l)) });
+
+/** Saves the current class to its slot, then makes slot `i` the active one. */
+export const switchLoadout = (s: GameSettings, i: number): GameSettings => {
+  const saved = syncLoadout(s);
+  const l = saved.loadouts[i];
+  if (!l) return saved;
+  return { ...saved, activeLoadout: i, primary: l.primary, secondary: l.secondary, lethal: l.lethal, tactical: l.tactical, perks: l.perks.slice(), streaks: l.streaks.slice() };
+};
+
+export const renameLoadout = (s: GameSettings, i: number, name: string): GameSettings => ({
+  ...s,
+  // Spaces are kept while typing; an empty name falls back to "Loadout N" when shown.
+  loadouts: s.loadouts.map((l, k) => (k === i ? { ...l, name: name.slice(0, 18) } : l))
+});
 
 export const defaultSettings = (name: string, color: number): GameSettings => ({
   sensitivity: 1,
@@ -198,6 +251,8 @@ export const defaultSettings = (name: string, color: number): GameSettings => ({
   lethal: 'frag',
   tactical: 'flash',
   perks: DEFAULT_PERKS.slice(),
+  loadouts: STARTER_LOADOUTS(),
+  activeLoadout: 0,
   cosmetics: { ...DEFAULT_COSMETICS },
   access: { colorblind: 'off', uiScale: 1, reduceMotion: false, visualSound: false, reduceFlash: false, highContrast: false },
   pad: { sensitivity: 1, aimAssist: true, invertY: false, deadzone: 0.15 },
@@ -219,9 +274,19 @@ export const loadSettings = (name: string, color: number): GameSettings => {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem('fps-settings-v2') ?? '{}');
     // Saves from before simplified soldiers existed: Low turns them on.
     if (raw.graphics && raw.graphics.simpleSoldiers === undefined) raw.graphics.simpleSoldiers = raw.quality === 'low';
-    return {
+    // Older saves had one loadout: it becomes slot 1, the starter classes fill the rest.
+    const starters = STARTER_LOADOUTS();
+    const loadouts: Loadout[] = Array.from({ length: LOADOUT_SLOTS }, (_, i) => {
+      const l = Array.isArray(raw.loadouts) ? raw.loadouts[i] : null;
+      const d = starters[i];
+      return l ? { ...d, ...l, perks: normalizePerks(l.perks), streaks: normalizeStreaks(l.streaks) } : d;
+    });
+    const activeLoadout = Math.min(LOADOUT_SLOTS - 1, Math.max(0, Number(raw.activeLoadout) || 0));
+    const merged: GameSettings = {
       ...base,
       ...raw,
+      loadouts,
+      activeLoadout,
       keys: { ...base.keys, ...(raw.keys ?? {}) },
       graphics: { ...base.graphics, ...(raw.graphics ?? {}) },
       crosshair: { ...base.crosshair, ...(raw.crosshair ?? {}) },
@@ -232,6 +297,7 @@ export const loadSettings = (name: string, color: number): GameSettings => {
       access: { ...base.access, ...(raw.access ?? {}) },
       pad: { ...base.pad, ...(raw.pad ?? {}) }
     };
+    return Array.isArray(raw.loadouts) ? merged : syncLoadout(merged);
   } catch {
     return base;
   }
@@ -239,7 +305,8 @@ export const loadSettings = (name: string, color: number): GameSettings => {
 
 export const saveSettings = (s: GameSettings): void => {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    // Whatever screen changed the guns or gear, the active loadout slot keeps up.
+    localStorage.setItem(KEY, JSON.stringify(Array.isArray(s.loadouts) ? syncLoadout(s) : s));
   } catch {
     /* storage unavailable: settings just won't persist */
   }

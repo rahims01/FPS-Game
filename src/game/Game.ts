@@ -10,7 +10,7 @@ import { SoldierView } from '../render/SoldierView';
 import { Viewmodel } from '../render/Viewmodel';
 import { eyeHeight, weaponOf, type Agent, type DeathCause } from '../sim/Agent';
 import { weaponModels } from '../assets/weaponModels';
-import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, PRIMARIES, SECONDARIES, type WeaponId } from '../sim/weapons';
+import { WEAPONS, GUN_GAME_LADDER, GUN_GAME_KILLS_PER_TIER, PRIMARIES, SECONDARIES, isAdminWeapon, type WeaponId } from '../sim/weapons';
 import { setLoadout } from '../sim/Agent';
 import { MEDALS, levelOf, loadProfile, saveProfile, type Medal } from './progression';
 import { SKINS } from '../assets/skins';
@@ -36,7 +36,7 @@ import { account, eventOn, liveEvents } from '../net/account';
 import { say, setClassroom } from './words';
 import { wrapAngle, yawTo } from '../sim/math';
 import { GameAudio } from './Audio';
-import { keyLabel, lowerQuality, QUALITY_PRESETS, touchEnabled, type GameSettings } from './settings';
+import { keyLabel, lowerQuality, QUALITY_PRESETS, switchLoadout, touchEnabled, type GameSettings, type Loadout } from './settings';
 import type { ClientSession, HostSession } from '../net/Session';
 import type { Snapshot, StartMsg } from '../net/protocol';
 import { applySnapshot, type NetTarget } from '../net/snapshot';
@@ -164,6 +164,8 @@ export interface HudState {
   aliveTotal: number;
   placement: number;
   canRespawn: boolean;
+  /** Death screen: the saved loadouts to pick from for the next life (null where the mode sets your guns). */
+  loadouts: { name: string; guns: string; next: boolean }[] | null;
   /** Squad battle royale: seconds until you redeploy, if a squadmate is alive. */
   redeployIn: number | null;
   /** Pre-match lineup: seconds left (null once the match is on). */
@@ -408,6 +410,11 @@ export class Game {
   private aliveSince = -1;
   /** Called when the game changes the player's settings by itself (auto quality), so they get saved. */
   onSettings: ((s: GameSettings) => void) | null = null;
+  /** You play with your own guns here (not a fixed-weapon mode), so the death screen can change loadout. */
+  private ownLoadout = false;
+  /** Loadout slot picked on the death screen, put on at the next spawn. */
+  private nextLoadout: number | null = null;
+  private lastLife = -1;
   // Progression.
   private medals: HudState['medals'] = [];
   private callouts: HudState['callouts'] = [];
@@ -688,9 +695,35 @@ export class Game {
     this.applySettings(settings);
     // Offline matches open with the lineup (practice drops you straight in).
     if (!net && !this.practice && this.match.mode !== 'survival' && this.match.mode !== 'zombies' && this.match.mode !== 'op') this.introPending = true;
+    const me = this.match.player;
+    this.ownLoadout = !client && !opts.watch && !this.match.op && !this.practice && me.weapons[0] === opts.primary && me.weapons[1] === opts.secondary;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
     if (net) this.startBackgroundTicker();
+  }
+
+  /** Death screen: keys 1-5 pick the loadout for the next life (and make it the active one). */
+  pickLoadout(i: number): void {
+    if (this.match.player.alive || !this.ownLoadout) return;
+    const l = this.settings.loadouts[i];
+    if (!l) return;
+    this.nextLoadout = i;
+    const next = switchLoadout(this.settings, i);
+    this.settings = next;
+    this.onSettings?.(next);
+  }
+
+  /** Puts on a saved loadout (at a respawn). */
+  private equip(l: Loadout): void {
+    const p = this.match.player;
+    // The admin's guns only where the admin's arsenal is allowed.
+    const ok = (w: WeaponId, fallback: WeaponId) => (!p.admin && isAdminWeapon(w) ? fallback : w);
+    setLoadout(p, [ok(l.primary, 'rifle'), ok(l.secondary, 'pistol')]);
+    p.perks = l.perks.slice();
+    p.lethal = l.lethal;
+    p.tactical = l.tactical;
+    p.grenades = THROWABLES[l.lethal].count;
+    p.tacticals = THROWABLES[l.tactical].count;
   }
 
   // ---------------------------------------------------------------- input
@@ -867,6 +900,13 @@ export class Game {
     if (code === k.grenade) this.grenadeQueued = true;
     if (code === k.tactical) this.tacticalQueued = true;
     if (code === k.cycle && this.practice && this.net?.role !== 'client') this.nextPracticeGun();
+    if (!this.match.player.alive && this.ownLoadout) {
+      const slot = /^Digit([1-5])$/.exec(code);
+      if (slot) {
+        this.pickLoadout(Number(slot[1]) - 1);
+        return;
+      }
+    }
     if (code === k.weapon1) this.switchQueued = 0;
     if (code === k.weapon2) this.switchQueued = 1;
     if (code === k.swap) this.switchQueued = this.match.player.slot === 0 ? 1 : 0;
@@ -1158,6 +1198,15 @@ export class Game {
           this.match.step(input);
           if (net) net.session.clearOneShots();
         }
+        // Back from the dead with the loadout picked on the death screen.
+        if (player.life !== this.lastLife) {
+          if (player.alive && this.lastLife >= 0 && this.nextLoadout !== null && this.ownLoadout) {
+            const l = this.settings.loadouts[this.nextLoadout];
+            if (l) this.equip(l);
+            this.nextLoadout = null;
+          }
+          this.lastLife = player.life;
+        }
         if (player.ammo < ammoBefore && !this.spectator) this.viewmodel.fire();
         if (player.reloadT > 0 && reloadBefore <= 0 && !this.spectator) this.audio.reload();
         const m0 = this.match;
@@ -1275,6 +1324,9 @@ export class Game {
           this.callout(a === this.match.player && !this.spectator ? '♛ You entered as the Admin' : `♛ The Admin ${this.nameOf(a.id)} has entered the match`);
           this.audio.fanfare();
         }
+      } else if (cos?.spawnEffect && cos.spawnEffect !== 'none' && a.alive && !this.killcam && this.match.sim.time > 0.5) {
+        // Everyone's earned spawn effect (not at the very start, when the whole lobby appears at once).
+        this.effects.spawnEffect(cos.spawnEffect, new THREE.Vector3(a.x, a.y, a.z), this.colorOf(a.id));
       }
       if (a !== this.match.player || this.spectator) {
         const title = cos && cos.title !== 'none' ? titleDef(cos.title).text : null;
@@ -1402,7 +1454,11 @@ export class Game {
         if (this.feed.length > 6) this.feed.shift();
         const v = this.viewFor(victim);
         v.setVisible(true);
-        if (live && killer && (this.cosmetics[killer.id]?.staff === 'admin' || this.confettiKills)) {
+        const killFx = killer && killer !== victim ? this.cosmetics[killer.id]?.killEffect : undefined;
+        if (live && killer && this.cosmetics[killer.id]?.staff !== 'admin' && !this.confettiKills && killFx && killFx !== 'none') {
+          // Everyone's earned takedown effect (Armory: Effects).
+          this.effects.killEffect(killFx, new THREE.Vector3(victim.x, victim.y, victim.z), this.colorOf(killer.id));
+        } else if (live && killer && (this.cosmetics[killer.id]?.staff === 'admin' || this.confettiKills)) {
           const at = new THREE.Vector3(victim.x, victim.y, victim.z);
           const admin = this.cosmetics[killer.id]?.staff === 'admin';
           // The admin's pick (Fun tab); everyone else's is the Confetti Kills event.
@@ -2685,9 +2741,12 @@ export class Game {
     if ((this.auraT += dt) > 0.08) {
       this.auraT = 0;
       for (const a of sim.agents) {
-        const aura = this.cosmetics[a.id]?.aura;
-        if (!aura || aura === 'none' || !a.alive || !cosAdmin(this.cosmetics[a.id]) || (a === this.match.player && !this.spectator)) continue;
-        this.effects.aura(aura, a.x, a.y, a.z, time);
+        if (!a.alive || (a === this.match.player && !this.spectator)) continue;
+        const cos = this.cosmetics[a.id];
+        const aura = cos?.aura;
+        if (aura && aura !== 'none' && cosAdmin(cos)) this.effects.aura(aura, a.x, a.y, a.z, time);
+        // Everyone's earned trail (Armory: Effects); thinned out on low graphics.
+        else if (cos?.trail && cos.trail !== 'none' && (this.settings.quality !== 'low' || Math.random() < 0.4)) this.effects.trail(cos.trail, a.x, a.y, a.z, time, this.colorOf(a.id), Math.hypot(a.vx, a.vz) > 1);
       }
     }
     // Victory: a winning admin raises the crown.
@@ -3051,6 +3110,14 @@ export class Game {
       aliveTotal: sim.agents.filter((a) => a.alive).length,
       placement: m.placement,
       canRespawn: this.net?.role === 'client' ? false : m.canPlayerRespawn(),
+      loadouts:
+        !p.alive && this.ownLoadout
+          ? this.settings.loadouts.map((l, i) => ({
+              name: l.name.trim() || `Loadout ${i + 1}`,
+              guns: `${WEAPONS[l.primary].name} · ${WEAPONS[l.secondary].name}`,
+              next: i === (this.nextLoadout ?? this.settings.activeLoadout)
+            }))
+          : null,
       redeployIn: m.redeployIn(p),
       intro: this.introPending ? 4.5 : this.introUntil > performance.now() ? (this.introUntil - performance.now()) / 1000 : null,
       feed: this.feed.filter((f) => sim.time - f.at < 7),

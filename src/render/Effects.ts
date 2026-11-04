@@ -571,6 +571,132 @@ export class Effects {
     }
   }
 
+  /** A player's takedown effect (Armory: Effects), where the victim falls. `color` is the killer's. */
+  killEffect(kind: string, p: THREE.Vector3, color: number): void {
+    const [r, g, b] = rgb(color);
+    switch (kind) {
+      case 'confetti':
+        this.confetti(p, false);
+        break;
+      case 'pixels':
+        for (let i = 0; i < 44; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = 1 + Math.random() * 3;
+          const k = 0.7 + Math.random() * 0.5;
+          this.emit(p.x + (Math.random() - 0.5) * 0.6, p.y + 0.3 + Math.random() * 1.5, p.z + (Math.random() - 0.5) * 0.6, Math.cos(a) * s, 1 + Math.random() * 3, Math.sin(a) * s, r * k, g * k, b * k, 0.7 + Math.random() * 0.6, 7);
+        }
+        break;
+      case 'sparks':
+        for (let i = 0; i < 50; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const s = 1 + Math.random() * 2.5;
+          this.emit(p.x, p.y + 0.4, p.z, Math.cos(a) * s, 4 + Math.random() * 5, Math.sin(a) * s, 1, 0.55 + Math.random() * 0.35, 0.15, 0.6 + Math.random() * 0.5, 12);
+        }
+        this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), 0xff9a2a, 18, 8, 0.25);
+        break;
+      case 'wisp':
+        for (let i = 0; i < 26; i++) {
+          this.emit(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.3 + Math.random(), p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.4, 1 + Math.random() * 1.2, (Math.random() - 0.5) * 0.4, 0.75, 0.9, 1, 1.4 + Math.random() * 0.8, -0.2);
+        }
+        break;
+      case 'shockwave':
+        this.shockwave(p);
+        break;
+      case 'nova':
+        for (let i = 0; i < 70; i++) {
+          const u = Math.random() * 2 - 1;
+          const a = Math.random() * Math.PI * 2;
+          const q = Math.sqrt(1 - u * u);
+          const s = 5 + Math.random() * 2;
+          this.emit(p.x, p.y + 1, p.z, Math.cos(a) * q * s, u * s, Math.sin(a) * q * s, r, g, b, 0.5 + Math.random() * 0.3, 0);
+        }
+        this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), color, this.reduceFlash ? 12 : 40, 12, 0.35);
+        break;
+      case 'fireworks':
+        this.fireworks(p);
+        break;
+      case 'thunder':
+        this.bolt(p);
+        break;
+      case 'blackhole':
+        // Particles start in a wide ring and rush inward, then a white pop.
+        for (let i = 0; i < 60; i++) {
+          const a = (i / 60) * Math.PI * 2;
+          const d = 3 + Math.random();
+          this.emit(p.x + Math.cos(a) * d, p.y + 1 + (Math.random() - 0.5), p.z + Math.sin(a) * d, -Math.cos(a) * d * 2.2, 0, -Math.sin(a) * d * 2.2, 0.55, 0.3, 1, 0.45, 0);
+        }
+        for (let i = 0; i < 30; i++) {
+          const a = Math.random() * Math.PI * 2;
+          this.emit(p.x, p.y + 1, p.z, Math.cos(a) * 6, (Math.random() - 0.5) * 4, Math.sin(a) * 6, 1, 1, 1, 0.35, 0);
+        }
+        this.flashLight(new THREE.Vector3(p.x, p.y + 1, p.z), 0x8a5cff, this.reduceFlash ? 10 : 30, 10, 0.5);
+        break;
+    }
+  }
+
+  /** A player's spawn effect (Armory: Effects). */
+  spawnEffect(kind: string, p: THREE.Vector3, color: number): void {
+    const [r, g, b] = rgb(color);
+    switch (kind) {
+      case 'landing':
+        this.puff(p);
+        this.puff(p);
+        break;
+      case 'dropbeam':
+        for (let i = 0; i < 40; i++) this.emit(p.x + (Math.random() - 0.5) * 0.3, p.y + Math.random() * 12, p.z + (Math.random() - 0.5) * 0.3, 0, -6 - Math.random() * 4, 0, r, g, b, 0.5 + Math.random() * 0.4, 0);
+        this.flashLight(new THREE.Vector3(p.x, p.y + 1.5, p.z), color, this.reduceFlash ? 10 : 30, 9, 0.6);
+        break;
+      case 'ring':
+        for (let i = 0; i < 48; i++) {
+          const a = (i / 48) * Math.PI * 2;
+          this.emit(p.x, p.y + 0.15, p.z, Math.cos(a) * 5, 0.2, Math.sin(a) * 5, r, g, b, 0.5, 0);
+        }
+        break;
+      case 'portal':
+        this.portal(p);
+        break;
+      case 'meteor':
+        this.meteor(p);
+        break;
+      case 'storm':
+        this.bolt(p);
+        break;
+    }
+  }
+
+  /** A player's trail, a few times a second (Armory: Effects). Moving bodies leave more behind. */
+  trail(kind: string, x: number, y: number, z: number, t: number, color: number, moving: boolean): void {
+    const n = moving ? 2 : 1;
+    const jx = () => x + (Math.random() - 0.5) * 0.7;
+    const jz = () => z + (Math.random() - 0.5) * 0.7;
+    switch (kind) {
+      case 'glitter':
+        for (let i = 0; i < n; i++) this.emit(jx(), y + 0.1 + Math.random() * 0.6, jz(), 0, 0.3, 0, 1, 0.95, 0.75, 0.5, 0);
+        break;
+      case 'embers':
+        for (let i = 0; i < n; i++) this.emit(jx(), y + 0.3 + Math.random() * 1.2, jz(), (Math.random() - 0.5) * 0.3, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.3, 1, 0.45 + Math.random() * 0.2, 0.1, 0.7, 0);
+        break;
+      case 'frost':
+        for (let i = 0; i < n; i++) this.emit(jx(), y + 1.6 + Math.random() * 0.6, jz(), (Math.random() - 0.5) * 0.2, -0.6, (Math.random() - 0.5) * 0.2, 0.85, 0.95, 1, 1.2, 0);
+        break;
+      case 'neon': {
+        if (!moving) break;
+        const [r, g, b] = rgb(color);
+        for (let i = 0; i < 3; i++) this.emit(x + (Math.random() - 0.5) * 0.25, y + 0.1 + Math.random() * 0.2, z + (Math.random() - 0.5) * 0.25, 0, 0, 0, r, g, b, 0.45, 0);
+        break;
+      }
+      case 'bubbles':
+        if (moving || Math.random() < 0.4) this.emit(jx(), y + 0.4 + Math.random(), jz(), 0, 0.9, 0, 0.6, 0.85, 1, 1, -0.3);
+        break;
+      case 'glitch':
+        this.aura('glitch', x, y, z, t);
+        break;
+      case 'halo':
+        this.aura('halo', x, y, z, t);
+        break;
+    }
+  }
+
   private flashLight(at: THREE.Vector3, color: number, intensity: number, distance: number, life: number): void {
     const l = this.lights[this.lightNext];
     this.lightNext = (this.lightNext + 1) % this.lights.length;
@@ -732,3 +858,10 @@ export class Effects {
     }
   }
 }
+
+/** 0xRRGGBB to 0..1 channels, lifted a little so dark colours still read as light. */
+const rgb = (hex: number): [number, number, number] => {
+  const c = [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+  const lift = Math.max(0, 0.35 - Math.max(...c));
+  return [c[0] + lift, c[1] + lift, c[2] + lift];
+};

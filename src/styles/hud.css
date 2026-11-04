@@ -1667,3 +1667,106 @@ b.dark {
   border-color: var(--yellow);
   background: rgba(255, 196, 0, 0.35);
 }
+
+/* Death screen: the loadout for the next life. */
+.next-loadout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 12px;
+  text-shadow: none;
+}
+.next-loadout > span {
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+.next-loadout > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 92vw;
+}
+.next-loadout button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  min-width: 132px;
+  max-width: 180px;
+  padding: 7px 12px 6px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: var(--hud);
+  color: var(--fg);
+  text-align: left;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.next-loadout button.on {
+  border-bottom-color: var(--yellow);
+}
+.next-loadout small {
+  grid-row: span 2;
+  align-self: center;
+  color: var(--yellow);
+  font-family: var(--f-cond);
+  font-size: 18px;
+  font-weight: 800;
+}
+.next-loadout b {
+  overflow: hidden;
+  font-family: var(--f-cond);
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.next-loadout em {
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 11px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-height: 520px) {
+  .next-loadout button {
+    min-width: 0;
+    padding: 6px 10px;
+  }
+  .next-loadout em {
+    display: none;
+  }
+}
+/* Touch: keep the picker clear of the button cluster on the right and the stick on the left. */
+.hud.touch .next-loadout > div {
+  max-width: min(560px, 54vw);
+}
+@media (max-height: 520px) {
+  .hud.touch .next-loadout > div {
+    max-width: min(330px, 40vw);
+  }
+  .hud.touch .next-loadout button {
+    padding: 5px 9px;
+  }
+}
+.hud.touch .next-loadout button {
+  min-width: 0;
+  max-width: 132px;
+}
+/* Short screens (phones held sideways): the death screen moves up and the killer's card
+   gives way to the loadout picker, so both the picker and the respawn line fit. */
+@media (max-height: 520px) {
+  .dead {
+    top: 30%;
+  }
+  .dead h2 {
+    font-size: 30px;
+  }
+  .dead:has(.next-loadout) .killed-by {
+    display: none;
+  }
+}

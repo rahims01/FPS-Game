@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { SKINS, type SkinId } from '../assets/skins';
-import { keyLabel, type GameSettings } from '../game/settings';
+import { keyLabel, renameLoadout, switchLoadout, syncLoadout, type GameSettings } from '../game/settings';
 import { levelOf, type Profile } from '../game/progression';
 import { CHARMS, masteryOf, MASTERY, RARITY, rarityOf, unlocked, unlockText, type Cosmetics, listedFor } from '../game/cosmetics';
 import { KILLSTREAKS, normalizeStreaks, STREAK_SLOTS, type StreakId } from '../sim/killstreaks';
@@ -66,7 +66,10 @@ type Tab = 'weapons' | 'equipment' | 'perks' | 'streaks';
 export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings: GameSettings; onChange: (s: GameSettings) => void; profile: Profile; assets: LoadedAssets | null }) => {
   const [tab, setTab] = useState<Tab>('weapons');
   const [focus, setFocus] = useState<WeaponId>(settings.primary);
-  const set = (patch: Partial<GameSettings>) => onChange({ ...settings, ...patch });
+  // Every change also lands in the active loadout slot.
+  const set = (patch: Partial<GameSettings>) => onChange(syncLoadout({ ...settings, ...patch }));
+  const active = settings.activeLoadout;
+  const slotName = (i: number) => settings.loadouts[i]?.name.trim() || `Loadout ${i + 1}`;
   const kills = (w: WeaponId) => profile.weaponKills[w] ?? 0;
   const picked = settings.streaks;
   const fw = WEAPONS[focus];
@@ -136,6 +139,32 @@ export const LoadoutPanel = ({ settings, onChange, profile, assets }: { settings
 
   return (
     <div className="loadout-panel">
+      <div className="lo-slots" role="tablist" aria-label="Loadouts">
+        {settings.loadouts.map((l, i) => (
+          <button
+            key={i}
+            role="tab"
+            aria-selected={i === active}
+            className={`lo-slot ${i === active ? 'on' : ''}`}
+            onClick={() => {
+              const next = switchLoadout(settings, i);
+              onChange(next);
+              setFocus(next.primary);
+            }}
+          >
+            <small>{i + 1}</small>
+            <b>{slotName(i)}</b>
+            <span>
+              {WEAPONS[i === active ? settings.primary : l.primary].name} · {WEAPONS[i === active ? settings.secondary : l.secondary].name}
+            </span>
+          </button>
+        ))}
+      </div>
+      <label className="lo-name">
+        <span>Loadout name</span>
+        <input value={settings.loadouts[active]?.name ?? ''} placeholder={`Loadout ${active + 1}`} maxLength={18} onChange={(e) => onChange(renameLoadout(settings, active, e.target.value))} />
+        <small>Changes save to this loadout. Switch between them here, or on the death screen with keys 1–5 in matches.</small>
+      </label>
       <div className="set-tabs">
         {(
           [

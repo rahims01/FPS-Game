@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { LoadedAssets } from '../assets/AssetRegistry';
 import { tickSkins } from '../assets/skins';
-import { FLASHES, NAMETAGS, RARITY, STYLES, THEME_COLORS, TRACERS, rarityOf, unlockText, unlocked, type Rarity, type Unlock, listedFor } from '../game/cosmetics';
+import { CUSTOM_COLOR_LEVEL, FLASHES, KILL_EFFECTS, NAMETAGS, RARITY, SPAWN_EFFECTS, STYLES, THEME_COLORS, TRACERS, TRAILS, fxDef, rarityOf, unlockText, unlocked, type FxDef, type Rarity, type Unlock, listedFor } from '../game/cosmetics';
 import { COLORS, cssColor } from '../game/identity';
 import type { GameSettings } from '../game/settings';
 import { levelOf, type Profile } from '../game/progression';
@@ -113,7 +113,34 @@ interface Item {
   secret?: boolean;
 }
 
-type Tab = 'colour' | 'style' | 'nametag' | 'tracer' | 'flash';
+type Tab = 'colour' | 'style' | 'effects' | 'nametag' | 'tracer' | 'flash';
+
+/** A small picture of an effect for its tile (no glyphs: a gradient in the effect's colours). */
+const FX_LOOK: Record<string, string> = {
+  none: 'transparent',
+  confetti: 'radial-gradient(circle at 30% 35%,#ffc400 0 12%,transparent 13%),radial-gradient(circle at 70% 30%,#5aa0ff 0 11%,transparent 12%),radial-gradient(circle at 45% 70%,#45d483 0 12%,transparent 13%),radial-gradient(circle at 75% 72%,#ff5d9e 0 10%,transparent 11%)',
+  pixels: 'repeating-conic-gradient(var(--c) 0 25%,transparent 0 50%) 0 0/12px 12px',
+  sparks: 'radial-gradient(circle at 50% 80%,#fff3c4 0 10%,#ff9a2a 20%,transparent 60%)',
+  wisp: 'radial-gradient(ellipse at 50% 70%,#e6f4ff 0 15%,#a8d4ff 35%,transparent 70%)',
+  shockwave: 'radial-gradient(circle,transparent 0 40%,#ffe08a 45% 52%,transparent 57%)',
+  nova: 'radial-gradient(circle,#fff 0 12%,var(--c) 30%,transparent 70%)',
+  fireworks: 'radial-gradient(circle at 30% 30%,#ffd23d 0 14%,transparent 30%),radial-gradient(circle at 70% 45%,#b46bff 0 14%,transparent 30%),radial-gradient(circle at 45% 75%,#5ad4ff 0 12%,transparent 28%)',
+  thunder: 'linear-gradient(115deg,transparent 0 42%,#e8e0ff 44% 52%,transparent 54%),radial-gradient(circle at 50% 90%,#b9a3ff 0 15%,transparent 50%)',
+  blackhole: 'radial-gradient(circle,#000 0 22%,#8a5cff 30%,transparent 65%)',
+  landing: 'radial-gradient(ellipse at 50% 85%,#c9bfa8 0 25%,transparent 60%)',
+  dropbeam: 'linear-gradient(90deg,transparent 0 40%,var(--c) 45% 55%,transparent 60%)',
+  ring: 'radial-gradient(ellipse at 50% 70%,transparent 0 40%,var(--c) 45% 52%,transparent 57%)',
+  portal: 'radial-gradient(ellipse,transparent 0 35%,#b46bff 40% 55%,transparent 60%)',
+  meteor: 'linear-gradient(225deg,transparent 0 20%,#ffb000 30%,#ff4e00 55%,transparent 70%)',
+  storm: 'linear-gradient(105deg,transparent 0 44%,#fff 46% 50%,transparent 52%),linear-gradient(#3a3f5c,#1a1d2e)',
+  glitter: 'radial-gradient(circle at 25% 30%,#fff 0 5%,transparent 6%),radial-gradient(circle at 70% 40%,#ffe9a8 0 6%,transparent 7%),radial-gradient(circle at 45% 75%,#fff 0 5%,transparent 6%)',
+  embers: 'radial-gradient(circle at 35% 40%,#ffb000 0 7%,transparent 8%),radial-gradient(circle at 65% 65%,#ff4e00 0 8%,transparent 9%),radial-gradient(circle at 55% 25%,#ff8a2a 0 5%,transparent 6%)',
+  frost: 'radial-gradient(circle at 30% 30%,#fff 0 6%,transparent 7%),radial-gradient(circle at 70% 50%,#dff6ff 0 7%,transparent 8%),radial-gradient(circle at 40% 75%,#fff 0 6%,transparent 7%)',
+  neon: 'linear-gradient(90deg,transparent,var(--c) 40% 60%,transparent)',
+  bubbles: 'radial-gradient(circle at 35% 60%,transparent 0 10%,#9fd8ff 11% 14%,transparent 15%),radial-gradient(circle at 65% 35%,transparent 0 13%,#9fd8ff 14% 17%,transparent 18%)',
+  glitch: 'linear-gradient(90deg,#19e6ff 0 30%,transparent 30% 55%,#ff2bd6 55% 80%,transparent 80%)',
+  halo: 'radial-gradient(ellipse at 50% 30%,transparent 0 28%,#ffe08a 32% 40%,transparent 44%)'
+};
 
 /** Colours, soldier styles, name tags, tracers and muzzle flashes, with a 3D preview. */
 export const ArmoryPanel = ({
@@ -137,7 +164,7 @@ export const ArmoryPanel = ({
   const setCos = (patch: Partial<typeof cos>) => onChange({ ...settings, cosmetics: { ...cos, ...patch } });
 
   /** A picker tile: rarity border, lock with what unlocks it, secrets hidden until earned. */
-  const tile = (item: Item, on: boolean, pick: () => void, preview: React.ReactNode) => {
+  const tile = (item: Item, on: boolean, pick: () => void, preview: React.ReactNode, note?: string) => {
     const ok = unlocked(item.unlock, profile, level, item.id);
     const r = rarityOf(item);
     const hidden = item.secret && !ok;
@@ -152,7 +179,10 @@ export const ArmoryPanel = ({
       >
         <span className="arm-preview">{hidden ? '?' : preview}</span>
         <b>{hidden ? '???' : item.name}</b>
-        <small style={{ color: RARITY[r].color }}>{RARITY[r].name}</small>
+        <small style={{ color: RARITY[r].color }}>
+          {RARITY[r].name}
+          {note && ok ? ` · ${note}` : ''}
+        </small>
         {!ok && <small className="arm-lock"><LockIcon size={11} /> {hidden ? 'Secret' : unlockText(item.unlock)}</small>}
       </button>
     );
@@ -178,6 +208,7 @@ export const ArmoryPanel = ({
             [
               ['colour', 'Colour'],
               ['style', 'Style'],
+              ['effects', 'Effects'],
               ['nametag', 'Name tag'],
               ['tracer', 'Tracers'],
               ['flash', 'Muzzle flash']
@@ -191,6 +222,18 @@ export const ArmoryPanel = ({
         {tab === 'colour' && (
           <>
             <p className="set-hint">Your colour in free-for-all modes and on your soldier. Team modes use team colours.</p>
+            {(() => {
+              const free = unlocked({ level: CUSTOM_COLOR_LEVEL }, profile, level);
+              return (
+                <label className={`arm-custom ${free ? '' : 'locked'}`}>
+                  <input type="color" disabled={!free} value={cssColor(settings.playerColor)} onChange={(e) => onChange({ ...settings, playerColor: parseInt(e.target.value.slice(1), 16) })} />
+                  <span>
+                    <b>Any colour</b>
+                    <small>{free ? 'Pick exactly the colour you want' : <><LockIcon size={11} /> Level {CUSTOM_COLOR_LEVEL}</>}</small>
+                  </span>
+                </label>
+              );
+            })()}
             <div className="arm-grid">
               {COLORS.map((c) => tile({ id: String(c.hex), name: c.name, unlock: null }, settings.playerColor === c.hex, () => onChange({ ...settings, playerColor: c.hex }), <i className="arm-swatch" style={{ background: cssColor(c.hex) }} />))}
               {THEME_COLORS.filter(listed).map((c) =>
@@ -207,6 +250,35 @@ export const ArmoryPanel = ({
                 tile(s, (cos.style ?? 'none') === s.id, () => setCos({ style: s.id }), <i className={`arm-style ${s.kind} st-${s.id}`} style={{ ['--c' as string]: cssColor(settings.playerColor) }} title={s.blurb} />)
               )}
             </div>
+          </>
+        )}
+        {tab === 'effects' && (
+          <>
+            <p className="set-hint">Effects play in matches for everyone to see. The ones marked "your colour" use your soldier's colour (your team's in team modes).</p>
+            {(
+              [
+                ['Takedown', 'When you take someone down', KILL_EFFECTS, 'killEffect'],
+                ['Spawn', 'When you spawn', SPAWN_EFFECTS, 'spawnEffect'],
+                ['Trail', 'Follows you around', TRAILS, 'trail']
+              ] as [string, string, FxDef[], 'killEffect' | 'spawnEffect' | 'trail'][]
+            ).map(([title, hint, list, key]) => (
+              <section key={key} className="arm-fx-group">
+                <h3>
+                  {title} <small>{hint} · {fxDef(list, cos[key]).blurb}</small>
+                </h3>
+                <div className="arm-grid">
+                  {list.filter(listed).map((f) =>
+                    tile(
+                      f,
+                      (cos[key] ?? 'none') === f.id,
+                      () => setCos({ [key]: f.id }),
+                      <i className="arm-fx" title={f.blurb} style={{ background: FX_LOOK[f.id] ?? 'transparent', ['--c' as string]: cssColor(settings.playerColor) }} />,
+                      f.tinted ? 'your colour' : undefined
+                    )
+                  )}
+                </div>
+              </section>
+            ))}
           </>
         )}
         {tab === 'nametag' && (

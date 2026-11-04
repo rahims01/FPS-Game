@@ -3,8 +3,8 @@ import type { OpSpec } from '../sim/ops';
 import { loadProfile, saveProfile } from './progression';
 
 /**
- * The solo campaign: training, then fifteen operations against the Syndicate in
- * four acts (stealth intel grabs, assassinations, rescues, sabotage, defence and
+ * The solo campaign: training, then twenty-seven operations against the Syndicate in
+ * six acts (stealth intel grabs, assassinations, rescues, sabotage, defence and
  * escapes), each with a briefing and three star goals. Missions unlock in order;
  * every new star is worth XP, and finishing them all earns a title.
  */
@@ -60,6 +60,8 @@ const ACT1 = 'Act 1 · Recruit';
 const ACT2 = 'Act 2 · Operative';
 const ACT3 = 'Act 3 · Specialist';
 const ACT4 = 'Act 4 · Ghost';
+const ACT5 = 'Act 5 · Aftershock';
+const ACT6 = 'Act 6 · Endgame';
 
 export const MISSIONS: Mission[] = [
   // ---- Act 1: Recruit
@@ -224,11 +226,133 @@ export const MISSIONS: Mission[] = [
       { text: 'Never get spotted', met: (r) => r.won && r.undetected },
       { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 }
     ]
+  },
+  // ---- Act 5: Aftershock
+  {
+    id: 'op16', act: ACT5, title: 'Loose Ends', place: 'Rescue', mode: 'op', difficulty: 'normal',
+    op: { kind: 'rescue', targetName: 'The Informant', guards: 4, patrols: 3, stealth: true, reinforce: 6, size: 42 },
+    briefing: 'The Warlord is gone, but his lieutenants are cleaning house. Our informant is being held in a scrapyard and they mean to make an example of him. Get him out before they do.',
+    goals: [
+      { text: 'Get the Informant out alive', met: (r) => r.won },
+      { text: 'Reach him without being spotted', met: (r) => r.won && r.undetected },
+      { text: 'He ends with over half his health', met: (r) => r.won && r.hostageHp > 50 }
+    ]
+  },
+  {
+    id: 'op17', act: ACT5, title: 'Dead Drop', place: 'Stealth · Intel · Night', mode: 'op', difficulty: 'normal', night: true,
+    op: { kind: 'intel', items: 3, guards: 4, patrols: 4, stealth: true, reinforce: 6, size: 44 },
+    briefing: 'Someone is still paying the Syndicate’s soldiers. Three dead drops hold the payment records. Collect them under cover of dark.',
+    goals: [
+      { text: 'Collect all three and get out', met: (r) => r.won },
+      { text: 'Never get spotted', met: (r) => r.won && r.undetected },
+      { text: 'Take down 1 guard or fewer', met: (r) => r.won && r.guardsDown <= 1 }
+    ]
+  },
+  {
+    id: 'op18', act: ACT5, title: 'Convoy Ambush', place: 'Sabotage · Loud', mode: 'op', difficulty: 'normal',
+    op: { kind: 'sabotage', items: 2, fuse: 45, guards: 4, patrols: 2, stealth: false, reinforce: 8, size: 44 },
+    briefing: 'Two armoured trucks are carrying the Syndicate’s weapons out of the city, and there’s no time to be quiet. Charge both trucks and get clear.',
+    goals: [
+      { text: 'Destroy both trucks and get out', met: (r) => r.won },
+      { text: 'Get 10 takedowns', met: (r) => r.won && r.kills >= 10 },
+      { text: 'Finish in under 3 minutes', met: (r) => r.won && r.seconds < 180 }
+    ]
+  },
+  {
+    id: 'op19', act: ACT5, title: 'Close Quarters', place: 'Assassination · Shotgun', mode: 'op', difficulty: 'normal',
+    op: { kind: 'assassinate', targetName: 'The Butcher', loadout: ['shotgun', 'revolver'], guards: 4, patrols: 2, stealth: true, escapeAfter: 50, reinforce: 6, size: 38 },
+    briefing: 'The Butcher runs the Syndicate’s enforcers from a cramped warehouse. Long guns are no use in there: you get a shotgun and a revolver. Get close and finish it.',
+    goals: [
+      { text: 'Eliminate the Butcher and get out', met: (r) => r.won },
+      { text: 'Never get spotted', met: (r) => r.won && r.undetected },
+      { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 }
+    ]
+  },
+  {
+    id: 'op20', act: ACT5, title: 'The Long Night', place: 'Defend · Night · 100 s', mode: 'op', difficulty: 'normal', night: true,
+    op: { kind: 'defend', hold: 100, guards: 3, patrols: 0, stealth: false, reinforce: 12, size: 38 },
+    briefing: 'The safehouse has been found and the power is cut. Hold the courtyard until the trucks arrive. Watch for muzzle flashes in the dark.',
+    goals: [
+      { text: 'Hold for 100 seconds', met: (r) => r.won },
+      { text: 'Get 10 takedowns', met: (r) => r.won && r.kills >= 10 },
+      { text: 'Don’t go down', met: (r) => r.won && r.deaths === 0 }
+    ]
+  },
+  {
+    id: 'op21', act: ACT5, title: 'Turncoat', place: 'Assassination · Marksman', mode: 'op', difficulty: 'normal',
+    op: { kind: 'assassinate', targetName: 'The Turncoat', loadout: ['dmr', 'pistol'], guards: 5, patrols: 3, stealth: true, escapeAfter: 40, reinforce: 6, size: 50 },
+    briefing: 'One of our own sold the unit to the Syndicate. He’s meeting his new friends in the open. You have a marksman rifle and a clear view: make it count.',
+    goals: [
+      { text: 'Eliminate the Turncoat and get out', met: (r) => r.won },
+      { text: 'Land a headshot', met: (r) => r.won && r.headshots >= 1 },
+      { text: 'Never get spotted', met: (r) => r.won && r.undetected }
+    ]
+  },
+  // ---- Act 6: Endgame
+  {
+    id: 'op22', act: ACT6, title: 'Silent Running', place: 'Stealth · Two lives', mode: 'op', difficulty: 'hard',
+    op: { kind: 'intel', items: 4, guards: 6, patrols: 5, stealth: true, reinforce: 10, lives: 2, size: 48 },
+    briefing: 'The payments lead to a man the files only call the Architect. His servers sit in four rooms of a guarded data centre. Two lives, four drives, no noise.',
+    goals: [
+      { text: 'Take all four and get out', met: (r) => r.won },
+      { text: 'Never get spotted', met: (r) => r.won && r.undetected },
+      { text: 'Don’t go down', met: (r) => r.won && r.deaths === 0 }
+    ]
+  },
+  {
+    id: 'op23', act: ACT6, title: 'Hostage Exchange', place: 'Rescue · Night', mode: 'op', difficulty: 'hard', night: true,
+    op: { kind: 'rescue', targetName: 'Agent Vance', guards: 6, patrols: 4, stealth: true, reinforce: 10, size: 46 },
+    briefing: 'The Architect has taken Agent Vance and offered a trade we will never make. Go in at night, bring Vance home, and leave the Architect with nothing to bargain with.',
+    goals: [
+      { text: 'Get Vance out alive', met: (r) => r.won },
+      { text: 'Vance ends with over half health', met: (r) => r.won && r.hostageHp > 50 },
+      { text: 'Reach Vance without being spotted', met: (r) => r.won && r.undetected }
+    ]
+  },
+  {
+    id: 'op24', act: ACT6, title: 'Scorched Earth', place: 'Sabotage', mode: 'op', difficulty: 'hard',
+    op: { kind: 'sabotage', items: 5, fuse: 70, guards: 6, patrols: 4, stealth: true, reinforce: 12, size: 50 },
+    briefing: 'Five fuel depots keep the Architect’s fleet moving. Charge all five, then outrun the fire. The fuse is 70 seconds, and the guards will come running.',
+    goals: [
+      { text: 'Charge all five and get out', met: (r) => r.won },
+      { text: 'Charge them all without being spotted', met: (r) => r.won && r.undetected },
+      { text: 'Finish in under 5 minutes', met: (r) => r.won && r.seconds < 300 }
+    ]
+  },
+  {
+    id: 'op25', act: ACT6, title: 'The Gauntlet', place: 'Escape · Night', mode: 'op', difficulty: 'hard', night: true,
+    op: { kind: 'escape', guards: 8, patrols: 0, stealth: false, reinforce: 12, size: 56 },
+    briefing: 'It was a trap. The data centre is locked down and the only way out is through the whole Syndicate garrison, in the dark. Run.',
+    goals: [
+      { text: 'Reach extraction', met: (r) => r.won },
+      { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 },
+      { text: 'Make it in under 3 minutes', met: (r) => r.won && r.seconds < 180 }
+    ]
+  },
+  {
+    id: 'op26', act: ACT6, title: 'Last Stand', place: 'Defend · 140 s', mode: 'op', difficulty: 'hard',
+    op: { kind: 'defend', hold: 140, guards: 4, patrols: 0, stealth: false, reinforce: 22, size: 40 },
+    briefing: 'Our evidence goes to the world in two minutes and twenty seconds, if the transmitter stays up. Everything the Architect has left is coming. Hold.',
+    goals: [
+      { text: 'Hold for 140 seconds', met: (r) => r.won },
+      { text: 'Get 18 takedowns', met: (r) => r.won && r.kills >= 18 },
+      { text: 'Go down once at most', met: (r) => r.won && r.deaths <= 1 }
+    ]
+  },
+  {
+    id: 'op27', act: ACT6, title: 'The Architect', place: 'Assassination · Finale', mode: 'op', difficulty: 'hard', night: true,
+    op: { kind: 'assassinate', targetName: 'The Architect', targetArmor: 0.3, guards: 8, patrols: 5, stealth: true, escapeAfter: 70, reinforce: 14, size: 52 },
+    briefing: 'His network is exposed and his money is gone. All he has left is a compound, his last guards and a helicopter waiting on the roof. If the alarm sounds he has 70 seconds. Finish this.',
+    goals: [
+      { text: 'Eliminate the Architect and get out', met: (r) => r.won },
+      { text: 'Never get spotted', met: (r) => r.won && r.undetected },
+      { text: 'Don’t go down', met: (r) => r.won && r.deaths === 0 }
+    ]
   }
 ];
 
 /** Most enemies fighting you at once, by act: one soldier shouldn't face a crowd. */
-const MAX_ALIVE: Record<string, number> = { [ACT1]: 2, [ACT2]: 3, [ACT3]: 3, [ACT4]: 4 };
+const MAX_ALIVE: Record<string, number> = { [ACT1]: 2, [ACT2]: 3, [ACT3]: 3, [ACT4]: 4, [ACT5]: 3, [ACT6]: 4 };
 for (const m of MISSIONS) if (m.op) m.op.maxAlive ??= MAX_ALIVE[m.act];
 
 

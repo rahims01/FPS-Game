@@ -20,7 +20,7 @@ const Name = ({ row }: { row: Pick<ScoreRow, 'name' | 'color' | 'isPlayer'> & { 
   </span>
 );
 
-export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObject<HTMLCanvasElement | null>; settings: GameSettings }) => {
+export const Hud = ({ hud, minimap, settings, onLoadout }: { hud: HudState; minimap: RefObject<HTMLCanvasElement | null>; settings: GameSettings; onLoadout?: (i: number) => void }) => {
   const ch = settings.crosshair;
   const gap = ch.gap + (ch.dynamic ? hud.spread * 900 : 0);
   const markerAge = hud.time - hud.hitMarkerAt;
@@ -249,6 +249,20 @@ export const Hud = ({ hud, minimap, settings }: { hud: HudState; minimap: RefObj
                 {hud.killedBy.distance > 0 ? ` · ${hud.killedBy.distance} m` : ''}
                 {hud.killedBy.hp > 0 ? ` · they had ${hud.killedBy.hp} HP` : ''}
               </small>
+            </div>
+          )}
+          {hud.loadouts && (
+            <div className="next-loadout">
+              <span>{hud.touch ? 'Next life: tap a loadout' : 'Next life: press 1–5 to change loadout'}</span>
+              <div>
+                {hud.loadouts.map((l, i) => (
+                  <button key={i} className={l.next ? 'on' : ''} aria-pressed={l.next} onClick={() => onLoadout?.(i)}>
+                    <small>{i + 1}</small>
+                    <b>{l.name}</b>
+                    <em>{l.guns}</em>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {hud.redeployIn !== null ? (

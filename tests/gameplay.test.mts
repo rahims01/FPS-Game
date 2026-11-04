@@ -58,10 +58,10 @@ const steps = (m: Match, n: number) => { for (let i = 0; i < n; i++) m.step(NO);
 // The campaign's data.
 {
   const ids = MISSIONS.map((m) => m.id);
-  ok('campaign: 16 missions', MISSIONS.length === 16, MISSIONS.length);
+  ok('campaign: 28 missions', MISSIONS.length === 28, MISSIONS.length);
   ok('campaign: unique ids', new Set(ids).size === ids.length);
   ok('campaign: every mission has a briefing and 3 goals', MISSIONS.every((m) => m.briefing.length > 40 && m.goals.length === 3));
-  ok('campaign: four acts', new Set(MISSIONS.map((m) => m.act)).size === 4);
+  ok('campaign: six acts', new Set(MISSIONS.map((m) => m.act)).size === 6);
   ok('campaign: every operation kind appears', ['assassinate', 'rescue', 'intel', 'sabotage', 'defend', 'escape'].every((k) => MISSIONS.some((m) => m.op?.kind === k)));
   ok('campaign: the hidden mode never reaches matchmaking', MISSIONS.filter((m) => m.mode === 'op').every((m) => !!m.op));
 }
@@ -90,6 +90,41 @@ const steps = (m: Match, n: number) => { for (let i = 0; i < n; i++) m.step(NO);
     }
   ok('physics: walls never launch a soldier', worst < 1, worst);
   ok('physics: soldier stays on the map', Math.abs(a.x) <= m.sim.arena.half && Math.abs(a.z) <= m.sim.arena.half, { x: a.x, z: a.z });
+}
+
+// Loadouts: five slots; switching saves the old one and puts the new one on.
+{
+  const { defaultSettings, switchLoadout, syncLoadout, LOADOUT_SLOTS } = await import('../src/game/settings.ts');
+  let st = defaultSettings('P', 0xffffff);
+  ok('loadouts: five slots', st.loadouts.length === LOADOUT_SLOTS && LOADOUT_SLOTS === 5);
+  st = syncLoadout({ ...st, primary: 'ak' });
+  ok('loadouts: edits land in the active slot', st.loadouts[0].primary === 'ak');
+  st = switchLoadout(st, 2);
+  ok('loadouts: switching puts on the other class', st.activeLoadout === 2 && st.primary === st.loadouts[2].primary && st.primary !== 'ak');
+  st = switchLoadout(st, 0);
+  ok('loadouts: and switching back restores yours', st.primary === 'ak');
+}
+// Effects anyone can earn: each list starts with None and every id is unique.
+{
+  const { KILL_EFFECTS, SPAWN_EFFECTS, TRAILS, randomCosmetics } = await import('../src/game/cosmetics.ts');
+  for (const [name, list] of [['takedown', KILL_EFFECTS], ['spawn', SPAWN_EFFECTS], ['trail', TRAILS]] as const)
+    ok(`effects: ${name} list is sound`, list[0].id === 'none' && list[0].unlock === null && new Set(list.map((f) => f.id)).size === list.length);
+  const c = randomCosmetics(50, () => 0.99, 3);
+  ok('effects: veteran bots can wear effects', !!c.killEffect && !!c.trail);
+}
+// Player-like bots look the same every match; obvious bots never get here.
+{
+  const { lookingLikeAPlayer, levelFor } = await import('../src/game/identity.ts');
+  const a = JSON.stringify(lookingLikeAPlayer('Biscuit', ['rifle', 'pistol']));
+  const b = JSON.stringify(lookingLikeAPlayer('Biscuit', ['rifle', 'pistol']));
+  ok('bot camos: fixed by name', a === b);
+  let fancyLow = 0;
+  for (let i = 0; i < 400; i++) {
+    const n = `tester${i}`;
+    const sk = lookingLikeAPlayer(n, ['rifle', 'pistol']);
+    if (sk && levelFor(n) < 20 && Object.values(sk).some((id) => ['gold', 'diamond', 'galaxy', 'spectral', 'darkmatter', 'plasma'].includes(id as string))) fancyLow++;
+  }
+  ok('bot camos: low levels never run late camos', fancyLow === 0, fancyLow);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

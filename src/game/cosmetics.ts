@@ -24,6 +24,10 @@ export interface Cosmetics {
   prestige?: number;
   /** Melee weapon in the knife slot (looks only; see assets/melees). */
   melee?: string;
+  /** Effects anyone can earn (Armory: Effects): on your takedowns, when you spawn, and following you. */
+  killEffect?: string;
+  spawnEffect?: string;
+  trail?: string;
   /** The admin's effects (Fun tab): on a takedown, on spawning, and around them. */
   takedownFx?: TakedownFx;
   spawnFx?: SpawnFx;
@@ -37,7 +41,7 @@ export const TAKEDOWN_FX: [TakedownFx, string][] = [['confetti', 'Gold confetti'
 export const SPAWN_FX: [SpawnFx, string][] = [['pillar', 'Pillar of light'], ['portal', 'Portal'], ['meteor', 'Meteor'], ['lightning', 'Lightning']];
 export const AURA_FX: [AuraFx, string][] = [['none', 'None'], ['sparkles', 'Gold sparkles'], ['flames', 'Royal flames'], ['halo', 'Halo'], ['glitch', 'Glitch']];
 
-export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none', melee: 'knife' };
+export const DEFAULT_COSMETICS: Cosmetics = { card: 'recruit', emblem: 'star', charm: 'none', title: 'none', frame: 'none', nametag: 'plain', tracer: 'default', flash: 'default', style: 'none', melee: 'knife', killEffect: 'none', spawnEffect: 'none', trail: 'none' };
 
 /**
  * What a cosmetic needs: free, a player level, a badge, a prestige, a
@@ -501,6 +505,9 @@ export const randomCosmetics = (level: number, rand: () => number = Math.random,
     flash: pick(FLASHES, 0.7),
     style: pick(STYLES, 0.6),
     melee: pick(MELEES, 0.45),
+    killEffect: pick(KILL_EFFECTS, 0.75),
+    spawnEffect: pick(SPAWN_EFFECTS, 0.8),
+    trail: pick(TRAILS, 0.88),
     prestige
   };
 };
@@ -660,6 +667,56 @@ export const FLASHES: FlashDef[] = [
   { id: 'dragon', name: "Dragon's Breath", color: 0xff6a1a, scale: 1.8, unlock: { badge: 'firestarter' }, secret: true, rarity: 'mythic' }
 ];
 
+/** An effect anyone can earn. `tinted` ones are drawn in your colour. */
+export interface FxDef {
+  id: string;
+  name: string;
+  blurb: string;
+  unlock: Unlock;
+  rarity?: Rarity;
+  secret?: boolean;
+  tinted?: boolean;
+}
+
+/** Plays where someone you take down falls. */
+export const KILL_EFFECTS: FxDef[] = [
+  { id: 'none', name: 'None', blurb: 'Nothing extra', unlock: null },
+  { id: 'confetti', name: 'Party Popper', blurb: 'A pop of confetti', unlock: { level: 4 } },
+  { id: 'pixels', name: 'Pixel Burst', blurb: 'They break into pixels of your colour', unlock: { level: 10 }, tinted: true },
+  { id: 'sparks', name: 'Spark Shower', blurb: 'A fountain of hot sparks', unlock: { level: 16 } },
+  { id: 'wisp', name: 'Spirit Wisp', blurb: 'Pale wisps drift up and away', unlock: { level: 24 } },
+  { id: 'shockwave', name: 'Shockwave', blurb: 'A ring of light races out', unlock: { level: 32 }, rarity: 'epic' },
+  { id: 'nova', name: 'Colour Nova', blurb: 'A burst of your colour and a flash', unlock: { level: 40 }, tinted: true, rarity: 'epic' },
+  { id: 'fireworks', name: 'Fireworks', blurb: 'Three bursts overhead', unlock: { prestige: 1 }, rarity: 'legendary' },
+  { id: 'thunder', name: 'Thunderstrike', blurb: 'Lightning from a clear sky', unlock: { badge: 'centurion' }, rarity: 'legendary' },
+  { id: 'blackhole', name: 'Singularity', blurb: 'Everything pulls into a point, then pops', unlock: { prestige: 3 }, rarity: 'mythic', secret: true }
+];
+
+/** Plays where you spawn. */
+export const SPAWN_EFFECTS: FxDef[] = [
+  { id: 'none', name: 'None', blurb: 'Just appear', unlock: null },
+  { id: 'landing', name: 'Hard Landing', blurb: 'A puff of dust as you drop in', unlock: { level: 3 } },
+  { id: 'dropbeam', name: 'Drop Beam', blurb: 'A beam of your colour from the sky', unlock: { level: 13 }, tinted: true },
+  { id: 'ring', name: 'Ring Out', blurb: 'A ring of your colour rolls out', unlock: { level: 20 }, tinted: true },
+  { id: 'portal', name: 'Portal', blurb: 'Step out of a swirling portal', unlock: { level: 30 }, rarity: 'epic' },
+  { id: 'meteor', name: 'Meteor', blurb: 'Arrive like a falling star', unlock: { prestige: 1 }, rarity: 'legendary' },
+  { id: 'storm', name: 'Storm Front', blurb: 'Arrive on a bolt of lightning', unlock: { level: 48 }, rarity: 'legendary' }
+];
+
+/** Follows you around (others see it; you see it when spectating). */
+export const TRAILS: FxDef[] = [
+  { id: 'none', name: 'None', blurb: 'No trail', unlock: null },
+  { id: 'glitter', name: 'Glitter', blurb: 'A few sparkles where you walk', unlock: { level: 8 } },
+  { id: 'embers', name: 'Embers', blurb: 'Glowing embers drift off you', unlock: { level: 18 } },
+  { id: 'frost', name: 'Frostbite', blurb: 'Snowflakes fall around you', unlock: { level: 26 } },
+  { id: 'neon', name: 'Neon Streak', blurb: 'A streak of your colour', unlock: { level: 36 }, tinted: true, rarity: 'epic' },
+  { id: 'bubbles', name: 'Bubbles', blurb: 'Bubbles float up as you move', unlock: { badge: 'centurion' }, rarity: 'epic' },
+  { id: 'glitch', name: 'Glitch', blurb: 'You flicker out of sync', unlock: { prestige: 2 }, rarity: 'legendary' },
+  { id: 'halo', name: 'Halo', blurb: 'A ring of light over your head', unlock: { prestige: 4 }, rarity: 'mythic' }
+];
+
+export const fxDef = (list: FxDef[], id: string | undefined): FxDef => list.find((f) => f.id === id) ?? list[0];
+
 /** Unlockable player colours (free-for-all modes and your soldier); the 12 basics are free. */
 export interface ThemeColorDef {
   id: string;
@@ -695,8 +752,26 @@ export const THEME_COLORS: ThemeColorDef[] = [
   { id: 'obsidian', name: 'Obsidian', hex: 0x1a1426, finish: 'metal', unlock: { mastery: 3, count: 3 } },
   { id: 'royal', name: 'Royal Purple', hex: 0x6a2bd9, finish: 'metal', unlock: { prestige: 1 } },
   { id: 'champion', name: 'Champion Gold', hex: 0xffd34d, finish: 'glow', unlock: { tourney: 1 } },
-  { id: 'spectral', name: '???', hex: 0xbaffef, finish: 'glow', unlock: { badge: 'godlike' }, secret: true, rarity: 'mythic' }
+  { id: 'spectral', name: '???', hex: 0xbaffef, finish: 'glow', unlock: { badge: 'godlike' }, secret: true, rarity: 'mythic' },
+  { id: 'midnight', name: 'Midnight', hex: 0x223a8f, finish: 'flat', unlock: { level: 3 } },
+  { id: 'peach', name: 'Peach', hex: 0xffb38a, finish: 'flat', unlock: { level: 5 } },
+  { id: 'maroon', name: 'Maroon', hex: 0x6e1a2a, finish: 'flat', unlock: { level: 7 } },
+  { id: 'olive', name: 'Olive', hex: 0x7d8a2e, finish: 'flat', unlock: { level: 11 } },
+  { id: 'sand', name: 'Sand', hex: 0xd9c39a, finish: 'flat', unlock: { level: 14 } },
+  { id: 'slate', name: 'Slate', hex: 0x5b6b80, finish: 'flat', unlock: { level: 17 } },
+  { id: 'magenta', name: 'Magenta', hex: 0xc4237a, finish: 'flat', unlock: { level: 19 } },
+  { id: 'steel', name: 'Gunmetal', hex: 0x4a525c, finish: 'metal', unlock: { level: 23 } },
+  { id: 'rosegold', name: 'Rose Gold', hex: 0xe0a08a, finish: 'metal', unlock: { level: 25 } },
+  { id: 'emerald', name: 'Emerald', hex: 0x1f9e5a, finish: 'metal', unlock: { level: 31 } },
+  { id: 'sapphire', name: 'Sapphire', hex: 0x1f4fd6, finish: 'metal', unlock: { level: 35 } },
+  { id: 'electric', name: 'Electric Blue', hex: 0x2ad4ff, finish: 'glow', unlock: { level: 39 } },
+  { id: 'sunset', name: 'Sunset', hex: 0xff8a2a, finish: 'glow', unlock: { level: 44 } },
+  { id: 'ultraviolet', name: 'Ultraviolet', hex: 0x9b3bff, finish: 'glow', unlock: { level: 47 } },
+  { id: 'prism', name: 'Prism', hex: 0xff6ad6, finish: 'rainbow', unlock: { prestige: 3 }, rarity: 'legendary' }
 ];
+
+/** Pick any colour you like (a colour wheel) from this level. */
+export const CUSTOM_COLOR_LEVEL = 20;
 
 /** The finish for a soldier colour (themed colours glow, shine or cycle). */
 export const finishOf = (hex: number): ThemeColorDef['finish'] => THEME_COLORS.find((c) => c.hex === hex)?.finish ?? 'flat';
