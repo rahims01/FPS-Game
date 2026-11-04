@@ -29,21 +29,40 @@ interface Env extends TurnEnv, AccountsEnv {
   ACCOUNTS?: DurableObjectNamespace;
 }
 
+/**
+ * Game portals serve the build from their own domain and call this API across
+ * origins. Sign-in uses a bearer token, never cookies, so any origin is safe.
+ */
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'access-control-allow-headers': 'content-type, authorization',
+  'access-control-max-age': '86400'
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
-    if (pathname === '/api/turn' && request.method === 'GET') return turn(env);
-    if (pathname === '/api/online' && (request.method === 'GET' || request.method === 'POST')) {
-      if (!env.PRESENCE) return new Response(JSON.stringify({ error: 'Presence is not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
-      // One object for the whole game, so everyone reads the same number.
-      return env.PRESENCE.get(env.PRESENCE.idFromName('global')).fetch(request);
-    }
-    if (ACCOUNT_PATHS.test(pathname)) {
-      if (!env.ACCOUNTS) return new Response(JSON.stringify({ error: 'Accounts are not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
-      // One object for every account, so names, friends and messages are all in one place.
-      return env.ACCOUNTS.get(env.ACCOUNTS.idFromName('global')).fetch(request);
-    }
-    if (pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
-    return env.ASSETS.fetch(request);
+    if (!pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    const res = await route(request, env, pathname);
+    const out = new Response(res.body, res);
+    for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v);
+    return out;
   }
+};
+
+const route = async (request: Request, env: Env, pathname: string): Promise<Response> => {
+  if (pathname === '/api/turn' && request.method === 'GET') return turn(env);
+  if (pathname === '/api/online' && (request.method === 'GET' || request.method === 'POST')) {
+    if (!env.PRESENCE) return new Response(JSON.stringify({ error: 'Presence is not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    // One object for the whole game, so everyone reads the same number.
+    return env.PRESENCE.get(env.PRESENCE.idFromName('global')).fetch(request);
+  }
+  if (ACCOUNT_PATHS.test(pathname)) {
+    if (!env.ACCOUNTS) return new Response(JSON.stringify({ error: 'Accounts are not configured' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    // One object for every account, so names, friends and messages are all in one place.
+    return env.ACCOUNTS.get(env.ACCOUNTS.idFromName('global')).fetch(request);
+  }
+  return new Response('Not found', { status: 404 });
 };

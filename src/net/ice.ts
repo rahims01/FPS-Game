@@ -7,6 +7,8 @@
  * PeerJS's built-in relays no longer answer, so the relay comes from our own
  * site's Cloudflare Worker (worker/turn.ts) when it is configured.
  */
+import { apiUrl } from './endpoint';
+
 export type IceServer = { urls: string | string[]; username?: string; credential?: string };
 
 const STUN: IceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
@@ -19,7 +21,7 @@ export const iceConfig = (): Promise<{ iceServers: IceServer[]; relay: boolean }
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(`${import.meta.env.BASE_URL}api/turn`, { signal: ctrl.signal, cache: 'no-store' });
+      const res = await fetch(apiUrl('turn'), { signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(timer);
       if (res.ok) {
         const data = (await res.json()) as { iceServers?: IceServer[] };

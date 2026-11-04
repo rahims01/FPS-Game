@@ -14,3 +14,6 @@ screenshots
 
 .dev-api.sqlite
 prompt.md
+
+# Local build settings (the server address stays out of the repo)
+*.local

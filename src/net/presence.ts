@@ -8,6 +8,8 @@
  * by the presence Durable Object in the site's Worker (worker/presence.ts) behind /api/online.
  */
 
+import { apiUrl } from './endpoint';
+
 /** 0..1 from an integer, the same on every device. */
 const hash01 = (n: number): number => {
   let x = (n ^ 0x9e3779b9) >>> 0;
@@ -47,7 +49,7 @@ const newSession = (): string => {
 
 const checkIn = async (leaving = false): Promise<void> => {
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}api/online`, {
+    const res = await fetch(apiUrl('online'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ session, leaving }),

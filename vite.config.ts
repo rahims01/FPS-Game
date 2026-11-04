@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -28,9 +28,19 @@ const devApi = (): Plugin => ({
   }
 });
 
-export default defineConfig({
+/**
+ * Link previews (Discord, X, iMessage) need the share image as a full address.
+ * VITE_SITE_URL (in .env.production.local, or the host's build variables)
+ * gives it; without one the tags stay relative.
+ */
+const shareImage = (site: string | undefined): Plugin => ({
+  name: 'share-image',
+  transformIndexHtml: (html) => (site ? html.replace(/content="\.?\/og\.png"/g, `content="${site.replace(/\/+$/, '')}/og.png"`) : html)
+});
+
+export default defineConfig(({ mode }) => ({
   // Relative paths, so the build also runs from a game portal's own address.
   base: './',
-  plugins: [react(), devApi()],
+  plugins: [react(), devApi(), shareImage(loadEnv(mode, process.cwd()).VITE_SITE_URL)],
   server: { port: 5190 }
-});
+}));

@@ -4,6 +4,7 @@ import { exportBotFriends, importBotFriends, setBotFriendsSavedHook } from '../g
 import { onLocalSave } from '../game/saveHook';
 import { ADMIN_ITEMS } from '../game/cosmetics';
 import { WEAPONS } from '../sim/weapons';
+import { apiUrl } from './endpoint';
 
 /**
  * Your account: sign-up and sign-in, keeping progress in the cloud (so it
@@ -111,7 +112,7 @@ export interface ApiResult<T> {
 /** Calls the game's API (same site). Network failures come back as status 0. */
 export const api = async <T = Record<string, unknown>>(path: string, init: { method?: string; body?: unknown } = {}): Promise<ApiResult<T>> => {
   try {
-    const res = await fetch(`/api/${path}`, {
+    const res = await fetch(apiUrl(path), {
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: init.body === undefined ? undefined : JSON.stringify(init.body)
@@ -389,7 +390,7 @@ export const startAccount = (): void => {
     if (pushTimer && token) {
       clearTimeout(pushTimer);
       try {
-        void fetch('/api/account/save', { method: 'PUT', keepalive: true, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ save: collect() }) });
+        void fetch(apiUrl('account/save'), { method: 'PUT', keepalive: true, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ save: collect() }) });
       } catch {
         /* ignore */
       }
