@@ -151,6 +151,8 @@ export interface Agent {
   appealUsed?: boolean;
   /** Campaign guards on watch: they stand and look around until the alarm. */
   passive?: boolean;
+  /** Nobody aims at this one (a campaign hostage). */
+  ignored?: boolean;
   /** Stunned (Server Restart): can't move or shoot, but can be hit. */
   stunUntil: number;
   /** Marked on a team's minimap (Moderator hits, the admin's Spotlight). */

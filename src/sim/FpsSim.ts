@@ -1183,7 +1183,7 @@ export class FpsSim {
     let fallback: Agent | null = null;
     let fallbackD = Infinity;
     for (const b of this.agents) {
-      if (!b.alive || b.team === a.team || this.isFrozen(b)) continue;
+      if (!b.alive || b.team === a.team || this.isFrozen(b) || b.ignored) continue;
       const d = Math.hypot(b.x - a.x, b.z - a.z);
       if (d < fallbackD) {
         fallbackD = d;

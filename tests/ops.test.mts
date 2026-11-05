@@ -171,5 +171,23 @@ for (const mi of MISSIONS.filter((x) => x.op)) {
 }
 // Every campaign mission caps how many fight at once.
 ok('campaign: every op has maxAlive', MISSIONS.filter((x) => x.op).every((x) => (x.op!.maxAlive ?? 0) >= 2));
+// Beatable by design: no Hard missions, guards spread out, the hostage is never a target.
+ok('campaign: no mission is on Hard', MISSIONS.every((x) => x.difficulty !== 'hard'));
+for (const mi of MISSIONS.filter((x) => x.op?.stealth)) {
+  const m = new Match({ mode: 'op', difficulty: mi.difficulty, botControl: 'heuristic', seed: 17, op: mi.op, campaign: true } as any);
+  const named = (m.op as any).names as Record<number, string>;
+  const g = m.sim.agents.filter((a) => a.team === 1 && a.passive && /^(Guard|Sentry)/.test(named[a.id] ?? ''));
+  let min = Infinity;
+  for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) min = Math.min(min, Math.hypot(g[i].x - g[j].x, g[i].z - g[j].z));
+  ok(`${mi.title}: guards at least 8 m apart`, min >= 8, +min.toFixed(1));
+}
+{
+  const mi = MISSIONS.find((x) => x.op?.kind === 'rescue')!;
+  const m = new Match({ mode: 'op', difficulty: mi.difficulty, botControl: 'heuristic', seed: 17, op: mi.op, campaign: true } as any);
+  (m.op as any).raise(true, 'test');
+  const h = m.sim.agents.find((a) => a.control === 'remote')!;
+  for (let i = 0; i < 60 * 30; i++) { m.step(NO); m.player.hp = 100; }
+  ok('rescue: guards on alert leave the hostage alone', h.alive && h.hp === 100, h.hp);
+}
 console.log(fails ? `${fails} FAILED` : "all passed");
 process.exitCode = fails ? 1 : 0;
